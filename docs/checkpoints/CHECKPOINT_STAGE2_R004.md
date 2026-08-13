@@ -10,7 +10,8 @@ Revision: R004
 - Main baseline: `bc9e8f0aecd2a2fd1644937365d6b088794ef77c`
 - Baseline tree: `2b823a55b6f464161a265f3bff61bbbae73638d7`
 - Candidate branch: `stage2-customer-po-production-run`
-- Candidate HEAD/tree: pending final candidate commit
+- Candidate HEAD: `17452a49052d3374f706461e8598e080f45c8d3e`
+- Candidate tree: `4bcba032844a9907f0f5e9beda70dd01230146ac`
 - Main: unchanged; no integration authorized by R004
 
 ## Delivered
@@ -35,6 +36,20 @@ POSTGRESQL_PRODUCTION_INTEGRATION_NOT_YET_EXECUTED
 
 Full Stage 1 regression, Stage 2 regression, final isolation and candidate
 identity evidence are required before the candidate verdict is recorded.
+
+## Candidate evidence
+
+```text
+DIFF_REVIEW_FILE_COUNT=26
+UNRELATED_CHANGE_COUNT=0
+Stage 1 regression: 10 passed, 1 warning
+Stage 2 regression: 4 passed, 3 warnings
+Combined regression: 16 passed, 3 warnings
+ALEMBIC_SQLITE_MIGRATION_SMOKE_PASS
+TEST_ISOLATION_PASS
+NO_RUNTIME_ARTIFACTS_IN_PRODUCTION
+git diff --check: PASS
+```
 
 ## Known gaps / next action
 
