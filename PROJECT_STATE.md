@@ -1,23 +1,23 @@
 # HMS QR Product Manager — Current State
 
-Current Stage: STAGE_1_PRODUCT_MASTER_VERTICAL_SLICE
-Current WP: WP1.1-WP1.10
-Current Revision: R002
+Current Stage: Stage 1 complete
+Current WP: Product Master Integration
+Current Revision: R003A
 Current Branch: main
-Current HEAD: Stage 1 candidate branch tip after implementation and metadata-only checkpoint commits (implementation commit `fdb1b77ed921bf1d45806c054c5269aecde92339`; baseline `45496d92e059d751741b896d4213123e45c7fdc1`)
+Current HEAD: `d159eeeac3fdcc7de417c7f506579fa4026be610`
 Last Approved Baseline: Stage 0 R001 foundation
-Current Verdict: PASS_STAGE1_PRODUCT_MASTER_R002
+Current Verdict: PASS_STAGE1_PRODUCT_MASTER_R003A_INTEGRATED
 
-Overall progress: Stage 0 foundation and Stage 1 Product Master vertical slice complete.
-Stage progress: WP0.1-WP0.6 PASS; WP1.1-WP1.10 PASS.
+Overall progress: Stage 0 foundation and Stage 1 Product Master integration complete.
+Stage progress: WP0.1-WP0.6 PASS; Product Master R002/R003A PASS.
 
-Active blockers: PostgreSQL command-line tools are not available in PATH; npm.ps1 is blocked by PowerShell execution policy.
+Active blockers: PostgreSQL production integration, exact reference workbook fidelity, Machine A deployment, NAS write pipeline, and full authentication remain outside completed scope.
 
-Latest completed work: Product Master domain, SQLite DEV/test persistence, versioned API, Vietnamese desktop slice, generic Excel import/export, configuration/storage abstraction, and tests.
-Next exact action: Obtain fresh review/integration authority before merging `stage1-product-master` or starting later product modules.
+Latest completed work: R003A Excel workbook lifecycle remediation, fresh independent review, fast-forward integration into main, and post-integration verification.
+Next exact action: STAGE2_CUSTOMER_PO_PRODUCTION_RUN_R004
 
-Latest authority: docs/authorities/AUTHORITY_STAGE1_R002.md
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE1_R002.md
+Latest authority: docs/authorities/AUTHORITY_STAGE1_R003A.md
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE1_R003A_INTEGRATION.md
 Latest handoff: docs/handoffs/HANDOFF_STAGE0_TO_STAGE1.md
 
 Test workspace:
