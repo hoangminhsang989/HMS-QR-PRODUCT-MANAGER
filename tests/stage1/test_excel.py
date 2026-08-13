@@ -10,19 +10,26 @@ from packages.persistence.sqlite_product_repository import SQLiteProductReposito
 def test_excel_preview_requires_explicit_confirm_and_exports_valid_workbook(tmp_path: Path):
     source = tmp_path / "input.xlsx"
     workbook = Workbook()
-    sheet = workbook.active
-    sheet.append(["Mã sản phẩm", "Company", "Part Name", "Quantity", "Unit", "Status"])
-    sheet.append(["SP-2026-000010", "HMS", "Plate", 10, "pcs", "NEW"])
-    sheet.append(["SP-2026-000011", "HMS", "Broken", 0, "pcs", "NEW"])
-    workbook.save(source)
+    try:
+        sheet = workbook.active
+        sheet.append(["Mã sản phẩm", "Company", "Part Name", "Quantity", "Unit", "Status"])
+        sheet.append(["SP-2026-000010", "HMS", "Plate", 10, "pcs", "NEW"])
+        sheet.append(["SP-2026-000011", "HMS", "Broken", 0, "pcs", "NEW"])
+        workbook.save(source)
+    finally:
+        workbook.close()
     preview = ProductExcelImporter().preview(source)
     assert preview.valid_rows == 1 and preview.invalid_rows == 1 and not preview.can_confirm
     service = ProductService(SQLiteProductRepository(tmp_path / "db.sqlite"))
     clean = tmp_path / "clean.xlsx"
-    wb = Workbook(); ws = wb.active
-    ws.append(["Product Code", "Company", "Part Name", "Quantity", "Unit", "Status"])
-    ws.append(["SP-2026-000010", "HMS", "Plate", 10, "pcs", "NEW"])
-    wb.save(clean)
+    wb = Workbook()
+    try:
+        ws = wb.active
+        ws.append(["Product Code", "Company", "Part Name", "Quantity", "Unit", "Status"])
+        ws.append(["SP-2026-000010", "HMS", "Plate", 10, "pcs", "NEW"])
+        wb.save(clean)
+    finally:
+        wb.close()
     accepted = ProductExcelImporter().preview(clean)
     imported = ProductExcelImporter().confirm(accepted, service, actor="excel-user")
     assert len(imported) == 1
