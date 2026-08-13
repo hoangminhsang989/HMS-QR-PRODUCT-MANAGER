@@ -27,7 +27,7 @@ def test_qc_shortage_ng_rework_multiple_cycles_and_history(workflow_env,workflow
 def test_qc_partial_invalid_quantities_idempotency_and_revision(workflow_env,workflow_data):
     env=workflow_env;item=env["item"];request=uuid4()
     first=env["qc"].submit(**workflow_data(WorkflowEventType.QC_CHECKED,40,"Kiểm một phần",request_id=request))
-    duplicate=env["qc"].submit(**workflow_data(WorkflowEventType.QC_CHECKED,40,"ignored",request_id=request))
+    duplicate=env["qc"].submit(**workflow_data(WorkflowEventType.QC_CHECKED,40,"Kiểm một phần",request_id=request))
     assert duplicate.internal_id==first.internal_id
     with pytest.raises(TrackingError):env["qc"].submit(**workflow_data(WorkflowEventType.SHORTAGE_REPORTED,1,request_id=request))
     ng=env["qc"].submit(**workflow_data(WorkflowEventType.QC_NG_RETURNED_TO_MACHINING,3,"NG ban đầu"))

@@ -59,3 +59,7 @@ revision aggregates enforce `packed <= target - shortage` and
 are retained. Tracking Item status is a derived projection, not a replacement
 for history. Planned delivery date remains distinct from actual `DELIVERED`
 event server time.
+
+Independent shortage events are additive. Each event contributes only its
+current active revision; superseded revisions never contribute to checked,
+shortage, NG, packed, or delivered aggregates.

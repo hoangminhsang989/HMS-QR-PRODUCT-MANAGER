@@ -40,7 +40,7 @@ class WorkflowRepository:
                 TrackingWorkflowEventORM.request_id == str(event.request_id)
             ))
             if existing:
-                if existing.tracking_item_id != str(event.tracking_item_id) or existing.event_type != event.event_type.value:
+                if not self._same_semantic_request(existing,event):
                     raise TrackingError("idempotency request identity mismatch")
                 return self._event(existing)
             self._validate_references(session,event)
@@ -69,7 +69,7 @@ class WorkflowRepository:
                 TrackingWorkflowEventORM.request_id == str(event.request_id)
             ))
             if duplicate:
-                if duplicate.tracking_item_id != str(event.tracking_item_id) or duplicate.sequence_number != event.sequence_number:
+                if not self._same_semantic_request(duplicate,event) or duplicate.sequence_number != event.sequence_number or duplicate.revision != event.revision:
                     raise TrackingError("idempotency request identity mismatch")
                 return self._event(duplicate)
             if original.status != "ACTIVE":
@@ -181,6 +181,11 @@ class WorkflowRepository:
             report=session.get(ProcessReportORM,str(event.process_report_id))
             if not report or report.tracking_item_id!=str(event.tracking_item_id):
                 raise TrackingError("related process report mismatch")
+
+    @staticmethod
+    def _same_semantic_request(row,event):
+        def normalized(value):return str(value) if value is not None else None
+        return all((row.tracking_item_id==str(event.tracking_item_id),row.event_type==event.event_type.value,row.quantity==event.quantity,row.notes==event.notes,row.machining_type_id==normalized(event.machining_type_id),row.process_report_id==normalized(event.process_report_id),row.actor_user_id==str(event.actor_user_id),row.actor_display_name_snapshot==event.actor_display_name_snapshot,row.client_timestamp==event.client_timestamp,row.device_id==event.device_id,row.supersedes_event_id==normalized(event.supersedes_event_id)))
 
     @staticmethod
     def _project_status(last_type, current_status, available, packed, delivered):
