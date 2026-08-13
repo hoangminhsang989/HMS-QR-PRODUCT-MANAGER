@@ -8,11 +8,11 @@ Current Verdict: CANDIDATE_STAGE5_UI_DESIGN_SYSTEM_OPEN_DESIGN_R007
 
 Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 UI implementation in progress.
 
-Design system: canonical dark industrial tokens in `apps/design_tokens.py`; Open Design not installed / MCP not configured.
+Design system: canonical dark industrial tokens in `apps/design_tokens.py`; Open Design installer download incomplete, MCP not configured.
 Desktop redesign: shared PySide6 token theme applied to Product Master; Tracking theme integration pending final normalization.
 Mobile redesign: existing operational flow retained; shared token authority documented for CSS refactor.
 Visual evidence: pending fresh captures under `F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST`.
-Regression results: isolated rerun pending.
+Regression results: `40 passed, 1 warning` in 77.88s with controlled external pytest temp root; warning is external Starlette/httpx deprecation.
 
 Latest completed work: typed event-based QC/shortage/NG-rework/packing/delivery/
 general-report workflows anchored to Tracking Item, atomic status projection,
