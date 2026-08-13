@@ -4,9 +4,9 @@ Current Stage: STAGE_4_QC_PACKING_DELIVERY
 Current WP: QC + NG return + packing + delivery status candidate
 Current Revision: R006
 Current Branch: stage4-qc-packing-delivery
-Current Verdict: WORK_IN_PROGRESS_STAGE4_R006
+Current Verdict: PASS_STAGE4_QC_PACKING_DELIVERY_R006
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 candidate validation in progress.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 candidate 100% PASS.
 
 Latest completed work: deterministic four-field business QR payload, live scan
 lookup by tracking code, delivery-date-stable QR, new-order QR identity, internal
@@ -26,7 +26,7 @@ QC_WORKFLOW_NOT_YET_IMPLEMENTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Next exact action: complete R006 candidate gates and independent review request;
+Next exact action: obtain fresh independent R006 review/integration authority;
 do not merge `main` under this candidate-only authority.
 
 Latest authority: docs/authorities/AUTHORITY_STAGE4_R006.md
