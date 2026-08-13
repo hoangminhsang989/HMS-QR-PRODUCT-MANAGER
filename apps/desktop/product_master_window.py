@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from packages.application.product_service import ProductService
 from packages.domain.product import Product, ProductStatus, ProductValidationError
 from packages.domain.repository import ProductPage
+from apps.design_tokens import PY_SIDE_THEME
 
 
 STATUS_LABELS = {
@@ -95,7 +96,7 @@ class ProductMasterWindow(QMainWindow):
         self.actor = actor
         self.setWindowTitle("HMS QR — Quản lý sản phẩm")
         self.resize(1100, 680)
-        self.setStyleSheet("QMainWindow, QWidget { background: #18212b; color: #e8eef5; } QLineEdit, QComboBox { background: #243342; padding: 6px; } QPushButton { background: #1f8a70; padding: 7px 12px; } QTableView { gridline-color: #405060; }")
+        self.setStyleSheet(PY_SIDE_THEME)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Tìm mã, công ty, tên chi tiết, vật liệu...")
         self.filter_status = QComboBox()

@@ -1,6 +1,7 @@
 from uuid import uuid4
 from PySide6.QtWidgets import QDialog,QDialogButtonBox,QFormLayout,QLineEdit,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QTableWidget,QTableWidgetItem,QMessageBox
 from packages.domain.workflow import WorkflowEventType
+from apps.design_tokens import PY_SIDE_THEME, STATUS_COLORS
 
 class WorkflowActionDialog(QDialog):
     def __init__(self,title,quantity_required=True,parent=None):
@@ -16,8 +17,9 @@ class TrackingHistoryDialog(QDialog):
         layout.addWidget(table);self.table=table
 
 class TrackingWindow(QMainWindow):
-    STATUS_COLORS={"QC_NG":"#c44536","REWORK":"#c44536","SHORTAGE":"#b7791f","PACKING":"#2878a8","PACKED":"#177e70","PARTIALLY_DELIVERED":"#2878a8","DELIVERED":"#177e70"}
+    STATUS_COLORS=STATUS_COLORS
     def __init__(self,workflow_actions=None,workflow_context=None):
+        self._stage5_theme = PY_SIDE_THEME
         super().__init__();self.setWindowTitle("HMS QR — Theo dõi đơn hàng và QR");self.resize(1050,650);self.setStyleSheet("QWidget{background:#18212b;color:#eef4fa} QPushButton{background:#177e70;padding:8px}")
         root=QWidget();layout=QVBoxLayout(root);layout.addWidget(QLabel("TRACKING ITEM / QR / GIA CÔNG / QC / ĐÓNG GÓI / GIAO HÀNG"));table=QTableWidget(0,12);table.setHorizontalHeaderLabels(["Mã theo dõi","QR","Ngày giao","Sản phẩm","Khách hàng","Đơn hàng","Số lượng","QC / NG","Đã đóng gói","Đã giao","Trạng thái","Lịch sử"]);layout.addWidget(table)
         for text in ("TẠO QR","XEM QR","IN / XUẤT QR","ĐỔI NGÀY GIAO HÀNG","TẠO ĐƠN MỚI"):
