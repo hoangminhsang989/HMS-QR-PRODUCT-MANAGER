@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hms-qr-product-manager"
+version = "0.1.0"
+description = "HMS QR Product Manager foundation"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+cache_dir = "F:/PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST/pytest-cache"
+testpaths = ["tests"]

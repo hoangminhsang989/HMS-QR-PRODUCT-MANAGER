@@ -1,0 +1,24 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Test/build/runtime output (must stay outside production root)
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.log
+*.sqlite3
+*.db
+tmp/
+temp/
+build/
+dist/
+
+# IDE/OS metadata
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
