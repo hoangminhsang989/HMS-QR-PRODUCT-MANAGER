@@ -28,4 +28,8 @@ def test_excel_preview_requires_explicit_confirm_and_exports_valid_workbook(tmp_
     assert len(imported) == 1
     output = ProductExcelExporter().export(imported, tmp_path / "export.xlsx")
     assert output.exists()
-    assert load_workbook(output, read_only=True).active.max_row == 2
+    check = load_workbook(output, read_only=True)
+    try:
+        assert check.active.max_row == 2
+    finally:
+        check.close()

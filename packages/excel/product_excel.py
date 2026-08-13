@@ -56,6 +56,12 @@ class ImportPreview:
 class ProductExcelImporter:
     def preview(self, path: str | Path, *, existing_codes: Iterable[str] = ()) -> ImportPreview:
         workbook = load_workbook(path, read_only=True, data_only=False)
+        try:
+            return self._preview_workbook(workbook, existing_codes)
+        finally:
+            workbook.close()
+
+    def _preview_workbook(self, workbook, existing_codes: Iterable[str]) -> ImportPreview:
         sheet = workbook.active
         rows = list(sheet.iter_rows(values_only=True))
         if not rows:
@@ -129,17 +135,20 @@ class ProductExcelExporter:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "Products"
-        sheet.append(HEADERS)
-        for product in products:
-            sheet.append([product.product_code, product.company, product.part_name, float(product.quantity), product.unit,
-                          product.material, product.requester, product.surface_treatment, product.outsourced, product.size,
-                          product.notes, product.delivery_schedule, product.status.value])
-        sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = sheet.dimensions
-        widths = [18, 22, 26, 12, 12, 18, 18, 24, 12, 18, 30, 18, 16]
-        for index, width in enumerate(widths, start=1):
-            sheet.column_dimensions[chr(64 + index)].width = width
-        workbook.save(target)
+        try:
+            sheet = workbook.active
+            sheet.title = "Products"
+            sheet.append(HEADERS)
+            for product in products:
+                sheet.append([product.product_code, product.company, product.part_name, float(product.quantity), product.unit,
+                              product.material, product.requester, product.surface_treatment, product.outsourced, product.size,
+                              product.notes, product.delivery_schedule, product.status.value])
+            sheet.freeze_panes = "A2"
+            sheet.auto_filter.ref = sheet.dimensions
+            widths = [18, 22, 26, 12, 12, 18, 18, 24, 12, 18, 30, 18, 16]
+            for index, width in enumerate(widths, start=1):
+                sheet.column_dimensions[chr(64 + index)].width = width
+            workbook.save(target)
+        finally:
+            workbook.close()
         return target
