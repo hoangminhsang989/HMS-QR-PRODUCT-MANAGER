@@ -4,7 +4,7 @@ Current Stage: STAGE_2_CUSTOMER_PO_PRODUCTION_RUN
 Current WP: Customer + PO + Production Run vertical slice
 Current Revision: R004
 Current Branch: main
-Current HEAD: `17452a49052d3374f706461e8598e080f45c8d3e` (Stage 2 candidate; baseline `bc9e8f0aecd2a2fd1644937365d6b088794ef77c`)
+Current HEAD: Stage 2 candidate branch tip after checkpoint metadata (baseline `bc9e8f0aecd2a2fd1644937365d6b088794ef77c`)
 Last Approved Baseline: Stage 0 R001 foundation
 Current Verdict: PASS_STAGE2_CUSTOMER_PO_PRODUCTION_RUN_R004
 

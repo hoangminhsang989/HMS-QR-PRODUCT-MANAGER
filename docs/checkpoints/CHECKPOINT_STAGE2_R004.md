@@ -10,8 +10,9 @@ Revision: R004
 - Main baseline: `bc9e8f0aecd2a2fd1644937365d6b088794ef77c`
 - Baseline tree: `2b823a55b6f464161a265f3bff61bbbae73638d7`
 - Candidate branch: `stage2-customer-po-production-run`
-- Candidate HEAD: `17452a49052d3374f706461e8598e080f45c8d3e`
-- Candidate tree: `4bcba032844a9907f0f5e9beda70dd01230146ac`
+- Candidate implementation HEAD: `17452a49052d3374f706461e8598e080f45c8d3e`
+- Candidate implementation tree: `4bcba032844a9907f0f5e9beda70dd01230146ac`
+- Final candidate tip after checkpoint metadata: recorded by the final commit
 - Main: unchanged; no integration authorized by R004
 
 ## Delivered
