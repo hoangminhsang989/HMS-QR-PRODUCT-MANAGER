@@ -13,9 +13,9 @@ Reason: Preserve one database authority and prevent direct client/NAS coupling.
 Consequences: The server owns persistence and access policy; external exposure
 requires a later security review.
 
-## ADR-002 — Opaque QR references
+## ADR-002 — QR references (superseded)
 
-Status: Accepted
+Status: Superseded by ADR-012 in Stage 3 R005A
 Date: 2026-08-13
 
 Decision: QR payloads contain an opaque, versioned reference such as `HMSQR:v1:<id>`.
@@ -69,3 +69,15 @@ Decision: Mobile reporting selects a configurable machining type, shows dynamic
 attempt buttons, and writes process report events. Attempt expansion is keyed
 by Tracking Item + machining type. Reports use idempotent append/revision
 semantics; completion is a separate event, not a final routing step.
+
+## ADR-012 — Four-field business QR payload and live tracking lookup
+
+Status: Accepted for R005A
+
+Decision: Encode exactly Product name, Customer name, Product code, and
+Tracking code as deterministic compact JSON. Resolve scans by Tracking code;
+load mutable values from the server. Keep `qr_public_id` internal for issuance
+and audit only. Printed-label fields and formatting are a separate service.
+
+Reason: This is the current user requirement and preserves QR payload/pattern
+when mutable delivery or label data changes.

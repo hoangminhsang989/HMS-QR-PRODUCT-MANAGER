@@ -30,7 +30,6 @@ class TrackingCodeService:
     def tracking_code(self,sequence:int,year:int): return f"ITEM-{year}-{sequence:06d}"
     def internal_order_code(self,sequence:int,year:int): return f"ORD-{year}-{sequence:06d}"
     def qr_public_id(self): return secrets.token_urlsafe(24)
-    def payload(self,public_id): return f"HMSQR:v1:{public_id}"
 
 @dataclass(frozen=True,slots=True)
 class Operator:

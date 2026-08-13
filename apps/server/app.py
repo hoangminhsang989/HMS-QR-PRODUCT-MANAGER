@@ -147,7 +147,7 @@ def build_tracking_api(service:TrackingService|None=None)->FastAPI:
     api=FastAPI(title="HMS QR Tracking",version="3.0")
     if service is None:
         cfg=load_config();repo=Stage2Repository(cfg.database_url);repo.create_schema();service=TrackingService(TrackingRepository(repo.engine))
-        for order,(code,name) in enumerate((("TURN","TIỆN"),("MILL","PHAY"),("WIRE","CẮT DÂY"),("GRIND","MÀI"),("HEAT","NHIỆT LUYỆN"),("OTHER","KHÁC")),1):service.repo.add_machining_type(MachiningType(uuid4(),code,name,True,order))
+    for order,(code,name) in enumerate((("BLANK","TẠO PHÔI"),("TURN","TIỆN"),("MILL","PHAY"),("WIRE","CẮT DÂY"),("GRIND","MÀI"),("HEAT","NHIỆT LUYỆN"),("OTHER","KHÁC")),1):service.repo.add_machining_type(MachiningType(uuid4(),code,name,True,order))
     @api.exception_handler(TrackingError)
     async def tracking_validation(_,exc):return _error(422,"TRACKING_VALIDATION_ERROR",str(exc))
     @api.exception_handler(LookupError)
@@ -161,18 +161,20 @@ def build_tracking_api(service:TrackingService|None=None)->FastAPI:
     @api.get("/api/v1/tracking-items/{identifier}")
     def get_tracking(identifier:str):return dump(service.repo.get_item(identifier))
     @api.post("/api/v1/tracking-items/{identifier}/qr")
-    def issue_qr(identifier:str,x_actor:Annotated[str|None,Header()]=None):return dump(service.issue_qr(identifier,x_actor or "development-user"))
+    def issue_qr(identifier:str,x_actor:Annotated[str|None,Header()]=None):
+        item=service.issue_qr(identifier,x_actor or "development-user");return {**dump(item),"payload":service.qr_payload(item.internal_id)}
     @api.get("/api/v1/tracking-items/{identifier}/qr")
     def get_qr(identifier:str):
-        item=service.repo.get_item(identifier);return {"qr_public_id":item.qr_public_id,"qr_status":item.qr_status,"payload":service.codes.payload(item.qr_public_id) if item.qr_public_id else None}
+        item=service.repo.get_item(identifier);return {"qr_public_id":item.qr_public_id,"qr_status":item.qr_status,"payload":service.qr_payload(item.internal_id) if item.qr_public_id else None}
     @api.post("/api/v1/tracking-items/{identifier}/qr/reissue")
-    def reissue_qr(identifier:str,x_actor:Annotated[str|None,Header()]=None):return dump(service.reissue_qr(identifier,x_actor or "development-user"))
+    def reissue_qr(identifier:str,x_actor:Annotated[str|None,Header()]=None):
+        item=service.reissue_qr(identifier,x_actor or "development-user");return {**dump(item),"payload":service.qr_payload(item.internal_id)}
     @api.patch("/api/v1/tracking-items/{identifier}/delivery-date")
     def change_date(identifier:str,payload:DateChange,x_actor:Annotated[str|None,Header()]=None):return dump(service.change_date(identifier,payload.delivery_date,x_actor or "development-user",payload.reason))
     @api.post("/api/v1/tracking-items/{identifier}/new-order")
     def new_order(identifier:str,payload:NewOrder,x_actor:Annotated[str|None,Header()]=None):return dump(service.create_new_order_from_item(identifier,new_po_number=payload.po_number,delivery_date=payload.delivery_date,actor=x_actor or "development-user"))
-    @api.get("/api/v1/scan/{qr_public_id}")
-    def scan(qr_public_id:str):return service.scan(qr_public_id)
+    @api.get("/api/v1/scan")
+    def scan(payload:str=Query(...)):return service.scan(payload)
     @api.post("/api/v1/operators")
     def operator(payload:OperatorCreate):return dump(service.repo.add_operator(Operator.create(payload.display_name)))
     @api.get("/api/v1/operators")
