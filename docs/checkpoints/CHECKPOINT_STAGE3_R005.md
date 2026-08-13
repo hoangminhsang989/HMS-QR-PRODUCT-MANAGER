@@ -10,8 +10,9 @@ Revision: R005
 - Main baseline HEAD/tree: `2aed6e945543d2d190bf932a30330032608f95e2` /
   `f956fc07e4f5503b7624c808ff18b22e305255ae`
 - Candidate branch: `stage3-tracking-qr-process-reporting`
-- Candidate HEAD: `ff5ca53bc14478a3b4a1cd9afa9adf255be6deaf`
-- Candidate tree: `18ed0196cf0b1d156d0812bcfad8a139258cd442`
+- Candidate implementation HEAD: `ff5ca53bc14478a3b4a1cd9afa9adf255be6deaf`
+- Candidate implementation tree: `18ed0196cf0b1d156d0812bcfad8a139258cd442`
+- Final candidate tip after checkpoint metadata: recorded by the final commit
 - Main: unchanged; R005 does not authorize integration
 
 ## Delivered

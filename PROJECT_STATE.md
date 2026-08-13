@@ -4,7 +4,7 @@ Current Stage: STAGE_3_TRACKING_QR_PROCESS_REPORTING
 Current WP: Order Tracking Identity + QR + Mobile Process Reporting
 Current Revision: R005
 Current Branch: main
-Current HEAD: `ff5ca53bc14478a3b4a1cd9afa9adf255be6deaf` (Stage 3 candidate; baseline `2aed6e945543d2d190bf932a30330032608f95e2`)
+Current HEAD: Stage 3 candidate branch tip after checkpoint metadata (baseline `2aed6e945543d2d190bf932a30330032608f95e2`)
 Last Approved Baseline: Stage 0 R001 foundation
 Current Verdict: PASS_STAGE3_TRACKING_QR_PROCESS_REPORTING_R005
 
