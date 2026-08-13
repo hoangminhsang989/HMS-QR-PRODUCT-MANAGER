@@ -30,3 +30,9 @@ Installation/startup/MCP remain pending the required user confirmation immediate
 - Codex config contains no Open Design MCP entry and Codex-side MCP resources/templates remain empty.
 
 Therefore `CODEX_MCP_STATUS=BLOCKED_SPAWN_EPERM` and `OPEN_DESIGN_MCP_READ_TEST=NOT_RUN`. The WindowsApps ACL, packaged Codex executable, and Codex installation were not altered. Prototype and visual-evidence creation did not start because the authority gates them after real MCP PASS.
+
+## R007B2 Codex Desktop recovery
+
+Open Design Desktop Settings → Open Design MCP → Codex generated an exact client configuration. `OPEN_DESIGN_MCP_TRANSPORT=STDIO`. The generated command is the installed `Open Design.exe`; its arguments are the packaged `daemon-cli.mjs` plus `mcp`; generated environment values specify the release-stable data root, named-pipe daemon IPC path, headless bootstrap command/args, and `ELECTRON_RUN_AS_NODE=1`. Sanitized byte-for-byte evidence is stored outside the repository under `F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST\stage5\r007b2\open-design-mcp-generated-config.txt`.
+
+The supported ChatGPT Desktop MCP Add Server form can represent this STDIO configuration, so direct `config.toml` fallback is not authorized. Saving/restarting ChatGPT Desktop is pending user action because the automation boundary prohibits controlling the ChatGPT/Codex app UI. `CODEX_MCP_RECOGNIZED`, initialization, and real MCP read remain pending; no PASS claim is made.
