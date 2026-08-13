@@ -17,8 +17,8 @@ Revision: R004A
 - Resulting main HEAD/tree: `d7074996588ac78d70b06c5aaf6145538c1d99f5` /
   `56c490f1e890e7c5fd47cf5c22685f360b51c0c9`
 - Main working tree: clean
-- Final metadata-only checkpoint tip: `aea708cefcf0648c5dbd90a785a82e6c127df7a9` /
-  `4257ade4a05236c5db4b58c1ee4ad702e81ca192`
+- Final metadata-only checkpoint identity is the clean main branch tip reported
+  in the R004A final handoff.
 
 ## Review and remediation
 

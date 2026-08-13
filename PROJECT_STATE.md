@@ -4,7 +4,7 @@ Current Stage: Stage 2 complete
 Current WP: Customer + PO + Production Run Integration
 Current Revision: R004A
 Current Branch: main
-Current HEAD: `aea708cefcf0648c5dbd90a785a82e6c127df7a9` (R004A checkpoint tip)
+Current HEAD: main branch tip after final R004A metadata-only checkpoint recording
 Last Approved Baseline: Stage 0 R001 foundation
 Current Verdict: PASS_STAGE2_CUSTOMER_PO_PRODUCTION_RUN_R004A_INTEGRATED
 
