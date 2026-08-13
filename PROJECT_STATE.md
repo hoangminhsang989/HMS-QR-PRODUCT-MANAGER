@@ -4,7 +4,7 @@ Current Stage: STAGE_0_PROJECT_BOOTSTRAP_AND_AUTHORITY
 Current WP: WP0.1-WP0.6
 Current Revision: R001
 Current Branch: main
-Current HEAD: see checkpoint/commit evidence
+Current HEAD: c7023fec2db677c8b41610f4ab4f143631213810
 Last Approved Baseline: Stage 0 R001 foundation
 Current Verdict: PASS_STAGE0_FOUNDATION_R001
 

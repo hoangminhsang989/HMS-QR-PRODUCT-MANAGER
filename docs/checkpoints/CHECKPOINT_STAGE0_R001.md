@@ -5,8 +5,8 @@ Stage: STAGE_0_PROJECT_BOOTSTRAP_AND_AUTHORITY
 WP: WP0.1-WP0.6
 Revision: R001
 Branch: main
-HEAD: recorded after foundation commit
-Tree: recorded after foundation commit
+HEAD: c7023fec2db677c8b41610f4ab4f143631213810
+Tree: d03f36bef2f60575ffd79c09d9723b3a54f2998c
 Parent: UNBORN_REPOSITORY
 
 ## Objective
