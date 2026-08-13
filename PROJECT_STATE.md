@@ -1,24 +1,34 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_3_TRACKING_QR_PROCESS_REPORTING
-Current WP: Order Tracking Identity + QR + Mobile Process Reporting
-Current Revision: R005
+Current WP: R005A QR remediation + process catalog correction + label foundation
+Current Revision: R005A
 Current Branch: main
-Current HEAD: Stage 3 candidate branch tip after checkpoint metadata (baseline `2aed6e945543d2d190bf932a30330032608f95e2`)
-Last Approved Baseline: Stage 0 R001 foundation
-Current Verdict: PASS_STAGE3_TRACKING_QR_PROCESS_REPORTING_R005
+Current Verdict: PASS_STAGE3_TRACKING_QR_PROCESS_REPORTING_R005A_INTEGRATED
 
-Overall progress: Stage 0 foundation, Stage 1 Product Master integration, and Stage 2 Customer/PO/Production Run candidate complete.
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; R005 PASS.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 100% PASS.
 
-Active blockers: PostgreSQL production integration, exact reference workbook fidelity, Machine A deployment, NAS write pipeline, mobile QR, QC, and full authentication remain outside completed scope.
+Latest completed work: deterministic four-field business QR payload, live scan
+lookup by tracking code, delivery-date-stable QR, new-order QR identity, internal
+issuance audit ID, corrected machining catalog, per-user preference, per-item
+and per-process attempt state, process reporting, mobile/desktop coverage, and a
+separate printable-label service foundation.
 
-Latest completed work: Tracking/QR/operator/process domain, persistence, APIs, desktop/mobile web, QR generation, browser verification and full tests.
-Next exact action: Obtain independent Stage 3 review/integration authority; do not merge `main` under R005.
+Known gaps:
 
-Latest authority: docs/authorities/AUTHORITY_STAGE3_R005.md
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE3_R005.md
-Latest handoff: docs/handoffs/HANDOFF_STAGE0_TO_STAGE1.md
+```text
+POSTGRESQL_PRODUCTION_INTEGRATION_NOT_YET_EXECUTED
+TEMPLATE_FIDELITY_PENDING_REFERENCE_FILE
+NAS_WRITE_PIPELINE_NOT_YET_EXECUTED
+MACHINE_A_PRODUCTION_DEPLOYMENT_NOT_YET_EXECUTED
+MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
+QC_WORKFLOW_NOT_YET_IMPLEMENTED
+PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
+```
 
-Test workspace:
-F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
+Next exact action: obtain separate authority for QC + NG return + packing +
+delivery status. Do not implement it as part of R005A.
+
+Latest authority: docs/authorities/AUTHORITY_STAGE3_R005A.md
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE3_R005A_INTEGRATION.md
+Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
