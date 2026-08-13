@@ -11,8 +11,9 @@ Revision: R002
 - Branch: `stage1-product-master`
 - Baseline HEAD: `45496d92e059d751741b896d4213123e45c7fdc1`
 - Baseline tree: `85e5ce5def6427766f672e1fbcae4fd9633d5b2e`
-- Candidate HEAD: `505b39827a563a3b3b2e298f90c61de5c6d37276`
-- Candidate tree: `37ed9319b459ff3f83660b8216f86840891483fa`
+- Candidate implementation HEAD: `fdb1b77ed921bf1d45806c054c5269aecde92339`
+- Candidate implementation tree: `f294cce8a5dbfddf8d5ba906d0d467560e8151cc`
+- Metadata-only checkpoint commits after implementation: `505b39827a563a3b3b2e298f90c61de5c6d37276`, `7ec6f1d02c008df9a27137e2ee8e3993fcc6a63d`, plus the final state-record commit at the branch tip.
 - Parent: baseline HEAD above
 - Working tree: clean after checkpoint commit; not merged to `main`
 
