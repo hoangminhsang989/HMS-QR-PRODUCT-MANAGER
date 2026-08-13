@@ -18,3 +18,12 @@ PostgreSQL remains the production target. Product attachments use a
 `StorageReference` behind a server-owned `StorageService`, so clients never
 receive a NAS path. Excel import/export is isolated in `packages/excel` and is
 usable by the desktop layer without placing workbook logic in UI widgets.
+
+## Stage 2 Customer + PO + Production Run
+
+R004 adds normalized SQLAlchemy 2.x persistence for Customer, PurchaseOrder,
+PurchaseOrderLine, DeliveryScheduleEntry, and ProductionRun. Product remains
+the master reference; PO Line owns ordered quantity and Production Run owns
+planned/completed manufacturing quantities. SQLite is DEV/test only, Alembic
+provides the baseline migration shape, and PostgreSQL on Machine A remains the
+production target.

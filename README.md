@@ -19,6 +19,11 @@ python -m apps.desktop
 uvicorn apps.server.app:app --reload
 ```
 
+Stage 2 adds the Customer → PO → PO Line → Delivery Schedule / Production Run
+vertical slice with SQLAlchemy/Alembic architecture, generic order export, and
+compact desktop navigation tabs. QR issuance, mobile scan, QC, NAS writes, and
+Machine A deployment remain outside R004.
+
 ## Test workspace
 
 All test/runtime artifacts belong in:
