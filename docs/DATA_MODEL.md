@@ -29,3 +29,15 @@ references PO Line/Product and owns planned/completed quantities with
 `0 <= completed_quantity <= planned_quantity`; aggregate planned quantities are
 blocked from exceeding ordered quantity. Future QC/delivery quantities remain
 separate concepts.
+
+## Stage 3 tracking identities
+
+Product code identifies Product Master; customer PO number identifies the
+customer order document; optional `internal_order_code` identifies an internal
+order occurrence; `tracking_code` identifies one ordered/tracked item; and
+`qr_public_id` is an opaque public resolver. Delivery-date changes preserve
+tracking/QR identity. Creating a new order occurrence creates a new order,
+tracking code, and QR public ID while reusing the Product master reference.
+Attempt display state is keyed by `(tracking_item_id, machining_type_id)`, not
+by user or Product. Process reports are append-only events with idempotency UUID,
+actor snapshot, optional attempt number, completion kind, and revision chain.

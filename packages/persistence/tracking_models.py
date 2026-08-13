@@ -1,0 +1,22 @@
+from __future__ import annotations
+from datetime import date,datetime
+from decimal import Decimal
+from sqlalchemy import Boolean,Date,DateTime,ForeignKey,Integer,Numeric,String,Text,UniqueConstraint
+from sqlalchemy.orm import Mapped,mapped_column
+from .sqlalchemy_models import Base
+
+class TrackingItemORM(Base):
+    __tablename__="order_tracking_items"
+    internal_id:Mapped[str]=mapped_column(String(36),primary_key=True); tracking_code:Mapped[str]=mapped_column(String(64),unique=True); purchase_order_id:Mapped[str]=mapped_column(ForeignKey("purchase_orders.internal_id")); purchase_order_line_id:Mapped[str]=mapped_column(ForeignKey("purchase_order_lines.internal_id")); product_id:Mapped[str]=mapped_column(ForeignKey("products.internal_id")); customer_id:Mapped[str]=mapped_column(ForeignKey("customers.internal_id")); quantity:Mapped[Decimal]=mapped_column(Numeric(18,4)); unit:Mapped[str]=mapped_column(String(32)); delivery_date:Mapped[date]=mapped_column(Date); status:Mapped[str]=mapped_column(String(32)); qr_public_id:Mapped[str|None]=mapped_column(String(64),unique=True); qr_status:Mapped[str|None]=mapped_column(String(16)); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True)); updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True)); created_by:Mapped[str]=mapped_column(String(128)); updated_by:Mapped[str]=mapped_column(String(128))
+class OperatorORM(Base):
+    __tablename__="operators"; internal_id:Mapped[str]=mapped_column(String(36),primary_key=True); display_name:Mapped[str]=mapped_column(String(255)); active:Mapped[bool]=mapped_column(Boolean); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True)); updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+class MachiningTypeORM(Base):
+    __tablename__="machining_types"; internal_id:Mapped[str]=mapped_column(String(36),primary_key=True); code:Mapped[str]=mapped_column(String(64),unique=True); display_name:Mapped[str]=mapped_column(String(255)); active:Mapped[bool]=mapped_column(Boolean); display_order:Mapped[int]=mapped_column(Integer)
+class UserPreferenceORM(Base):
+    __tablename__="user_preferences"; user_id:Mapped[str]=mapped_column(ForeignKey("operators.internal_id"),primary_key=True); machining_type_id:Mapped[str]=mapped_column(ForeignKey("machining_types.internal_id")); updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+class AttemptDisplayORM(Base):
+    __tablename__="attempt_display_state"; tracking_item_id:Mapped[str]=mapped_column(ForeignKey("order_tracking_items.internal_id"),primary_key=True); machining_type_id:Mapped[str]=mapped_column(ForeignKey("machining_types.internal_id"),primary_key=True); max_visible_attempt:Mapped[int]=mapped_column(Integer); updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True)); updated_by:Mapped[str|None]=mapped_column(String(36))
+class ProcessReportORM(Base):
+    __tablename__="process_report_events"; internal_id:Mapped[str]=mapped_column(String(36),primary_key=True); request_id:Mapped[str]=mapped_column(String(36),unique=True); tracking_item_id:Mapped[str]=mapped_column(ForeignKey("order_tracking_items.internal_id")); machining_type_id:Mapped[str]=mapped_column(ForeignKey("machining_types.internal_id")); kind:Mapped[str]=mapped_column(String(32)); attempt_number:Mapped[int|None]=mapped_column(Integer); quantity:Mapped[Decimal]=mapped_column(Numeric(18,4)); notes:Mapped[str|None]=mapped_column(Text); actor_user_id:Mapped[str]=mapped_column(ForeignKey("operators.internal_id")); actor_display_name_snapshot:Mapped[str]=mapped_column(String(255)); server_timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True)); client_timestamp:Mapped[datetime|None]=mapped_column(DateTime(timezone=True)); device_id:Mapped[str|None]=mapped_column(String(255)); revision:Mapped[int]=mapped_column(Integer); supersedes_id:Mapped[str|None]=mapped_column(ForeignKey("process_report_events.internal_id")); status:Mapped[str]=mapped_column(String(32))
+class TrackingAuditORM(Base):
+    __tablename__="tracking_audit_events"; internal_id:Mapped[str]=mapped_column(String(36),primary_key=True); tracking_item_id:Mapped[str]=mapped_column(ForeignKey("order_tracking_items.internal_id")); event_type:Mapped[str]=mapped_column(String(64)); old_value:Mapped[str|None]=mapped_column(Text); new_value:Mapped[str|None]=mapped_column(Text); actor:Mapped[str]=mapped_column(String(128)); reason:Mapped[str|None]=mapped_column(Text); server_timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True))

@@ -6,9 +6,10 @@ from pathlib import Path
 from datetime import date
 from decimal import Decimal
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.responses import HTMLResponse
 
 from config.environments import load_config
 from packages.application.product_service import ProductService
@@ -20,6 +21,11 @@ from packages.persistence.sqlite_product_repository import SQLiteProductReposito
 from packages.application.stage2_service import Stage2Service
 from packages.contracts.stage2 import CustomerPatch, CustomerPayload, DeliveryData, POData, POLineData, RunData, dump
 from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.application.tracking_service import TrackingService
+from packages.contracts.tracking import AttemptExpand,DateChange,NewOrder,OperatorCreate,PreferenceSet,ReportRevision,ReportSubmit,TrackingCreate
+from packages.domain.tracking import MachiningType,Operator,TrackingError
+from packages.persistence.tracking_repository import TrackingRepository
+from apps.mobile.web import mobile_page
 
 APP_NAME = "hms-qr-server"
 
@@ -137,6 +143,63 @@ def build_stage2_api(service: Stage2Service | None = None) -> FastAPI:
         return dump(service.update_run(updated, ordered_quantity=ordered_quantity))
     return api
 
+def build_tracking_api(service:TrackingService|None=None)->FastAPI:
+    api=FastAPI(title="HMS QR Tracking",version="3.0")
+    if service is None:
+        cfg=load_config();repo=Stage2Repository(cfg.database_url);repo.create_schema();service=TrackingService(TrackingRepository(repo.engine))
+        for order,(code,name) in enumerate((("TURN","TIỆN"),("MILL","PHAY"),("WIRE","CẮT DÂY"),("GRIND","MÀI"),("HEAT","NHIỆT LUYỆN"),("OTHER","KHÁC")),1):service.repo.add_machining_type(MachiningType(uuid4(),code,name,True,order))
+    @api.exception_handler(TrackingError)
+    async def tracking_validation(_,exc):return _error(422,"TRACKING_VALIDATION_ERROR",str(exc))
+    @api.exception_handler(LookupError)
+    async def tracking_missing(_,exc):return _error(404,"TRACKING_NOT_FOUND",str(exc))
+    @api.get("/mobile",response_class=HTMLResponse)
+    def mobile():return mobile_page()
+    @api.post("/api/v1/tracking-items")
+    def create_tracking(payload:TrackingCreate,x_actor:Annotated[str|None,Header()]=None):return dump(service.create_item(actor=x_actor or "development-user",**payload.model_dump()))
+    @api.get("/api/v1/tracking-items")
+    def list_tracking(search:str|None=None):return {"items":[dump(x) for x in service.repo.list_items(search)]}
+    @api.get("/api/v1/tracking-items/{identifier}")
+    def get_tracking(identifier:str):return dump(service.repo.get_item(identifier))
+    @api.post("/api/v1/tracking-items/{identifier}/qr")
+    def issue_qr(identifier:str,x_actor:Annotated[str|None,Header()]=None):return dump(service.issue_qr(identifier,x_actor or "development-user"))
+    @api.get("/api/v1/tracking-items/{identifier}/qr")
+    def get_qr(identifier:str):
+        item=service.repo.get_item(identifier);return {"qr_public_id":item.qr_public_id,"qr_status":item.qr_status,"payload":service.codes.payload(item.qr_public_id) if item.qr_public_id else None}
+    @api.post("/api/v1/tracking-items/{identifier}/qr/reissue")
+    def reissue_qr(identifier:str,x_actor:Annotated[str|None,Header()]=None):return dump(service.reissue_qr(identifier,x_actor or "development-user"))
+    @api.patch("/api/v1/tracking-items/{identifier}/delivery-date")
+    def change_date(identifier:str,payload:DateChange,x_actor:Annotated[str|None,Header()]=None):return dump(service.change_date(identifier,payload.delivery_date,x_actor or "development-user",payload.reason))
+    @api.post("/api/v1/tracking-items/{identifier}/new-order")
+    def new_order(identifier:str,payload:NewOrder,x_actor:Annotated[str|None,Header()]=None):return dump(service.create_new_order_from_item(identifier,new_po_number=payload.po_number,delivery_date=payload.delivery_date,actor=x_actor or "development-user"))
+    @api.get("/api/v1/scan/{qr_public_id}")
+    def scan(qr_public_id:str):return service.scan(qr_public_id)
+    @api.post("/api/v1/operators")
+    def operator(payload:OperatorCreate):return dump(service.repo.add_operator(Operator.create(payload.display_name)))
+    @api.get("/api/v1/operators")
+    def operators():return {"items":[{"internal_id":x.internal_id,"display_name":x.display_name} for x in service.repo.list_operators()]}
+    @api.post("/api/v1/machining-types")
+    def machining_type(code:str=Query(...),display_name:str=Query(...),display_order:int=Query(0)):
+        return dump(service.repo.add_machining_type(MachiningType(uuid4(),code.upper(),display_name,True,display_order)))
+    @api.get("/api/v1/machining-types")
+    def machining_types():return {"items":[{"internal_id":x.internal_id,"code":x.code,"display_name":x.display_name} for x in service.repo.list_machining_types()]}
+    @api.get("/api/v1/operators/{user_id}/preference")
+    def get_pref(user_id:UUID):return {"machining_type_id":service.repo.get_preference(user_id)}
+    @api.put("/api/v1/operators/{user_id}/preference")
+    def set_pref(user_id:UUID,payload:PreferenceSet):service.repo.set_preference(user_id,payload.machining_type_id);return {"machining_type_id":payload.machining_type_id}
+    @api.get("/api/v1/tracking-items/{item_id}/attempt-display")
+    def attempt_display(item_id:UUID,machining_type_id:UUID=Query(...)):return {"max_visible_attempt":service.repo.get_attempt_max(item_id,machining_type_id)}
+    @api.post("/api/v1/tracking-items/{item_id}/attempt-display/expand")
+    def expand(item_id:UUID,payload:AttemptExpand):return {"max_visible_attempt":service.repo.expand_attempt(item_id,payload.machining_type_id,payload.new_max,payload.user_id)}
+    @api.post("/api/v1/process-reports")
+    def report(payload:ReportSubmit):return dump(service.submit_report(**payload.model_dump()))
+    @api.get("/api/v1/tracking-items/{item_id}/process-reports")
+    def history(item_id:UUID):return {"items":[dump(x) for x in service.repo.history(item_id)]}
+    @api.post("/api/v1/process-reports/{event_id}/revisions")
+    def revise(event_id:UUID,payload:ReportRevision):
+        event=service.repo.get_report(event_id)
+        return dump(service.revise_report(event,**payload.model_dump()))
+    return api
+
 
 def _error(code: int, error_code: str, message: str, details: dict[str, str] | None = None):
     from fastapi.responses import JSONResponse
@@ -144,5 +207,7 @@ def _error(code: int, error_code: str, message: str, details: dict[str, str] | N
 
 
 app = build_api()
+tracking_api = build_tracking_api()
+app.mount("/tracking", tracking_api)
 
-__all__ = ["APP_NAME", "app", "build_api", "create_app"]
+__all__ = ["APP_NAME", "app", "build_api", "build_tracking_api", "create_app", "tracking_api"]

@@ -51,3 +51,21 @@ Status: Accepted for R004
 
 Decision: Represent vendor delivery schedule as repeated DeliveryScheduleEntry
 rows with date, quantity, status, and notes rather than one flattened text field.
+
+## ADR-010 — Separate Product, Order, Tracking, and QR identities
+
+Status: Accepted for R005
+
+Decision: Product master code, customer PO/internal order code, Tracking Item
+code, and opaque QR public ID are separate identities. Changing delivery date
+preserves Tracking/QR identity; creating a new order creates new Tracking/QR
+identities.
+
+## ADR-011 — No routing engine required for mobile reporting
+
+Status: Accepted for R005
+
+Decision: Mobile reporting selects a configurable machining type, shows dynamic
+attempt buttons, and writes process report events. Attempt expansion is keyed
+by Tracking Item + machining type. Reports use idempotent append/revision
+semantics; completion is a separate event, not a final routing step.

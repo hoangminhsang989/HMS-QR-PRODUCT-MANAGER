@@ -27,3 +27,13 @@ the master reference; PO Line owns ordered quantity and Production Run owns
 planned/completed manufacturing quantities. SQLite is DEV/test only, Alembic
 provides the baseline migration shape, and PostgreSQL on Machine A remains the
 production target.
+
+## Stage 3 tracking, QR, and process reporting
+
+R005 deliberately does not introduce a routing engine. It adds an
+OrderTrackingItem between PO Line and QR, an opaque/versioned QR resolver,
+server-owned operator preferences, a configurable MachiningType catalog,
+per-tracking-item/per-machining-type attempt display state, and immutable
+process report events/revisions. The mobile-first web client resolves live data
+from the server; camera scanning requires a secure browser context and manual
+paste remains a DEV fallback.

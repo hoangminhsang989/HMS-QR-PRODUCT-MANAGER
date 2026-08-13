@@ -2,6 +2,7 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from packages.persistence.sqlalchemy_models import Base
+from packages.persistence import tracking_models as _tracking_models  # noqa: F401
 
 config=context.config
 target_metadata=Base.metadata

@@ -1,0 +1,9 @@
+from uuid import uuid4
+from packages.domain.tracking import MachiningType,Operator,ReportKind,ProcessReportEvent,utc_now
+
+def test_preferences_attempt_state_idempotency_completion_and_revision(tracking_env):
+    service,item=tracking_env;repo=service.repo;u1=repo.add_operator(Operator.create("A"));u2=repo.add_operator(Operator.create("B"));m1=repo.add_machining_type(MachiningType(uuid4(),"MILL","PHAY",True,1));m2=repo.add_machining_type(MachiningType(uuid4(),"TURN","TIỆN",True,2));repo.set_preference(u1.internal_id,m1.internal_id);repo.set_preference(u2.internal_id,m2.internal_id);assert repo.get_preference(u1.internal_id)==m1.internal_id and repo.get_preference(u2.internal_id)==m2.internal_id
+    repo.expand_attempt(item.internal_id,m1.internal_id,9,u1.internal_id);assert repo.get_attempt_max(item.internal_id,m1.internal_id)==9 and repo.get_attempt_max(item.internal_id,m2.internal_id)==3
+    request=uuid4();data=dict(request_id=request,tracking_item_id=item.internal_id,machining_type_id=m1.internal_id,kind=ReportKind.ATTEMPT,attempt_number=2,quantity=10,actor_user_id=u1.internal_id,actor_display_name="A");first=service.submit_report(**data);second=service.submit_report(**data);assert first.internal_id==second.internal_id
+    completed=service.submit_report(request_id=uuid4(),tracking_item_id=item.internal_id,machining_type_id=m1.internal_id,kind=ReportKind.PROCESS_COMPLETED,quantity=100,actor_user_id=u1.internal_id,actor_display_name="A");assert completed.attempt_number is None and len(repo.history(item.internal_id))==2
+    revised=service.revise_report(first,request_id=uuid4(),quantity=12,actor_user_id=u1.internal_id,actor_display_name="A",reason="Nhập nhầm");assert revised.supersedes_id==first.internal_id and revised.revision==2 and len(repo.history(item.internal_id))==3

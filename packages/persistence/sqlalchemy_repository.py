@@ -42,7 +42,7 @@ class Stage2Repository:
         try:
             with self.Session.begin() as s:
                 if not s.get(CustomerORM,str(obj.customer_id)): raise LookupError("customer not found")
-                s.add(PurchaseOrderORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}))
+                s.add(PurchaseOrderORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}, internal_order_code=None))
         except IntegrityError as e: raise ValueError("po_number đã tồn tại.") from e
         return obj
     def list_pos(self, customer_id=None, status=None):
@@ -53,7 +53,7 @@ class Stage2Repository:
             return tuple(self._po(x) for x in s.scalars(q.order_by(PurchaseOrderORM.po_date.desc())).all())
     def update_po(self, obj):
         with self.Session.begin() as s:
-            s.merge(PurchaseOrderORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}))
+            s.merge(PurchaseOrderORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}, internal_order_code=None))
         return obj
     def get_po(self, identifier):
         with self.Session() as s:

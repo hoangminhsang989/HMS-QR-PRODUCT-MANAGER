@@ -24,6 +24,12 @@ vertical slice with SQLAlchemy/Alembic architecture, generic order export, and
 compact desktop navigation tabs. QR issuance, mobile scan, QC, NAS writes, and
 Machine A deployment remain outside R004.
 
+Stage 3 adds Order Tracking Items, opaque QR issuance/live scan resolution,
+operator and machining preferences, dynamic attempt reporting, report revision
+history, a compact desktop tracking window, and a responsive mobile-first web
+page at `/tracking/mobile`. Real camera verification still requires HTTPS and
+physical iPhone/Android testing.
+
 ## Test workspace
 
 All test/runtime artifacts belong in:
