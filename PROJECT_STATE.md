@@ -8,7 +8,7 @@ Current Verdict: CANDIDATE_STAGE5_UI_DESIGN_SYSTEM_OPEN_DESIGN_R007
 
 Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 UI implementation in progress.
 
-Design system: canonical dark industrial tokens in `apps/design_tokens.py`; Open Design 0.19.0 installed and startup smoke passed. R007B2 recovered the exact Open Design-generated STDIO configuration; ChatGPT Desktop Add Server/save/restart is pending user UI action, with recognition/read test still pending.
+Design system: canonical dark industrial tokens in `apps/design_tokens.py`; Open Design 0.19.0 installed and startup smoke passed. Exact generated STDIO config is installed and TOML/value validation passed; ChatGPT Desktop restart is required before MCP recognition/read testing.
 Desktop redesign: shared PySide6 token theme applied to Product Master; Tracking theme integration pending final normalization.
 Mobile redesign: existing operational flow retained; shared token authority documented for CSS refactor.
 Visual evidence: pending fresh captures under `F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST`.
