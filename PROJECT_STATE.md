@@ -1,23 +1,23 @@
 # HMS QR Product Manager — Current State
 
-Current Stage: STAGE_2_CUSTOMER_PO_PRODUCTION_RUN
-Current WP: Customer + PO + Production Run vertical slice
-Current Revision: R004
+Current Stage: Stage 2 complete
+Current WP: Customer + PO + Production Run Integration
+Current Revision: R004A
 Current Branch: main
-Current HEAD: Stage 2 candidate branch tip after checkpoint metadata (baseline `bc9e8f0aecd2a2fd1644937365d6b088794ef77c`)
+Current HEAD: `d7074996588ac78d70b06c5aaf6145538c1d99f5`
 Last Approved Baseline: Stage 0 R001 foundation
-Current Verdict: PASS_STAGE2_CUSTOMER_PO_PRODUCTION_RUN_R004
+Current Verdict: PASS_STAGE2_CUSTOMER_PO_PRODUCTION_RUN_R004A_INTEGRATED
 
 Overall progress: Stage 0 foundation, Stage 1 Product Master integration, and Stage 2 Customer/PO/Production Run candidate complete.
-Stage progress: WP0.1-WP0.6 PASS; Product Master R002/R003A PASS; R004 PASS.
+Stage progress: WP0.1-WP0.6 PASS; Product Master R002/R003A PASS; R004/R004A PASS.
 
-Active blockers: PostgreSQL production integration, exact reference workbook fidelity, Machine A deployment, NAS write pipeline, and full authentication remain outside R004 scope.
+Active blockers: PostgreSQL production integration, exact reference workbook fidelity, Machine A deployment, NAS write pipeline, mobile QR, QC, and full authentication remain outside completed scope.
 
-Latest completed work: Customer/PO/PO Line/Delivery Schedule/Production Run domain, SQLAlchemy/Alembic SQLite architecture, API, desktop tabs, generic export, docs, and full tests.
-Next exact action: Obtain independent Stage 2 integration review authority; do not merge `main` under R004.
+Latest completed work: R004A independent review, warning audit, bounded remediation, fast-forward integration into main, and post-integration verification.
+Next exact action: STAGE3_ROUTING_OPERATIONS_QR_ISSUANCE_R005
 
-Latest authority: docs/authorities/AUTHORITY_STAGE2_R004.md
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE2_R004.md
+Latest authority: docs/authorities/AUTHORITY_STAGE2_R004A.md
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE2_R004A_INTEGRATION.md
 Latest handoff: docs/handoffs/HANDOFF_STAGE0_TO_STAGE1.md
 
 Test workspace:
