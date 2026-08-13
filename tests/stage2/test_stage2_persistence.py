@@ -21,4 +21,25 @@ def test_sqlalchemy_sqlite_relationships_and_overallocation(tmp_path: Path):
         svc.add_delivery(po_line_id=line.internal_id,ordered_quantity=100,planned_date=date(2026,8,21),planned_quantity=50)
     except Stage2ValidationError: pass
     else: raise AssertionError("delivery overallocation accepted")
+    delivery = svc.list_deliveries(line.internal_id)[0]
+    try:
+        svc.update_delivery(__import__('dataclasses').replace(delivery, planned_quantity=110), ordered_quantity=100)
+    except Stage2ValidationError:
+        pass
+    else:
+        raise AssertionError("delivery update over-allocation accepted")
     assert len(svc.list_lines(po.internal_id)) == 1 and len(svc.list_runs(po_line_id=line.internal_id)) == 1
+    run = svc.list_runs(po_line_id=line.internal_id)[0]
+    try:
+        svc.update_run(run.update(actor="u", planned_quantity=110), ordered_quantity=100)
+    except Stage2ValidationError:
+        pass
+    else:
+        raise AssertionError("run update over-allocation accepted")
+    wrong_product = "00000000-0000-0000-0000-000000000002"
+    try:
+        svc.create_run(actor="u", po_line_id=line.internal_id, product_id=wrong_product, ordered_quantity=100, planned_quantity=1)
+    except Stage2ValidationError:
+        pass
+    else:
+        raise AssertionError("wrong Product/PO Line relation accepted")

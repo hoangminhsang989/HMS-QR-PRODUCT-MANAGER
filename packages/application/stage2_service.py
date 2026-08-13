@@ -20,7 +20,9 @@ class Stage2Service:
     def list_lines(self, po_id): return self.repository.list_lines(po_id)
     def add_delivery(self, *, po_line_id: UUID, ordered_quantity, **data): return self.repository.add_delivery(DeliveryScheduleEntry.create(po_line_id=po_line_id,**data), quantity(ordered_quantity,"ordered_quantity"))
     def list_deliveries(self, po_line_id): return self.repository.list_deliveries(po_line_id)
+    def update_delivery(self, entry: DeliveryScheduleEntry, *, ordered_quantity): return self.repository.update_delivery(entry, quantity(ordered_quantity,"ordered_quantity"))
     def create_run(self, *, actor: str, po_line_id: UUID, ordered_quantity, product_id: UUID, run_code: str|None=None, **data):
         code = run_code or self.codes.run_code(len(self.repository.list_runs())+1, date.today().year)
         return self.repository.add_run(ProductionRun.create(actor=actor,po_line_id=po_line_id,product_id=product_id,run_code=code,**data), quantity(ordered_quantity,"ordered_quantity"))
     def list_runs(self, **kwargs): return self.repository.list_runs(**kwargs)
+    def update_run(self, run: ProductionRun, *, ordered_quantity): return self.repository.update_run(run, quantity(ordered_quantity,"ordered_quantity"))

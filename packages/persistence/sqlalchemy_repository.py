@@ -16,9 +16,9 @@ class Stage2Repository:
         self.Session = sessionmaker(self.engine, expire_on_commit=False)
     def create_schema(self): Base.metadata.create_all(self.engine)
     def add_customer(self, obj: Customer):
-        with self.Session.begin() as s:
-            try: s.add(CustomerORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}))
-            except IntegrityError as e: raise ValueError("customer_code đã tồn tại.") from e
+        try:
+            with self.Session.begin() as s: s.add(CustomerORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}))
+        except IntegrityError as e: raise ValueError("customer_code đã tồn tại.") from e
         return obj
     def list_customers(self, search=None, active=None, page=1, page_size=50):
         with self.Session() as s:
@@ -39,10 +39,11 @@ class Stage2Repository:
         with self.Session.begin() as s: s.merge(CustomerORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}))
         return obj
     def add_po(self,obj:PurchaseOrder):
-        with self.Session.begin() as s:
-            if not s.get(CustomerORM,str(obj.customer_id)): raise LookupError("customer not found")
-            try: s.add(PurchaseOrderORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}))
-            except IntegrityError as e: raise ValueError("po_number đã tồn tại.") from e
+        try:
+            with self.Session.begin() as s:
+                if not s.get(CustomerORM,str(obj.customer_id)): raise LookupError("customer not found")
+                s.add(PurchaseOrderORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}))
+        except IntegrityError as e: raise ValueError("po_number đã tồn tại.") from e
         return obj
     def list_pos(self, customer_id=None, status=None):
         with self.Session() as s:
@@ -75,6 +76,14 @@ class Stage2Repository:
             if total>ordered: raise Stage2ValidationError("planned_quantity","Tổng lịch giao vượt ordered quantity.")
             s.add(DeliveryScheduleORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()})); s.commit()
         return obj
+    def update_delivery(self, obj: DeliveryScheduleEntry, ordered: Decimal):
+        with self.Session() as s:
+            existing = s.scalars(select(DeliveryScheduleORM).where(DeliveryScheduleORM.po_line_id == str(obj.po_line_id), DeliveryScheduleORM.internal_id != str(obj.internal_id), DeliveryScheduleORM.status != DeliveryStatus.CANCELLED.value)).all()
+            total = sum((x.planned_quantity for x in existing), Decimal(0)) + obj.planned_quantity
+            if total > ordered: raise Stage2ValidationError("planned_quantity", "Tổng lịch giao vượt ordered quantity.")
+            if not s.get(DeliveryScheduleORM, str(obj.internal_id)): raise LookupError("delivery schedule not found")
+            s.merge(DeliveryScheduleORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()})); s.commit()
+        return obj
     def list_deliveries(self,line_id):
             with self.Session() as s:return tuple(self._delivery(x) for x in s.scalars(select(DeliveryScheduleORM).where(DeliveryScheduleORM.po_line_id==str(line_id)).order_by(DeliveryScheduleORM.planned_date)).all())
     def add_run(self,obj:ProductionRun, ordered:Decimal):
@@ -82,7 +91,18 @@ class Stage2Repository:
             existing = s.scalars(select(ProductionRunORM).where(ProductionRunORM.po_line_id == str(obj.po_line_id), ProductionRunORM.status != RunStatus.CANCELLED.value)).all()
             planned = sum((x.planned_quantity for x in existing), Decimal(0)) + obj.planned_quantity
             if planned>ordered: raise Stage2ValidationError("planned_quantity","Tổng run vượt ordered quantity.")
+            line = s.get(PurchaseOrderLineORM, str(obj.po_line_id))
+            if not line: raise LookupError("purchase order line not found")
+            if str(line.product_id) != str(obj.product_id): raise Stage2ValidationError("product_id", "Product không khớp PO Line.")
             s.add(ProductionRunORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}))
+        return obj
+    def update_run(self, obj: ProductionRun, ordered: Decimal):
+        with self.Session.begin() as s:
+            existing = s.scalars(select(ProductionRunORM).where(ProductionRunORM.po_line_id == str(obj.po_line_id), ProductionRunORM.internal_id != str(obj.internal_id), ProductionRunORM.status != RunStatus.CANCELLED.value)).all()
+            planned = sum((x.planned_quantity for x in existing), Decimal(0)) + obj.planned_quantity
+            if planned > ordered: raise Stage2ValidationError("planned_quantity", "Tổng run vượt ordered quantity.")
+            if not s.get(ProductionRunORM, str(obj.internal_id)): raise LookupError("production run not found")
+            s.merge(ProductionRunORM(**{k: (str(v) if isinstance(v, UUID) else v) for k,v in asdict(obj).items()}))
         return obj
     def list_runs(self, po_line_id=None, status=None):
         with self.Session() as s:

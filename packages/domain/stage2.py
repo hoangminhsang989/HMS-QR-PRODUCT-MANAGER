@@ -101,11 +101,12 @@ class ProductionRun:
         if planned_finish and planned_start and planned_finish<planned_start: raise Stage2ValidationError("planned_finish","Ngày kết thúc không hợp lệ.")
         t=now_utc(); actor=text(actor,"actor",True,128); return cls(uuid4(),text(run_code,"run_code",True,128),po_line_id,product_id,planned,completed,RunStatus(status),priority,planned_start,planned_finish,actual_start,actual_finish,text(notes,"notes",limit=2000),t,t,actor,actor)
     def update(self, *, actor: str, **changes):
-        allowed={"completed_quantity","status","priority","planned_start","planned_finish","actual_start","actual_finish","notes"}; unknown=set(changes)-allowed
+        allowed={"planned_quantity","completed_quantity","status","priority","planned_start","planned_finish","actual_start","actual_finish","notes"}; unknown=set(changes)-allowed
         if unknown: raise Stage2ValidationError("payload","Trường không hỗ trợ: "+", ".join(sorted(unknown)))
+        planned=quantity(changes.get("planned_quantity",self.planned_quantity),"planned_quantity")
         completed=quantity(changes.get("completed_quantity",self.completed_quantity),"completed_quantity",False)
-        if completed>self.planned_quantity: raise Stage2ValidationError("completed_quantity","Không được vượt số lượng kế hoạch.")
-        vals=dict(changes,completed_quantity=completed,updated_by=text(actor,"actor",True,128),updated_at=now_utc());
+        if completed>planned: raise Stage2ValidationError("completed_quantity","Không được vượt số lượng kế hoạch.")
+        vals=dict(changes,planned_quantity=planned,completed_quantity=completed,updated_by=text(actor,"actor",True,128),updated_at=now_utc());
         if "status" in vals: vals["status"]=RunStatus(vals["status"])
         return replace(self,**vals)
 

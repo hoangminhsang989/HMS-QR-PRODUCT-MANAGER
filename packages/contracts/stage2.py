@@ -17,7 +17,7 @@ class POLineData(BaseModel):
 class DeliveryData(BaseModel):
     planned_date: date; planned_quantity: Decimal=Field(gt=0); status: DeliveryStatus=DeliveryStatus.PLANNED; notes: str|None=None
 class RunData(BaseModel):
-    po_line_id: UUID; product_id: UUID; ordered_quantity: Decimal=Field(gt=0); run_code: str|None=None; planned_quantity: Decimal=Field(gt=0); completed_quantity: Decimal=Field(ge=0,default=0); status: RunStatus=RunStatus.PLANNED; priority: int=0; planned_start: date|None=None; planned_finish: date|None=None; notes: str|None=None
+    po_line_id: UUID; product_id: UUID; ordered_quantity: Decimal=Field(gt=0); run_code: str|None=None; planned_quantity: Decimal=Field(gt=0); completed_quantity: Decimal=Field(ge=0,default=Decimal("0")); status: RunStatus=RunStatus.PLANNED; priority: int=0; planned_start: date|None=None; planned_finish: date|None=None; notes: str|None=None
 def dump(obj):
     from dataclasses import asdict
     data=asdict(obj)

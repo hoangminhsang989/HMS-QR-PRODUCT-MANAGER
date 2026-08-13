@@ -11,9 +11,11 @@ def test_stage2_api_customer_po_line_schedule_run(tmp_path):
     with Session(repo.engine) as s: s.add(ProductORM(internal_id=pid,product_code="SP-API",company="HMS",part_name="Plate",quantity=100,unit="pcs",status="NEW")); s.commit()
     client=TestClient(build_stage2_api(Stage2Service(repo)))
     c=client.post("/api/v1/customers",json={"name":"HMS"},headers={"X-Actor":"api"}); assert c.status_code==200; customer=c.json()
+    duplicate_customer=client.post("/api/v1/customers",json={"customer_code":customer["customer_code"],"name":"Other"}); assert duplicate_customer.status_code in (400,409,500)
     po=client.post("/api/v1/purchase-orders",json={"po_number":"PO-API","customer_id":customer["internal_id"],"po_date":"2026-08-01"}); assert po.status_code==200
     line=client.post(f"/api/v1/purchase-orders/{po.json()['internal_id']}/lines",json={"product_id":pid,"line_number":1,"ordered_quantity":100,"unit":"pcs"}); assert line.status_code==200
     lid=line.json()["internal_id"]
     assert client.post(f"/api/v1/purchase-order-lines/{lid}/delivery-schedules?ordered_quantity=100",json={"planned_date":"2026-08-20","planned_quantity":50}).status_code==200
     run=client.post("/api/v1/production-runs",json={"po_line_id":lid,"product_id":pid,"ordered_quantity":100,"planned_quantity":50}); assert run.status_code==200
     assert client.get("/api/v1/production-runs",params={"po_line_id":lid}).json()["items"]
+    assert client.patch(f"/api/v1/production-runs/{run.json()['internal_id']}?ordered_quantity=100",json={"po_line_id":lid,"product_id":pid,"ordered_quantity":100,"planned_quantity":50,"completed_quantity":10}).status_code == 200

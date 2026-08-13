@@ -14,7 +14,7 @@ from config.environments import load_config
 from packages.application.product_service import ProductService
 from packages.contracts.api import ProductPageResponse, ProductPatch, ProductPayload, ProductResponse, to_response
 from packages.domain.product import ProductStatus, ProductValidationError
-from packages.domain.stage2 import POStatus, RunStatus
+from packages.domain.stage2 import DeliveryScheduleEntry, POStatus, RunStatus, Stage2ValidationError, now_utc
 from packages.domain.repository import DuplicateProductCode, ProductNotFound
 from packages.persistence.sqlite_product_repository import SQLiteProductRepository
 from packages.application.stage2_service import Stage2Service
@@ -85,6 +85,12 @@ def build_stage2_api(service: Stage2Service | None = None) -> FastAPI:
         cfg = load_config(); service = Stage2Service(Stage2Repository(cfg.database_url))
     def actor(x_actor: Annotated[str | None, Header()] = None) -> str:
         return (x_actor or "development-user").strip()
+    @api.exception_handler(Stage2ValidationError)
+    async def stage2_validation(_, exc): return _error(422, "VALIDATION_ERROR", exc.message, {"field": exc.field})
+    @api.exception_handler(ValueError)
+    async def stage2_value(_, exc): return _error(409, "BUSINESS_CONFLICT", str(exc))
+    @api.exception_handler(LookupError)
+    async def stage2_missing(_, exc): return _error(404, "NOT_FOUND", str(exc))
     @api.post("/api/v1/customers")
     def create_customer(payload: CustomerPayload, x_actor: str = Depends(actor)):
         return dump(service.create_customer(actor=x_actor, **payload.model_dump()))
@@ -112,11 +118,23 @@ def build_stage2_api(service: Stage2Service | None = None) -> FastAPI:
     def add_delivery(line_id: UUID, payload: DeliveryData, ordered_quantity: Decimal=Query(...,gt=0)): return dump(service.add_delivery(po_line_id=line_id,ordered_quantity=ordered_quantity,**payload.model_dump()))
     @api.get("/api/v1/purchase-order-lines/{line_id}/delivery-schedules")
     def list_deliveries(line_id: UUID): return {"items":[dump(x) for x in service.list_deliveries(line_id)]}
+    @api.patch("/api/v1/delivery-schedule-entries/{entry_id}")
+    def update_delivery(entry_id: UUID, payload: DeliveryData, po_line_id: UUID=Query(...), ordered_quantity: Decimal=Query(...,gt=0)):
+        current = next((x for x in service.list_deliveries(po_line_id) if x.internal_id == entry_id), None)
+        if not current: raise HTTPException(404, "delivery schedule not found")
+        updated = DeliveryScheduleEntry(entry_id, po_line_id, payload.planned_date, payload.planned_quantity, payload.status, payload.notes, current.created_at, now_utc(), current.created_at.isoformat(), current.created_at.isoformat())
+        return dump(service.update_delivery(updated, ordered_quantity=ordered_quantity))
     @api.post("/api/v1/production-runs")
     def create_run(payload: RunData,x_actor: str=Depends(actor)):
         data=payload.model_dump(); ordered=data.pop("ordered_quantity"); return dump(service.create_run(actor=x_actor,ordered_quantity=ordered,**data))
     @api.get("/api/v1/production-runs")
     def list_runs(po_line_id: UUID|None=None,status_filter: RunStatus|None=Query(None,alias="status")): return {"items":[dump(x) for x in service.list_runs(po_line_id=po_line_id,status=status_filter)]}
+    @api.patch("/api/v1/production-runs/{run_id}")
+    def update_run(run_id: UUID, payload: RunData, ordered_quantity: Decimal=Query(...,gt=0)):
+        current = next((x for x in service.list_runs() if x.internal_id == run_id), None)
+        if not current: raise HTTPException(404, "production run not found")
+        updated = current.update(actor="api-user", **payload.model_dump(exclude={"po_line_id","product_id","ordered_quantity","run_code"}, exclude_unset=True))
+        return dump(service.update_run(updated, ordered_quantity=ordered_quantity))
     return api
 
 
