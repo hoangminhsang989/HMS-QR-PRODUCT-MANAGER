@@ -4,7 +4,7 @@ Current Stage: Stage 1 complete
 Current WP: Product Master Integration
 Current Revision: R003A
 Current Branch: main
-Current HEAD: `db06f8237e6778bf9fb2b14bd1ded3acaab31285` (metadata-only R003A checkpoint tip)
+Current HEAD: `e40acc71a184351ee23ed295de01d2a7648f47f7` (metadata-only R003A checkpoint tip)
 Last Approved Baseline: Stage 0 R001 foundation
 Current Verdict: PASS_STAGE1_PRODUCT_MASTER_R003A_INTEGRATED
 

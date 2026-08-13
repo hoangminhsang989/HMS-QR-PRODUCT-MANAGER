@@ -17,7 +17,8 @@ Revision: R003A
 - Integration method: fast-forward only, no squash/rebase/force/push
 - Main resulting HEAD/tree: `d159eeeac3fdcc7de417c7f506579fa4026be610` /
   `d7352e76fbb7ab01a79e0136fc66491105b9b9e1`
-- Final main checkpoint tip after metadata-only recording: pending this commit
+- Final main checkpoint tip after metadata-only recording: `e40acc71a184351ee23ed295de01d2a7648f47f7` /
+  `ec5f2d4fe2ee1b9bf547bda30ff54285a67733aa`
 - Main working tree after integration: clean
 
 ## Review verdict
