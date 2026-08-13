@@ -52,19 +52,25 @@ class LabelTemplateRenderer:
         "customer_po_number": "PO", "notes": "Ghi chú",
     }
 
-    def render(self, data: LabelData, qr_payload: QrPayload, template: LabelTemplate | None = None) -> str:
+    def render(self, data: LabelData, qr_payload: QrPayload, qr_image_uri: str, template: LabelTemplate | None = None) -> str:
+        if not qr_image_uri.startswith("data:image/png;base64,"):
+            raise ValueError("label QR component must be a PNG data URI")
         selected = template or LabelTemplate()
         rows = "".join(
             f"<dt>{escape(self.LABELS[field])}</dt><dd>{escape(str(getattr(data, field) or ''))}</dd>"
             for field in selected.visible_fields
         )
         encoded = escape(QrPayloadService().encode(qr_payload), quote=True)
-        return f"<!doctype html><html lang='vi'><meta charset='utf-8'><title>{escape(selected.name)}</title><body><h1>{escape(selected.name)}</h1><div class='qr' data-qr-payload='{encoded}'></div><dl>{rows}</dl></body></html>"
+        image = escape(qr_image_uri, quote=True)
+        return f"<!doctype html><html lang='vi'><meta charset='utf-8'><title>{escape(selected.name)}</title><body><h1>{escape(selected.name)}</h1><img class='qr' alt='QR' src='{image}' data-qr-payload='{encoded}'><dl>{rows}</dl></body></html>"
 
 
-class LabelExportService:
+class LabelPrintExportService:
     def export_html(self, rendered_label: str, path: str | Path) -> Path:
         target = require_test_output_path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(rendered_label, encoding="utf-8")
         return target
+
+
+LabelExportService = LabelPrintExportService

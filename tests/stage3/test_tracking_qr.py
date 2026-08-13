@@ -35,8 +35,10 @@ def test_label_visible_data_is_separate_and_reprint_keeps_qr(tracking_env,tmp_pa
     service,item=tracking_env;service.issue_qr(item.internal_id,"u");payload=service.qr_payload_data(item.internal_id);before=service.qr_payload(item.internal_id)
     first=service.labels.load(item.internal_id)
     assert (first.material,first.quantity,first.size,first.surface_treatment,first.delivery_date,first.customer_po_number)==("SUS304","100.0000","10x20x30","Anodized","2026-08-20","PO-T")
-    service.change_date(item.internal_id,date(2026,8,30),"u");second=service.labels.load(item.internal_id);rendered=LabelTemplateRenderer().render(second,payload)
+    qr_image,qr_encoded=QRService().data_uri(payload);assert qr_encoded==before
+    service.change_date(item.internal_id,date(2026,8,30),"u");second=service.labels.load(item.internal_id);rendered=LabelTemplateRenderer().render(second,payload,qr_image)
     assert second.delivery_date=="2026-08-30" and service.qr_payload(item.internal_id)==before and "2026-08-30" in rendered
+    assert "<img class='qr'" in rendered and qr_image in rendered
     embedded=unescape(re.search(r"data-qr-payload='([^']+)'",rendered).group(1));assert json.loads(embedded)==json.loads(before) and tuple(json.loads(embedded))==QR_PAYLOAD_FIELDS
     target=LabelExportService().export_html(rendered,tmp_path/'label.html');assert target.exists()
 

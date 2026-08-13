@@ -32,9 +32,10 @@ payload because the Tracking Item identity is unchanged.
 ## Printed label separation
 
 `QrPayloadService` owns only the four-field canonical payload.
-`LabelDataService` loads current visible label values. `LabelTemplateRenderer`
-selects and formats visible fields independently, and `LabelExportService`
-writes the rendered label. The standard template may visibly show product,
+`LabelDataService` loads current visible label values. `QRService` renders the
+canonical payload as a PNG component. `LabelTemplateRenderer` places that QR
+component and formats visible fields independently, and
+`LabelPrintExportService` writes the rendered label. The standard template may visibly show product,
 customer, codes, material, quantity/unit, size, surface treatment, delivery
 date, order/PO, and notes while embedding the unchanged canonical QR payload.
 
