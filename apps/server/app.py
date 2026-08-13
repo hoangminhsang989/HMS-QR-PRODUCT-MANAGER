@@ -22,9 +22,12 @@ from packages.application.stage2_service import Stage2Service
 from packages.contracts.stage2 import CustomerPatch, CustomerPayload, DeliveryData, POData, POLineData, RunData, dump
 from packages.persistence.sqlalchemy_repository import Stage2Repository
 from packages.application.tracking_service import TrackingService
-from packages.contracts.tracking import AttemptExpand,DateChange,NewOrder,OperatorCreate,PreferenceSet,ReportRevision,ReportSubmit,TrackingCreate
+from packages.contracts.tracking import AttemptExpand,DateChange,NewOrder,OperatorCreate,PreferenceSet,ReportRevision,ReportSubmit,TrackingCreate,WorkflowEventRevision,WorkflowEventSubmit
 from packages.domain.tracking import MachiningType,Operator,TrackingError
+from packages.domain.workflow import WorkflowEventType
 from packages.persistence.tracking_repository import TrackingRepository
+from packages.persistence.workflow_repository import WorkflowRepository
+from packages.application.workflow_services import DeliveryService,GeneralReportService,PackingService,QcService,TrackingHistoryService
 from apps.mobile.web import mobile_page
 
 APP_NAME = "hms-qr-server"
@@ -147,6 +150,7 @@ def build_tracking_api(service:TrackingService|None=None)->FastAPI:
     api=FastAPI(title="HMS QR Tracking",version="3.0")
     if service is None:
         cfg=load_config();repo=Stage2Repository(cfg.database_url);repo.create_schema();service=TrackingService(TrackingRepository(repo.engine))
+    workflow_repo=WorkflowRepository(service.repo.engine);qc_service=QcService(workflow_repo);packing_service=PackingService(workflow_repo);delivery_service=DeliveryService(workflow_repo);general_service=GeneralReportService(workflow_repo);history_service=TrackingHistoryService(workflow_repo,service.repo)
     for order,(code,name) in enumerate((("BLANK","TẠO PHÔI"),("TURN","TIỆN"),("MILL","PHAY"),("WIRE","CẮT DÂY"),("GRIND","MÀI"),("HEAT","NHIỆT LUYỆN"),("OTHER","KHÁC")),1):service.repo.add_machining_type(MachiningType(uuid4(),code,name,True,order))
     @api.exception_handler(TrackingError)
     async def tracking_validation(_,exc):return _error(422,"TRACKING_VALIDATION_ERROR",str(exc))
@@ -157,7 +161,12 @@ def build_tracking_api(service:TrackingService|None=None)->FastAPI:
     @api.post("/api/v1/tracking-items")
     def create_tracking(payload:TrackingCreate,x_actor:Annotated[str|None,Header()]=None):return dump(service.create_item(actor=x_actor or "development-user",**payload.model_dump()))
     @api.get("/api/v1/tracking-items")
-    def list_tracking(search:str|None=None):return {"items":[dump(x) for x in service.repo.list_items(search)]}
+    def list_tracking(search:str|None=None,status_filter:str|None=Query(None,alias="status")):
+        items=[]
+        for item in service.repo.list_items(search):
+            summary=history_service.summary(item.internal_id)
+            if not status_filter or summary["current_status"]==status_filter:items.append({**dump(item),**summary})
+        return {"items":items}
     @api.get("/api/v1/tracking-items/{identifier}")
     def get_tracking(identifier:str):return dump(service.repo.get_item(identifier))
     @api.post("/api/v1/tracking-items/{identifier}/qr")
@@ -200,6 +209,24 @@ def build_tracking_api(service:TrackingService|None=None)->FastAPI:
     def revise(event_id:UUID,payload:ReportRevision):
         event=service.repo.get_report(event_id)
         return dump(service.revise_report(event,**payload.model_dump()))
+    def submit_workflow(item_id:UUID,payload:WorkflowEventSubmit,target):
+        data=payload.model_dump();data["tracking_item_id"]=item_id;return dump(target.submit(**data))
+    @api.post("/api/v1/tracking-items/{item_id}/qc-events")
+    def qc_event(item_id:UUID,payload:WorkflowEventSubmit):return submit_workflow(item_id,payload,qc_service)
+    @api.post("/api/v1/tracking-items/{item_id}/packing-events")
+    def packing_event(item_id:UUID,payload:WorkflowEventSubmit):return submit_workflow(item_id,payload,packing_service)
+    @api.post("/api/v1/tracking-items/{item_id}/delivery-events")
+    def delivery_event(item_id:UUID,payload:WorkflowEventSubmit):return submit_workflow(item_id,payload,delivery_service)
+    @api.post("/api/v1/tracking-items/{item_id}/reports")
+    def general_report(item_id:UUID,payload:WorkflowEventSubmit):return submit_workflow(item_id,payload,general_service)
+    @api.get("/api/v1/tracking-items/{item_id}/workflow-summary")
+    def workflow_summary(item_id:UUID):return history_service.summary(item_id)
+    @api.get("/api/v1/tracking-items/{item_id}/history")
+    def combined_history(item_id:UUID):return {"items":list(history_service.history(item_id))}
+    @api.post("/api/v1/workflow-events/{event_id}/revisions")
+    def revise_workflow(event_id:UUID,payload:WorkflowEventRevision):
+        original=workflow_repo.get(event_id);target={WorkflowEventType.PACKED:packing_service,WorkflowEventType.DELIVERED:delivery_service,WorkflowEventType.GENERAL_REPORT:general_service}.get(original.event_type,qc_service)
+        return dump(target.revise(event_id,**payload.model_dump()))
     return api
 
 

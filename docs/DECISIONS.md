@@ -81,3 +81,19 @@ and audit only. Printed-label fields and formatting are a separate service.
 
 Reason: This is the current user requirement and preserves QR payload/pattern
 when mutable delivery or label data changes.
+
+## ADR-013 — QC, packing, and delivery are tracking events
+
+Status: Accepted for R006
+
+Decision: Model QC checked, shortage, NG return, packing, actual delivery, and
+general reports as append-only, revision-aware events anchored to Tracking
+Item. They are not Routing steps. Tracking Item `status` is a transactionally
+updated projection for search/display; effective event history remains the
+source of truth.
+
+Quantity semantics remain separate: Tracking Item quantity is the target order
+occurrence; event quantities represent checked, shortage, NG, packed, or
+delivered amounts. R006 permits partial/multiple packing and delivery events,
+limits aggregate packing to target minus effective shortage, and requires
+aggregate delivered quantity not to exceed aggregate packed quantity.

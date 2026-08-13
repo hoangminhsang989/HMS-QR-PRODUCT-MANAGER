@@ -20,3 +20,24 @@ class ProcessReportORM(Base):
     __tablename__="process_report_events"; internal_id:Mapped[str]=mapped_column(String(36),primary_key=True); request_id:Mapped[str]=mapped_column(String(36),unique=True); tracking_item_id:Mapped[str]=mapped_column(ForeignKey("order_tracking_items.internal_id")); machining_type_id:Mapped[str]=mapped_column(ForeignKey("machining_types.internal_id")); kind:Mapped[str]=mapped_column(String(32)); attempt_number:Mapped[int|None]=mapped_column(Integer); quantity:Mapped[Decimal]=mapped_column(Numeric(18,4)); notes:Mapped[str|None]=mapped_column(Text); actor_user_id:Mapped[str]=mapped_column(ForeignKey("operators.internal_id")); actor_display_name_snapshot:Mapped[str]=mapped_column(String(255)); server_timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True)); client_timestamp:Mapped[datetime|None]=mapped_column(DateTime(timezone=True)); device_id:Mapped[str|None]=mapped_column(String(255)); revision:Mapped[int]=mapped_column(Integer); supersedes_id:Mapped[str|None]=mapped_column(ForeignKey("process_report_events.internal_id")); status:Mapped[str]=mapped_column(String(32))
 class TrackingAuditORM(Base):
     __tablename__="tracking_audit_events"; internal_id:Mapped[str]=mapped_column(String(36),primary_key=True); tracking_item_id:Mapped[str]=mapped_column(ForeignKey("order_tracking_items.internal_id")); event_type:Mapped[str]=mapped_column(String(64)); old_value:Mapped[str|None]=mapped_column(Text); new_value:Mapped[str|None]=mapped_column(Text); actor:Mapped[str]=mapped_column(String(128)); reason:Mapped[str|None]=mapped_column(Text); server_timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+
+class TrackingWorkflowEventORM(Base):
+    __tablename__="tracking_workflow_events"
+    internal_id:Mapped[str]=mapped_column(String(36),primary_key=True)
+    request_id:Mapped[str]=mapped_column(String(36),unique=True,nullable=False)
+    tracking_item_id:Mapped[str]=mapped_column(ForeignKey("order_tracking_items.internal_id"),nullable=False,index=True)
+    event_type:Mapped[str]=mapped_column(String(64),nullable=False,index=True)
+    quantity:Mapped[Decimal|None]=mapped_column(Numeric(18,4))
+    notes:Mapped[str|None]=mapped_column(Text)
+    machining_type_id:Mapped[str|None]=mapped_column(ForeignKey("machining_types.internal_id"))
+    process_report_id:Mapped[str|None]=mapped_column(ForeignKey("process_report_events.internal_id"))
+    actor_user_id:Mapped[str]=mapped_column(ForeignKey("operators.internal_id"),nullable=False)
+    actor_display_name_snapshot:Mapped[str]=mapped_column(String(255),nullable=False)
+    server_timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    client_timestamp:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    device_id:Mapped[str|None]=mapped_column(String(255))
+    sequence_number:Mapped[int]=mapped_column(Integer,nullable=False)
+    revision:Mapped[int]=mapped_column(Integer,nullable=False)
+    supersedes_event_id:Mapped[str|None]=mapped_column(ForeignKey("tracking_workflow_events.internal_id"))
+    status:Mapped[str]=mapped_column(String(32),nullable=False)
+    __table_args__=(UniqueConstraint("tracking_item_id","sequence_number","revision",name="uq_workflow_sequence_revision"),)

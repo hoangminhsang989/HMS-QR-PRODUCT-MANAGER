@@ -1,12 +1,12 @@
 # HMS QR Product Manager — Current State
 
-Current Stage: STAGE_3_TRACKING_QR_PROCESS_REPORTING
-Current WP: R005A QR remediation + process catalog correction + label foundation
-Current Revision: R005A
-Current Branch: main
-Current Verdict: PASS_STAGE3_TRACKING_QR_PROCESS_REPORTING_R005A_INTEGRATED
+Current Stage: STAGE_4_QC_PACKING_DELIVERY
+Current WP: QC + NG return + packing + delivery status candidate
+Current Revision: R006
+Current Branch: stage4-qc-packing-delivery
+Current Verdict: WORK_IN_PROGRESS_STAGE4_R006
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 100% PASS.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 candidate validation in progress.
 
 Latest completed work: deterministic four-field business QR payload, live scan
 lookup by tracking code, delivery-date-stable QR, new-order QR identity, internal
@@ -26,9 +26,9 @@ QC_WORKFLOW_NOT_YET_IMPLEMENTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Next exact action: obtain separate authority for QC + NG return + packing +
-delivery status. Do not implement it as part of R005A.
+Next exact action: complete R006 candidate gates and independent review request;
+do not merge `main` under this candidate-only authority.
 
-Latest authority: docs/authorities/AUTHORITY_STAGE3_R005A.md
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE3_R005A_INTEGRATION.md
+Latest authority: docs/authorities/AUTHORITY_STAGE4_R006.md
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE4_R006.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST

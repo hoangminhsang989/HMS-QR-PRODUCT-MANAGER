@@ -35,9 +35,27 @@ separate concepts.
 Product code identifies Product Master; customer PO number identifies the
 customer order document; optional `internal_order_code` identifies an internal
 order occurrence; `tracking_code` identifies one ordered/tracked item; and
-`qr_public_id` is an opaque public resolver. Delivery-date changes preserve
+`qr_public_id` is internal issuance/audit metadata; the canonical four-field QR
+uses `tracking_code` as its live lookup identity. Delivery-date changes preserve
 tracking/QR identity. Creating a new order occurrence creates a new order,
-tracking code, and QR public ID while reusing the Product master reference.
+tracking code, and QR payload while reusing the Product master reference.
 Attempt display state is keyed by `(tracking_item_id, machining_type_id)`, not
 by user or Product. Process reports are append-only events with idempotency UUID,
 actor snapshot, optional attempt number, completion kind, and revision chain.
+
+## Stage 4 workflow events and quantity semantics
+
+`TrackingWorkflowEvent` stores a typed event UUID, idempotency request UUID,
+Tracking Item reference, event type, typed quantity, notes, optional related
+machining type/process report, operator UUID/display snapshot, server UTC time,
+optional client/device metadata, stable sequence, revision, superseded-event
+link, and active/superseded state. No workflow event is stored as an untyped
+JSON business blob.
+
+Tracking Item quantity remains the target order occurrence. Checked, shortage,
+NG, packed, and delivered quantities are independent event semantics. Effective
+revision aggregates enforce `packed <= target - shortage` and
+`delivered <= packed`. Multiple QC, partial packing, and partial delivery events
+are retained. Tracking Item status is a derived projection, not a replacement
+for history. Planned delivery date remains distinct from actual `DELIVERED`
+event server time.

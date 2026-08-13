@@ -93,7 +93,13 @@ class TrackingRepository:
             if event.quantity>item.quantity:raise TrackingError("report quantity exceeds tracking quantity")
             old=s.scalar(select(ProcessReportORM).where(ProcessReportORM.request_id==str(event.request_id)))
             if old:return self._report(old)
-            s.add(ProcessReportORM(**vals(event)));s.commit();return event
+            s.add(ProcessReportORM(**vals(event)))
+            if event.revision==1:
+                if event.kind==ReportKind.PROCESS_COMPLETED:item.status=TrackingStatus.WAITING_QC.value
+                elif item.status in {TrackingStatus.QC_NG.value,TrackingStatus.REWORK.value}:item.status=TrackingStatus.REWORK.value
+                else:item.status=TrackingStatus.IN_PROCESS.value
+                item.updated_at=utc_now();item.updated_by=str(event.actor_user_id)
+            s.commit();return event
     def history(self,item_id):
         with Session(self.engine) as s:return tuple(self._report(x) for x in s.scalars(select(ProcessReportORM).where(ProcessReportORM.tracking_item_id==str(item_id)).order_by(ProcessReportORM.server_timestamp)).all())
     def get_report(self,event_id):

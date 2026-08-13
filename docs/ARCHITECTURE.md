@@ -37,3 +37,14 @@ per-tracking-item/per-machining-type attempt display state, and immutable
 process report events/revisions. The mobile-first web client resolves live data
 from the server; camera scanning requires a secure browser context and manual
 paste remains a DEV fallback.
+
+## Stage 4 QC, packing, and delivery tracking
+
+R006 extends Tracking Item with typed append-only workflow events and a derived
+status projection; it does not add a Routing engine. `QcService`,
+`PackingService`, `DeliveryService`, `GeneralReportService`, and
+`TrackingHistoryService` share one transactional repository policy. Each write
+uses a request UUID for idempotency, server UTC time, operator UUID plus display
+snapshot, optional client/device metadata, and non-destructive revision links.
+Event creation/revision, quantity validation, and Tracking Item projection are
+committed atomically. Mobile displays timestamps in `Asia/Ho_Chi_Minh`.
