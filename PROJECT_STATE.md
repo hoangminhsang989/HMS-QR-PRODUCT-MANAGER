@@ -4,7 +4,7 @@ Current Stage: STAGE_0_PROJECT_BOOTSTRAP_AND_AUTHORITY
 Current WP: WP0.1-WP0.6
 Current Revision: R001
 Current Branch: main
-Current HEAD: c7023fec2db677c8b41610f4ab4f143631213810
+Current HEAD: c300648a0d6be8568316630a0d3502c1394ec5b4
 Last Approved Baseline: Stage 0 R001 foundation
 Current Verdict: PASS_STAGE0_FOUNDATION_R001
 
@@ -17,7 +17,7 @@ Latest completed work: Foundation skeleton, architecture records, test guard, an
 Next exact action: Obtain fresh Stage 1 authority before product-domain implementation.
 
 Latest authority: docs/authorities/AUTHORITY_STAGE0_R001.md
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE0_R001.md
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE0_R001.md (baseline commit c300648a0d6be8568316630a0d3502c1394ec5b4)
 
 Test workspace:
 F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST

@@ -5,9 +5,12 @@ Stage: STAGE_0_PROJECT_BOOTSTRAP_AND_AUTHORITY
 WP: WP0.1-WP0.6
 Revision: R001
 Branch: main
-HEAD: 85b02cc682d865323b6032a428d101a71ef2d3d9
-Tree: fcc66c54b9d67d66f592015ce2cccf76fa68768d
+HEAD: c300648a0d6be8568316630a0d3502c1394ec5b4
+Tree: 4baafc1c6c36f3d1191502a373d9a59018753aba
 Parent: UNBORN_REPOSITORY
+
+Checkpoint identity is the immutable foundation baseline; later metadata-only
+commits may advance repository HEAD without changing the Stage 0 result.
 
 ## Objective
 
