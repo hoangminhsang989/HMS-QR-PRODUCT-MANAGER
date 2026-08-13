@@ -16,3 +16,17 @@ Pytest-qt recovery is complete: project configuration now routes `--basetemp`, `
 - Authenticode status is `NotSigned`, consistent with the upstream Windows-build warning; no security policy was disabled.
 
 Installation/startup/MCP remain pending the required user confirmation immediately before running newly downloaded software.
+
+## R007B1 installation and MCP result
+
+- `OPEN_DESIGN_INSTALL_TYPE=STANDARD_PER_USER_WINDOWS_INSTALL`
+- `OPEN_DESIGN_INSTALL_PATH=C:\Users\HMS-PCC\AppData\Local\Programs\Open Design`
+- `OPEN_DESIGN_VERSION=0.19.0` from installed `Open Design.exe` file/product metadata and the running app release dialog.
+- `OPEN_DESIGN_STARTUP_SMOKE=PASS`: window and workspace opened without an immediate crash.
+- No `od` command is installed on PATH by the 0.19.0 Windows package.
+- Official packaged equivalent used: `Open Design.exe --headless --mcp-install codex`.
+- First invocation while Desktop was open exposed a packaged lifecycle conflict; Desktop was then closed normally and all owned processes were confirmed exited.
+- Clean invocation reached the official Codex install endpoint but returned HTTP 500 `CODEX_INSTALL_FAILED` with exact message `spawn EPERM`.
+- Codex config contains no Open Design MCP entry and Codex-side MCP resources/templates remain empty.
+
+Therefore `CODEX_MCP_STATUS=BLOCKED_SPAWN_EPERM` and `OPEN_DESIGN_MCP_READ_TEST=NOT_RUN`. The WindowsApps ACL, packaged Codex executable, and Codex installation were not altered. Prototype and visual-evidence creation did not start because the authority gates them after real MCP PASS.
