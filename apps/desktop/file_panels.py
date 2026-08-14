@@ -60,6 +60,9 @@ class ProductFilesPanel(QWidget):
         self.attachments.itemSelectionChanged.connect(
             lambda: self.images.clearSelection() if self.attachments.selectedItems() else None
         )
+        self.images.itemSelectionChanged.connect(self._update_retry_action)
+        self.attachments.itemSelectionChanged.connect(self._update_retry_action)
+        self.retry_button.setEnabled(False)
         actions = QHBoxLayout()
         for button in (
             self.add_image_button, self.primary_button, self.add_attachment_button,
@@ -86,6 +89,7 @@ class ProductFilesPanel(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
+        self.retry_button.setEnabled(False)
         self.images.setRowCount(0)
         self.attachments.setRowCount(0)
         if self.product_id is None or self.managed_service is None:
@@ -113,6 +117,18 @@ class ProductFilesPanel(QWidget):
         self.state_label.setText(
             f"{len(images)} ảnh · {len(attachments)} tệp · Tệp mới được lưu an toàn trên Server trước."
         )
+
+    def _update_retry_action(self) -> None:
+        file_id = _selected_id(self.images) or _selected_id(self.attachments)
+        eligible = False
+        if file_id and self.transfer_service:
+            try:
+                eligible = self.transfer_service.transfer_retry_eligible(
+                    self.transfer_service.status(file_id).state
+                )
+            except LookupError:
+                pass
+        self.retry_button.setEnabled(eligible)
 
     def add_image(self) -> None:
         path = self._choose_open("Chọn ảnh sản phẩm", "Images (*.png *.jpg *.jpeg *.gif *.webp)")
@@ -200,6 +216,7 @@ class AdminStoragePanel(QWidget):
         save = QPushButton("KIỂM TRA VÀ LƯU CẤU HÌNH")
         refresh = QPushButton("LÀM MỚI SỨC KHỎE")
         retry = QPushButton("THỬ LẠI LỖI")
+        self.retry_failed_button = retry
         save.clicked.connect(self.save)
         refresh.clicked.connect(self.refresh)
         retry.clicked.connect(self.retry_failed)
@@ -254,6 +271,10 @@ class AdminStoragePanel(QWidget):
     def refresh(self) -> None:
         if not self.transfer_service:
             return
+        self.retry_failed_button.setEnabled(any(
+            self.transfer_service.transfer_retry_eligible(job.state)
+            for job in self.transfer_service.repository.list_jobs()
+        ))
         try:
             value = self.transfer_service.health()
             capacity = value["capacity"]
@@ -269,7 +290,7 @@ class AdminStoragePanel(QWidget):
         if not self.transfer_service:
             return
         for job in self.transfer_service.repository.list_jobs():
-            if job.state.value.startswith("TRANSFER_FAILED"):
+            if self.transfer_service.transfer_retry_eligible(job.state):
                 self.transfer_service.retry_now(job.managed_file_id)
         self.refresh()
 

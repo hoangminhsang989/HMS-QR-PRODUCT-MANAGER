@@ -25,6 +25,20 @@ TRANSFER_PENDING_STATES = (
     ArchiveTransferState.TRANSFER_FAILED_RETRYABLE,
 )
 
+# Ordinary manual retry is deliberately narrower than worker recovery. Once
+# remote verification succeeds, an ordinary retry must never move the job
+# backwards into the transfer queue. Permanent failures require a separate
+# force-retry action, which this product does not currently expose.
+TRANSFER_RETRY_ELIGIBLE_STATES = frozenset({
+    ArchiveTransferState.TRANSFER_FAILED_RETRYABLE,
+})
+
+
+def transfer_retry_eligible(state: ArchiveTransferState | str) -> bool:
+    """Return the canonical eligibility decision for ordinary transfer retry."""
+
+    return ArchiveTransferState(state) in TRANSFER_RETRY_ELIGIBLE_STATES
+
 
 class StoreForwardRepository:
     def __init__(self, engine) -> None:
@@ -222,11 +236,30 @@ class StoreForwardRepository:
     def retry_now(self, managed_file_id: UUID, *, at: datetime | None = None) -> ArchiveTransferJob:
         timestamp = at or _now()
         with self.Session.begin() as session:
+            # Put eligibility in the mutation predicate. A concurrent worker
+            # can change the row, but retry can only update a still-retryable
+            # failure and can never demote an active or verified state.
+            result = session.execute(update(ArchiveTransferJobORM).where(
+                ArchiveTransferJobORM.managed_file_id == str(managed_file_id),
+                ArchiveTransferJobORM.state.in_(tuple(
+                    state.value for state in TRANSFER_RETRY_ELIGIBLE_STATES
+                )),
+            ).values(
+                state=ArchiveTransferState.TRANSFER_QUEUED.value,
+                next_retry_at=timestamp,
+                last_error_code=None,
+                last_error_summary=None,
+                lease_token=None,
+                lease_expires_at=None,
+                updated_at=timestamp,
+            ))
             row = session.scalar(select(ArchiveTransferJobORM).where(
                 ArchiveTransferJobORM.managed_file_id == str(managed_file_id)
             ))
             if row is None:
                 raise LookupError("archive transfer job not found")
+            if result.rowcount != 1:
+                return self._job(row)
             if row.state in {
                 ArchiveTransferState.TRANSFERRING.value,
                 ArchiveTransferState.REMOTE_VERIFYING.value,

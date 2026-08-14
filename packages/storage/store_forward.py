@@ -18,7 +18,10 @@ from packages.domain.store_forward import (
     TransferErrorCode,
 )
 from packages.persistence.managed_file_repository import ManagedFileRepository
-from packages.persistence.store_forward_repository import StoreForwardRepository
+from packages.persistence.store_forward_repository import (
+    StoreForwardRepository,
+    transfer_retry_eligible,
+)
 from .service import (
     FilesystemStorage,
     StorageConflict,
@@ -199,6 +202,12 @@ class StoreForwardService:
 
     def retry_now(self, managed_file_id: UUID) -> ArchiveTransferJob:
         return self.repository.retry_now(managed_file_id)
+
+    @staticmethod
+    def transfer_retry_eligible(state: ArchiveTransferState | str) -> bool:
+        """Expose the repository's canonical ordinary retry policy to clients."""
+
+        return transfer_retry_eligible(state)
 
     def purge_ready_local_copies(self, *, now: datetime | None = None) -> tuple[ArchiveTransferJob, ...]:
         timestamp = now or _now()

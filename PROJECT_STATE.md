@@ -1,10 +1,10 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: Bounded storage-admin authorization fail-closed remediation
-Current Revision: R009A1
-Current Branch: stage6-r009a1-admin-auth-fail-closed
-Current Verdict: PASS_STAGE6_R009A1_ADMIN_AUTHORIZATION_FAIL_CLOSED_REMEDIATION_CANDIDATE
+Current WP: Bounded manual-retry / remote-verified lifecycle remediation
+Current Revision: R009A2A
+Current Branch: stage6-r009a2a-manual-retry-lifecycle-fix
+Current Verdict: PASS_STAGE6_R009A2A_MANUAL_RETRY_REMOTE_VERIFIED_LIFECYCLE_REMEDIATION_CANDIDATE
 
 Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 bounded foundation integrated locally after R008A2 independent approval; remote delivery remains pending.
 
@@ -291,3 +291,28 @@ migration behavior is changed.
 Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009A1.md`
 Next action after remediation candidate PASS:
 `STAGE6_R009A2_INDEPENDENT_REVIEW_OF_REMEDIATED_R009_CANDIDATE`.
+
+R009A2 independently confirmed the R009A1 authorization fix, then rejected the
+frozen remediated candidate `76b39d81` because ordinary manual retry demoted
+`LOCAL_GRACE_RETENTION` back to `TRANSFER_QUEUED`. A worker could consequently
+reprocess already verified remote content and restart the local grace period.
+
+R009A2A preserves both rejected commits and centralizes ordinary transfer-retry
+eligibility at the repository mutation boundary. Only
+`TRANSFER_FAILED_RETRYABLE` may be requeued; queued jobs are exact no-ops, and
+active, permanent-failure, remote-ready, grace, purge-pending, and archived-only
+states remain unchanged. The conditional update includes the state predicate,
+so retry cannot race a verifier or purge worker backwards. Desktop Product and
+Admin actions consume the same policy. Purge retry remains the existing
+remote/checksum/grace/lease-revalidated delete-local-last workflow.
+
+Fresh evidence: retry lifecycle `13 passed`; auth `10 passed`; R009 focused
+`22 passed`; runtime hardening `23 passed`; QR critical `6 passed`; full
+single-process Qt-last regression `98 passed, 1 inherited warning`. Alembic
+remains `0005_store_forward`; isolation, secret, scope, and diff gates pass.
+No NAS write, production restore, exact Excel fidelity claim, merge, or push
+occurred.
+
+Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009A2A.md`
+Next exact action:
+`STAGE6_R009A3_INDEPENDENT_REVIEW_OF_REMEDIATED_R009_CANDIDATE`.
