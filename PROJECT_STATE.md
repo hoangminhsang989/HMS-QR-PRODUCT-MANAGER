@@ -2,11 +2,11 @@
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
 Current WP: Managed storage + product files + backup + Excel template foundation
-Current Revision: R008A1
-Current Branch: stage6-r008a1-alembic-boundary-fix
-Current Verdict: PASS_STAGE6_R008A1_ALEMBIC_REVISION_BOUNDARY_REMEDIATION_CANDIDATE
+Current Revision: R008B
+Current Branch: main
+Current Verdict: PASS_STAGE6_R008B_LOCAL_INTEGRATION
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 bounded foundation candidate ready for independent review.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 bounded foundation integrated locally after R008A2 independent approval; remote delivery remains pending.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -235,3 +235,26 @@ warning`). No product/storage/backup/Excel/QR/UI behavior was changed.
 Next exact action: `STAGE6_R008A2_INDEPENDENT_REVIEW_OF_REMEDIATED_CANDIDATE`.
 R008A1 is not integration authority. Do not merge, push, write real NAS, or
 claim exact Excel fidelity.
+
+R008A2 independently reproduced the clean Alembic revision boundary, physical
+schema roundtrip, schema equivalence, storage/path/state/integrity gates,
+backup/restore verification, Excel source immutability, focused tests, QR
+critical tests, full regression, isolation, secret scan, and frozen candidate
+identity. Verdict:
+
+```text
+PASS_STAGE6_R008A2_INDEPENDENT_REVIEW_OF_REMEDIATED_CANDIDATE
+R008_REMEDIATED_CANDIDATE_APPROVED_FOR_INTEGRATION=YES
+```
+
+R008B fast-forwarded local `main` from
+`ee9c1f13cb20dce64996536d807d177363362a9b` to approved candidate
+`fb147944b42be85e9a33053a106e04df034c631d`. Post-integration physical Alembic
+boundary checks passed; Stage6 focused returned `13 passed`; QR critical
+returned `6 passed, 1 inherited warning`; isolation, secret, and diff checks
+passed. No implementation/test byte changed during local integration.
+
+Current status: `STAGE6_R008_LOCAL_INTEGRATION_COMPLETE_PUSH_PENDING`.
+Next exact action: `STAGE6_R008C_REMOTE_DELIVERY_AND_R008_CLOSURE`. Do not push,
+write real NAS, perform production restore, claim exact Excel fidelity, or start
+another Stage6 tranche without that authority.

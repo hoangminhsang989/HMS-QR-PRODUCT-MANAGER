@@ -1,0 +1,78 @@
+# Checkpoint - Stage 6 R008B
+
+## Verdict
+
+```text
+PASS_STAGE6_R008B_LOCAL_INTEGRATION
+STAGE6_R008_LOCAL_INTEGRATION_COMPLETE_PUSH_PENDING
+```
+
+R008B performed local fast-forward integration and post-integration
+verification only. No push, real NAS write, production restore, exact Excel
+fidelity claim, or next-tranche implementation was authorized or performed.
+
+## Integration identity
+
+```text
+LOCAL_MAIN_PRE_INTEGRATION_HEAD=ee9c1f13cb20dce64996536d807d177363362a9b
+ORIGIN_MAIN_HEAD=ee9c1f13cb20dce64996536d807d177363362a9b
+APPROVED_CANDIDATE_HEAD=fb147944b42be85e9a33053a106e04df034c631d
+APPROVED_CANDIDATE_TREE=28fcde07923a2f418c246d2fad87b58985272258
+APPROVED_CANDIDATE_PARENT=de20e462522b55ff2287c4e9f545eb288c8a3f42
+MERGE_BASE_MAIN_CANDIDATE=ee9c1f13cb20dce64996536d807d177363362a9b
+MAIN_IS_ANCESTOR_OF_APPROVED_CANDIDATE=PASS
+FAST_FORWARD_EXIT_CODE=0
+MAIN_POST_FF_HEAD=fb147944b42be85e9a33053a106e04df034c631d
+MAIN_POST_FF_TREE=28fcde07923a2f418c246d2fad87b58985272258
+```
+
+The approved candidate history was preserved exactly. No merge commit, rebase,
+squash, amend, reset, or force operation was used.
+
+## Post-integration verification
+
+All runtime artifacts were directed below
+`F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST`.
+
+```text
+POST_FRESH_TO_0003_STAGE6_ABSENT=PASS
+POST_0003_TO_HEAD_STAGE6_PRESENT=PASS
+POST_HEAD_TO_0003_STAGE6_ABSENT=PASS
+POST_REUPGRADE_TO_HEAD_STAGE6_PRESENT=PASS
+POST_INTEGRATION_ALEMBIC_BOUNDARY=PASS
+ALEMBIC_HEAD=0004_managed_files
+ALEMBIC_SINGLE_HEAD=PASS
+POST_INTEGRATION_STAGE6_FOCUSED_TESTS=13 passed in 34.51s
+QR_CRITICAL_TESTS=6 passed, 1 inherited warning in 12.58s
+QR_EXACT_FIELD_COUNT=4
+QR_EXACT_FOUR_FIELD_CONTRACT=PASS
+TEST_ISOLATION_PASS=PASS
+PRODUCTION_ROOT_TEST_ARTIFACT_COUNT=0
+SECRET_SCAN=PASS
+SECRET_LITERAL_MATCH_COUNT=0
+GIT_DIFF_CHECK=PASS
+FAILED_TEST_COUNT=0
+```
+
+The QR payload remains exactly `product_name`, `customer_name`, `product_code`,
+and `tracking_code`. No storage, file, image, attachment, NAS, checksum, date,
+quantity, UUID, or fifth field was introduced.
+
+## Preserved production gaps
+
+```text
+POSTGRESQL_PRODUCTION_INTEGRATION_NOT_YET_EXECUTED
+TEMPLATE_FIDELITY_PENDING_REFERENCE_FILE
+NAS_WRITE_PIPELINE_NOT_YET_EXECUTED
+MACHINE_A_PRODUCTION_DEPLOYMENT_NOT_YET_EXECUTED
+MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
+PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
+```
+
+## Exact stop
+
+Create at most one metadata-only closure commit with parent `fb147944`, then
+stop. `PUSH=NOT_PERFORMED`.
+
+Next exact action:
+`STAGE6_R008C_REMOTE_DELIVERY_AND_R008_CLOSURE`.
