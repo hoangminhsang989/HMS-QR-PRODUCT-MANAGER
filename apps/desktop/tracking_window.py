@@ -31,6 +31,10 @@ class TrackingWindow(QMainWindow):
         layout.addLayout(action_row);history_button=QPushButton("MỞ LỊCH SỬ TRACKING ITEM");layout.addWidget(history_button)
         if workflow_actions and "HISTORY" in workflow_actions:history_button.clicked.connect(workflow_actions["HISTORY"])
         self.table=table;self.history_button=history_button;self.setCentralWidget(root)
+        # Apply the canonical Stage 5 theme after all widgets are constructed.
+        # This keeps the existing workflow wiring intact while aligning the
+        # desktop shell with apps.design_tokens.PY_SIDE_THEME.
+        self.setStyleSheet(self._stage5_theme)
         if workflow_context:self.bind_workflow_context(**workflow_context)
 
     def bind_workflow_context(self,tracking_item_id,actor_user_id,actor_display_name,qc_service,packing_service,delivery_service,general_service,history_service):

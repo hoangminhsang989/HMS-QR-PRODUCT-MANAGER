@@ -9,3 +9,100 @@ R007B1 installation completed at the standard per-user location and startup smok
 R007B2 recovered the exact Open Design-generated Codex configuration through the Desktop UI and classified it as STDIO. ChatGPT Desktop supports all generated fields, so no config-file fallback is used. Work pauses for the user to complete Settings → MCP servers → Add server → Save → Restart in ChatGPT Desktop; recognition/read/prototype gates remain pending.
 
 R007B2 user-authorized self-configuration is now complete. The effective user config was backed up with SHA256 `054663A3B35ED71D83C1A0B3397A66ABDE5B18FCB2E8B74605DB0BBB2AA0D3CA`; the exact Open Design-generated STDIO tables were appended; TOML parsing and parsed-value equality passed. The active ChatGPT Desktop process was not terminated. Status: `BLOCKED_STAGE5_R007B2_WAITING_CODEX_RESTART_FOR_MCP_INITIALIZATION`.
+
+R007B4 supersedes Open Design as the Stage 5 design-toolchain decision. The
+failed Cloud/AMR generation run remains retired; no paid top-up or retry was
+performed. Penpot MCP is the intended canonical visual design backend, and
+UICanvas Local MCP is the intended rapid prototype backend. The official
+UICanvas checkout was placed outside production at
+`F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST\tools\uicanvas` (commit
+`ec17dd0bb889dc9868a83aa04218a66575aade64`, MIT, package `1.3.1`) and its
+dependencies installed successfully. Its upstream `node server.js --port
+3200` startup exits without binding on this Windows host, so the local-server
+and MCP gates remain blocked/not run; the third-party checkout was not patched.
+No Penpot server/plugin is running, no Penpot key was added, and no Penpot
+read/write test was claimed. Verdict:
+`BLOCKED_STAGE5_R007B4_PENPOT_UICANVAS_BACKENDS_NOT_CONNECTED`.
+
+R007B5 preserved the R007B4 candidate and ran the authorized fast-path
+recovery. UICanvas foreground diagnostics were captured under
+`F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST\stage5\r007b5\uicanvas`:
+
+```text
+Node24: exit=0, stderr=empty, port3200=FALSE
+Node22=v22.23.2: exit=0, stderr=empty, port3200=FALSE
+```
+
+The same unmodified official checkout fails under both runtimes, so this is
+classified as `BLOCKED_STAGE5_R007B5_UICANVAS_UPSTREAM_WINDOWS_RUNTIME` rather
+than a Node24-only limitation. The official Node22 archive SHA256 is
+`1177B4137BA5ADAA56354AE40F1080C7450E8AE09CECB47DA459D1C52AC99F97` and it
+was kept outside production.
+
+The official Penpot npm fast-path resolved `@penpot/mcp@2.15.4` from the
+`penpot/penpot` repository, but pnpm bootstrap aborted with
+`ERR_PNPM_IGNORED_BUILDS` for `esbuild` and `sharp` before any MCP or plugin
+server could start. Therefore `PENPOT_MCP_PROCESS`, plugin, read, write, and
+readback gates remain `NOT_STARTED`/`NOT_RUN`; no Penpot key or Codex config
+entry was added. Verdict:
+`BLOCKED_STAGE5_R007B5_PENPOT_OFFICIAL_NPM_AND_UICANVAS_WINDOWS_RUNTIME`.
+
+R007B6 completed the official Penpot 2.17.0 source-sparse recovery. Only the
+`mcp` subtree was checked out at commit
+`bdce5817ea86d028db29113d9ecdadcf07097b36`; the upstream build policy was
+verified as `esbuild=true`, `sharp=false`. With portable Node 22.23.2 and
+official pnpm 11.9.0, dependency installation and source build passed. The
+plugin server listens on 4400 and returns HTTP 200 for `/manifest.json`; the
+MCP service listens on 4401 and exposes the streamable endpoint.
+
+The Penpot web UI is waiting at the standard free-account login screen. No
+authentication was automated, so plugin connection and real MCP read/write/
+readback remain pending. Existing VS Code was also evaluated as the UICanvas
+extension host; its view opened but a Windows Defender Firewall prompt blocked
+listener/Webview verification. Per R007B6, UICanvas is now an optional
+non-product tooling blocker. Verdict:
+`BLOCKED_STAGE5_R007B6_WAITING_STANDARD_PENPOT_FREE_LOGIN`.
+
+R007B7C completed the authorized dual-identity Penpot recovery. The user-level
+Codex config now preserves the Stage72 remote identity as `penpot_stage72` and
+adds the dedicated HMS QR identity as `penpot_hms_qr`; both expose four live
+tools after restart. Read-only checks proved:
+
+```text
+penpot_stage72 -> HMS Stage72 Installer
+penpot_hms_qr -> HMS QR PRODUCT MANAGER
+PENPOT_TWO_PROJECT_PARALLEL_ISOLATION=PASS
+```
+
+Using only `penpot_hms_qr`, the target file/page binding was revalidated,
+`R007B7_MCP_TEST` was created as a text object, read back, and deleted. A
+post-write read through `penpot_stage72` confirmed the protected project did
+not contain the test object. No Stage72 write/delete/rename occurred.
+
+The canonical Penpot file now contains pages `00 DESIGN SYSTEM`, `01 DESKTOP`,
+`02 MOBILE`, `03 HISTORY`, and `04 QR LABELS`, with synthetic artifacts A–G.
+Representative Penpot exports and external desktop captures were inspected;
+the runtime changes are bounded to shared PySide6/CSS presentation tokens.
+Fresh Alembic smoke passed and the full Stage 0–4 suite returned:
+
+```text
+PASSED=40
+FAILED=0
+SKIPPED=0
+WARNINGS=1
+DURATION=92.18s
+```
+
+The one warning is the unchanged external Starlette/httpx deprecation. Final
+test-isolation and secret scans pass, with `git diff --check=PASS`; only final
+diff review and candidate commit remain pending. No merge to main is authorized.
+
+R007B7D supersedes the previous dark-mode-first visual direction. The
+canonical/default Stage 5 theme is now light industrial: soft neutral
+background, white/light panels, dark charcoal text, precise borders, blue
+primary action, and semantic green/amber/red/blue statuses. Existing dark
+Penpot exports are historical and cannot satisfy the new acceptance gate.
+Tokens, PySide6, Web CSS, Penpot Design System, and A–G artifacts now use the
+light direction. Fresh desktop and mobile reviews passed; the candidate is
+closed locally after the final isolation, secret, and diff gates, with no merge
+to main.

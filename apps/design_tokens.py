@@ -1,18 +1,18 @@
 """Canonical HMS QR Stage 5 design tokens shared by desktop and web UI."""
 
 TOKENS = {
-    "background": "#111923",
-    "surface": "#1b2733",
-    "surface_raised": "#243544",
-    "border": "#3b5162",
-    "text_primary": "#eef4f8",
-    "text_secondary": "#a9bbc7",
-    "text_disabled": "#6f808c",
-    "accent": "#35b7a4",
-    "success": "#2fb889",
-    "warning": "#d39a3d",
-    "danger": "#d56363",
-    "info": "#5c9ed6",
+    "background": "#f3f1ec",
+    "surface": "#ffffff",
+    "surface_raised": "#e7e8e8",
+    "border": "#b8bdc1",
+    "text_primary": "#333333",
+    "text_secondary": "#555555",
+    "text_disabled": "#777777",
+    "accent": "#246b9c",
+    "success": "#2f8f63",
+    "warning": "#b7791f",
+    "danger": "#c44747",
+    "info": "#3b72a6",
 }
 
 SPACING = {"2": 2, "4": 4, "6": 6, "8": 8, "12": 12, "16": 16, "24": 24, "32": 32}
@@ -33,11 +33,11 @@ QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QSpinBox:focus {{ border: 2px
 QPushButton {{ background: {TOKENS['surface_raised']}; color: {TOKENS['text_primary']}; border: 1px solid {TOKENS['border']};
   border-radius: 4px; padding: 7px 12px; min-height: 28px; }}
 QPushButton:hover {{ border-color: {TOKENS['accent']}; }} QPushButton:pressed {{ background: {TOKENS['accent']}; }}
-QTableView, QTableWidget {{ background: {TOKENS['surface']}; alternate-background-color: #202f3c;
-  color: {TOKENS['text_primary']}; gridline-color: {TOKENS['border']}; border: 1px solid {TOKENS['border']}; }}
+QTableView, QTableWidget {{ background: {TOKENS['surface']}; alternate-background-color: #f0f1f2;
+  color: {TOKENS['text_primary']}; gridline-color: {TOKENS['border']}; border: 1px solid {TOKENS['border']};
+  selection-background-color: {TOKENS['accent']}; selection-color: #ffffff; }}
 QHeaderView::section {{ background: {TOKENS['surface_raised']}; color: {TOKENS['text_secondary']}; padding: 7px; border: 0; }}
-QTabBar::tab {{ background: {TOKENS['surface']}; padding: 8px 14px; }} QTabBar::tab:selected {{ background: {TOKENS['accent']}; }}
+QTabBar::tab {{ background: {TOKENS['surface']}; color: {TOKENS['text_secondary']}; padding: 8px 14px; }} QTabBar::tab:selected {{ background: {TOKENS['accent']}; color: #ffffff; }}
 """
 
 WEB_CSS_VARS = ":root{" + ";".join(f"--{k.replace('_','-')}:{v}" for k, v in TOKENS.items()) + "}"
-

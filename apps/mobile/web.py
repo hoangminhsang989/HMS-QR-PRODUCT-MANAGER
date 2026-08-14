@@ -24,4 +24,18 @@ async function expandAttempts(){maxAttempt=Math.min(99,maxAttempt+3);if(current&
 async function submitAttempt(n){await submitReport('ATTEMPT',n)}async function submitCompleted(){await submitReport('PROCESS_COMPLETED',null)}
 async function submitReport(kind,n){if(!current||!userId||!processId)return alert('Cần chọn người dùng và loại gia công');const body={request_id:crypto.randomUUID(),tracking_item_id:current.internal_id,machining_type_id:processId,kind,attempt_number:n,quantity:document.querySelector('#qty').value,notes:document.querySelector('#notes').value,actor_user_id:userId,actor_display_name:document.querySelector('#user').textContent};const r=await fetch(api+'/api/v1/process-reports',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});if(r.ok){alert('Đã ghi báo cáo');await loadHistory()}}
 async function loadHistory(){if(!current)return;const r=await fetch(api+'/api/v1/tracking-items/'+current.internal_id+'/history');if(r.ok){const d=await r.json();const names={ATTEMPT:'Gia công',PROCESS_COMPLETED:'Đã xong',QC_CHECKED:'QC',SHORTAGE_REPORTED:'Thiếu hàng',QC_NG_RETURNED_TO_MACHINING:'NG / Rework',PACKED:'Đóng gói',DELIVERED:'Giao hàng',GENERAL_REPORT:'Báo cáo'};document.querySelector('#history').innerHTML=d.items.map(x=>`<li><span class='history-kind'>${names[x.event_type]||x.event_type}</span> — ${new Date(x.server_timestamp).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} — ${x.actor_display_name_snapshot}${x.quantity?' — '+x.quantity:''}${x.notes?' — '+x.notes:''}</li>`).join('')}}restore();</script></body></html>"""
+MOBILE_CSS_OVERRIDES = (
+    WEB_CSS_VARS
+    + "body{background:var(--background);color:var(--text-primary);font-family:'M PLUS 2','Segoe UI',sans-serif;}"
+      "header{background:var(--surface-raised);border-bottom:1px solid var(--border);}"
+      ".card{background:var(--surface);border-color:var(--border);box-shadow:0 4px 14px rgba(0,0,0,.18);}"
+      "button,input,select,textarea{background:var(--surface-raised);border-color:var(--border);color:var(--text-primary);min-height:44px;}"
+      "button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}"
+      ".attempt{background:var(--accent);color:var(--background);font-weight:700;}"
+      ".done{background:var(--success);color:var(--background);}"
+      ".history-kind{color:var(--accent);}"
+      "@media(max-width:430px){body{font-size:16px}.wrap{width:auto;max-width:none}.card{margin:10px 0;padding:12px}.grid,.qc-actions{grid-template-columns:1fr}.mode{gap:4px}.mode button{flex:1 1 45%;margin:2px}.qc-actions button{width:100%;margin:0}.value{font-size:16px}}"
+)
+MOBILE_HTML = MOBILE_HTML.replace("</style>", MOBILE_CSS_OVERRIDES + "</style>", 1)
+
 def mobile_page():return HTMLResponse(MOBILE_HTML)
