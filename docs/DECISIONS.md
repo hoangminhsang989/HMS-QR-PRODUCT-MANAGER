@@ -97,3 +97,23 @@ occurrence; event quantities represent checked, shortage, NG, packed, or
 delivered amounts. R006 permits partial/multiple packing and delivery events,
 limits aggregate packing to target minus effective shortage, and requires
 aggregate delivered quantity not to exceed aggregate packed quantity.
+
+## ADR-014 — Local-first safe store-and-forward archive
+
+Status: Accepted for R009 candidate
+Date: 2026-08-14
+
+Decision: Treat Machine A local ingest as the first durable file save and a
+configurable archive target as asynchronous long-term storage. Persist transfer
+jobs and their versioned destination identity. Copy, verify size and SHA-256,
+commit the remote final object and metadata, retain the local copy for the
+configured grace period, then delete local last after revalidation.
+
+Reason: Upload availability must not depend on a NAS/network round trip, and no
+temporary archive outage may turn a locally durable upload into a user-visible
+failure or data-loss path.
+
+Consequences: Managed-file availability and archive progress are separate;
+local capacity is admission-controlled; archive retries are bounded and
+idempotent; configuration changes do not rewrite existing jobs; archive is not
+backup; real NAS acceptance remains a production gap.

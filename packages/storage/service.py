@@ -13,6 +13,7 @@ from enum import StrEnum
 import hashlib
 import os
 from pathlib import Path
+import re
 from uuid import uuid4
 
 from .keys import validate_storage_key
@@ -98,6 +99,52 @@ class StorageService(ABC):
 
     @abstractmethod
     def health(self) -> StorageHealth: ...
+
+    @abstractmethod
+    def publish_transfer(
+        self,
+        storage_key: str,
+        content: bytes,
+        *,
+        transfer_id: str,
+        expected_sha256: str,
+        expected_size: int,
+    ) -> StoredObject: ...
+
+
+class UnconfiguredStorage(StorageService):
+    """Fail-closed placeholder until an administrator configures a root."""
+
+    _MESSAGE = "Vị trí lưu trữ phía server chưa được cấu hình."
+
+    def _raise(self):
+        raise StorageUnavailable(self._MESSAGE)
+
+    def put(self, storage_key, content, *, expected_sha256=None, expected_size=None):
+        self._raise()
+
+    def read(self, storage_key):
+        self._raise()
+
+    def exists(self, storage_key):
+        self._raise()
+
+    def archive(self, storage_key, archive_key):
+        self._raise()
+
+    def delete(self, storage_key):
+        self._raise()
+
+    def verify(self, storage_key, *, expected_sha256, expected_size):
+        self._raise()
+
+    def health(self) -> StorageHealth:
+        return StorageHealth(HealthState.UNAVAILABLE, False, self._MESSAGE)
+
+    def publish_transfer(
+        self, storage_key, content, *, transfer_id, expected_sha256, expected_size
+    ):
+        self._raise()
 
 
 class FilesystemStorage(StorageService):
@@ -236,6 +283,112 @@ class FilesystemStorage(StorageService):
         writable = os.access(self.root, os.W_OK)
         state = HealthState.HEALTHY if writable else HealthState.UNAVAILABLE
         return StorageHealth(state, writable, "Storage ready" if writable else "Storage not writable")
+
+    def publish_transfer(
+        self,
+        storage_key: str,
+        content: bytes,
+        *,
+        transfer_id: str,
+        expected_sha256: str,
+        expected_size: int,
+    ) -> StoredObject:
+        """Publish through a same-filesystem remote temp object.
+
+        An exact job-owned partial temp is safely restarted.  A mismatched final
+        object is never overwritten.
+        """
+
+        self._require_root()
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", transfer_id):
+            raise ValueError("transfer_id is invalid")
+        if not isinstance(content, bytes):
+            raise TypeError("content must be bytes")
+        actual_size = len(content)
+        actual_sha256 = hashlib.sha256(content).hexdigest()
+        if actual_size != expected_size:
+            raise StorageIntegrityError("Local transfer size changed before archive publication.")
+        if actual_sha256 != expected_sha256.lower():
+            raise StorageIntegrityError("Local transfer checksum changed before archive publication.")
+        target = self._resolve(storage_key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            result = self.verify(
+                storage_key, expected_sha256=expected_sha256, expected_size=expected_size
+            )
+            if not result.valid:
+                raise StorageConflict("Remote final object exists with mismatched identity.")
+            return StoredObject(storage_key, expected_size, expected_sha256.lower(), True)
+        temporary = target.parent / f".transfer-{transfer_id}.tmp"
+        try:
+            with temporary.open("wb") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if temporary.stat().st_size != expected_size:
+                raise StorageIntegrityError("Remote temporary size mismatch.")
+            if _sha256_file(temporary) != expected_sha256.lower():
+                raise StorageIntegrityError("Remote temporary checksum mismatch.")
+            os.replace(temporary, target)
+            _fsync_directory(target.parent)
+        except StorageError:
+            raise
+        except PermissionError as exc:
+            raise StorageUnavailable("Không có quyền ghi kho lưu trữ dài hạn.") from exc
+        except OSError as exc:
+            raise StorageUnavailable("Không thể công bố tệp vào kho lưu trữ dài hạn.") from exc
+        result = self.verify(
+            storage_key, expected_sha256=expected_sha256, expected_size=expected_size
+        )
+        if not result.valid:
+            raise StorageIntegrityError("Remote final verification failed after publication.")
+        return StoredObject(storage_key, expected_size, expected_sha256.lower())
+
+    def transfer_temp_path(self, storage_key: str, transfer_id: str) -> Path:
+        """Internal reconciliation helper; never return this path through an API."""
+
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", transfer_id):
+            raise ValueError("transfer_id is invalid")
+        return self._resolve(storage_key).parent / f".transfer-{transfer_id}.tmp"
+
+    def recover_upload_temp(
+        self,
+        storage_key: str,
+        *,
+        expected_sha256: str,
+        expected_size: int,
+    ) -> bool:
+        """Publish one exact, fully verified interrupted local upload temp.
+
+        Invalid or ambiguous bytes are retained for operator reconciliation.
+        """
+
+        self._require_root()
+        target = self._resolve(storage_key)
+        current = self.verify(
+            storage_key, expected_sha256=expected_sha256, expected_size=expected_size
+        )
+        if current.valid:
+            return True
+        candidates = tuple(target.parent.glob(f".{target.name}.*.uploading")) if target.parent.is_dir() else ()
+        valid = []
+        for candidate in candidates[:16]:
+            try:
+                if candidate.is_file() and candidate.stat().st_size == expected_size:
+                    if _sha256_file(candidate) == expected_sha256.lower():
+                        valid.append(candidate)
+            except OSError:
+                continue
+        if not valid or target.exists():
+            return False
+        try:
+            os.replace(valid[0], target)
+            _fsync_directory(target.parent)
+        except OSError as exc:
+            raise StorageUnavailable("Không thể khôi phục tệp tải lên đã hoàn tất.") from exc
+        return self.verify(
+            storage_key, expected_sha256=expected_sha256, expected_size=expected_size
+        ).valid
 
 
 class LocalDevStorage(FilesystemStorage):

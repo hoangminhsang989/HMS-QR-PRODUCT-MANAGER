@@ -63,3 +63,20 @@ event server time.
 Independent shortage events are additive. Each event contributes only its
 current active revision; superseded revisions never contribute to checked,
 shortage, NG, packed, or delivered aggregates.
+
+## Stage 6 R009 archive transfer metadata
+
+`storage_configurations` is append/version oriented. It owns the server-local
+ingest root, archive target root, grace duration, bounded retry schedule, and
+capacity thresholds. Only one row is active for new uploads. Old configuration
+rows remain addressable because queued and archived files retain their exact
+configuration identity.
+
+`archive_transfer_jobs` has one persistent row per Managed File and a dedicated
+state machine: `LOCAL_READY`, `TRANSFER_QUEUED`, `TRANSFERRING`,
+`REMOTE_VERIFYING`, `REMOTE_READY`, `LOCAL_GRACE_RETENTION`,
+`LOCAL_PURGE_PENDING`, `ARCHIVED_REMOTE_ONLY`, and retryable/permanent failure
+states. It records bounded error classification, attempts, next retry,
+server-authoritative verification/grace/purge timestamps, and a lease token with
+expiry. Physical paths are operational configuration, not Product or QR
+identity.

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import hashlib
 import re
 from uuid import UUID, uuid4
+from typing import Protocol
 
 from packages.domain.attachments import (
     ManagedFile,
@@ -25,6 +26,18 @@ from .validation import UploadKind, UploadLimits, validate_upload
 _ATTACHMENT_CATEGORY = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 
 
+class ArchiveCoordinator(Protocol):
+    @property
+    def active_configuration_id(self) -> UUID: ...
+
+    @property
+    def ingest_storage(self) -> StorageService: ...
+
+    def preflight_upload(self, size_bytes: int): ...
+
+    def read_available(self, managed: ManagedFile) -> bytes: ...
+
+
 class ManagedFileService:
     def __init__(
         self,
@@ -32,10 +45,12 @@ class ManagedFileService:
         storage: StorageService,
         *,
         limits: UploadLimits = UploadLimits(),
+        archive_coordinator: ArchiveCoordinator | None = None,
     ) -> None:
         self.repository = repository
         self.storage = storage
         self.limits = limits
+        self.archive_coordinator = archive_coordinator
 
     def upload_product_image(
         self,
@@ -99,6 +114,21 @@ class ManagedFileService:
     def set_primary_image(self, *, product_id: UUID, file_id: UUID) -> None:
         self.repository.set_primary_image(product_id=product_id, file_id=file_id)
 
+    def update_relation(
+        self,
+        *,
+        product_id: UUID,
+        file_id: UUID,
+        sort_order: int | None = None,
+        caption: str | None = None,
+    ) -> ProductFileRelation:
+        return self.repository.update_relation(
+            product_id=product_id,
+            file_id=file_id,
+            sort_order=sort_order,
+            caption=caption,
+        )
+
     def archive(self, *, file_id: UUID, actor: str) -> ManagedFile:
         return self.repository.archive(file_id, actor=actor, at=_now())
 
@@ -109,6 +139,15 @@ class ManagedFileService:
             expected_sha256=managed.sha256,
             expected_size=managed.size_bytes,
         )
+
+    def read(self, file_id: UUID) -> bytes:
+        managed = self.repository.get(file_id)
+        if self.archive_coordinator is not None:
+            return self.archive_coordinator.read_available(managed)
+        result = self.verify(file_id)
+        if not result.valid:
+            raise FileNotFoundError("Managed file has no valid available copy.")
+        return self.storage.read(managed.storage_key)
 
     def _publish(
         self,
@@ -138,6 +177,8 @@ class ManagedFileService:
         )
         if kind is ProductFileKind.ATTACHMENT and validated.kind is UploadKind.IMAGE:
             raise ValueError("Product images must use the image operation.")
+        if self.archive_coordinator is not None:
+            self.archive_coordinator.preflight_upload(validated.size_bytes)
 
         old = self.repository.get(replaces_file_id) if replaces_file_id else None
         if old:
@@ -190,13 +231,17 @@ class ManagedFileService:
         )
         self.repository.create_pending(managed, relation)
         try:
-            self.storage.put(
+            storage = (
+                self.archive_coordinator.ingest_storage
+                if self.archive_coordinator is not None else self.storage
+            )
+            storage.put(
                 storage_key,
                 content,
                 expected_sha256=digest,
                 expected_size=validated.size_bytes,
             )
-            verification = self.storage.verify(
+            verification = storage.verify(
                 storage_key,
                 expected_sha256=digest,
                 expected_size=validated.size_bytes,
@@ -209,6 +254,10 @@ class ManagedFileService:
                 replaces_file_id=old.file_id if old else None,
                 actor=actor.strip(),
                 make_primary=make_primary,
+                transfer_configuration_id=(
+                    self.archive_coordinator.active_configuration_id
+                    if self.archive_coordinator is not None else None
+                ),
             )
         except Exception as exc:
             try:

@@ -48,3 +48,35 @@ uses a request UUID for idempotency, server UTC time, operator UUID plus display
 snapshot, optional client/device metadata, and non-destructive revision links.
 Event creation/revision, quantity validation, and Tracking Item projection are
 committed atomically. Mobile displays timestamps in `Asia/Ho_Chi_Minh`.
+
+## Stage 6 R009 safe store-and-forward managed files
+
+Product images and attachments are saved to `LOCAL_INGEST_ROOT` on Machine A
+before upload success is returned. The database transaction that makes the
+managed file `READY` also creates a persistent archive-transfer job. Archive
+availability is a separate lifecycle, so `READY` continues to mean that the
+file is safely available and never ambiguously means “already archived”.
+
+The canonical destructive order is:
+
+```text
+SAVE LOCAL FIRST -> QUEUE -> COPY TO REMOTE TEMP -> VERIFY SIZE + SHA-256
+-> REMOTE FINAL COMMIT -> METADATA COMMIT -> LOCAL GRACE RETENTION
+-> REVALIDATE -> DELETE LOCAL LAST
+```
+
+Each transfer job snapshots a versioned storage configuration identity. A new
+archive destination affects new uploads only; queued/in-flight jobs retain
+their original destination, and already archived objects are not migrated by
+R009. Downloads resolve logical file identity through the service: a verified
+local copy is preferred, otherwise a verified archive copy is served. Neither
+desktop nor mobile receives a local path, UNC path, credential, or storage key.
+
+Workers claim jobs through a database lease, use bounded backoff, restart an
+exact job-owned partial remote temp safely, and publish the final object by a
+same-filesystem replace. A mismatched final object is never overwritten. Purge
+requires a committed remote verification, expired grace period, no active
+lease, and immediate checksum revalidation. Ambiguous bytes are retained.
+
+Archive storage remains distinct from backup. A successful archive transfer
+does not imply `BACKED_UP=YES`.

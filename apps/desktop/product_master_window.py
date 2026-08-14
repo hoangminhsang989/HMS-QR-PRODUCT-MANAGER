@@ -9,12 +9,14 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFormLayout, QHBoxLayout, QHeaderView, QLineEdit,
     QMainWindow, QMessageBox, QPushButton, QTableView, QVBoxLayout, QWidget,
+    QTabWidget,
 )
 
 from packages.application.product_service import ProductService
 from packages.domain.product import Product, ProductStatus, ProductValidationError
 from packages.domain.repository import ProductPage
 from apps.design_tokens import PY_SIDE_THEME
+from apps.desktop.file_panels import AdminStoragePanel, ProductFilesPanel
 
 
 STATUS_LABELS = {
@@ -90,7 +92,13 @@ class ProductForm(QWidget):
 
 
 class ProductMasterWindow(QMainWindow):
-    def __init__(self, service: ProductService, actor: str = "desktop-user") -> None:
+    def __init__(
+        self,
+        service: ProductService,
+        actor: str = "desktop-user",
+        managed_file_service=None,
+        transfer_service=None,
+    ) -> None:
         super().__init__()
         self.service = service
         self.actor = actor
@@ -110,6 +118,8 @@ class ProductMasterWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.model = ProductTableModel()
         self.table.setModel(self.model)
+        self.files_panel = ProductFilesPanel(managed_file_service, transfer_service, actor)
+        self.admin_storage_panel = AdminStoragePanel(transfer_service)
         self.form = ProductForm(self.create_product)
         controls = QHBoxLayout()
         controls.addWidget(self.search)
@@ -119,12 +129,26 @@ class ProductMasterWindow(QMainWindow):
         body.addLayout(controls)
         body.addWidget(self.table, 1)
         body.addWidget(self.form)
+        product_tab = QWidget()
+        product_tab.setLayout(body)
+        tabs = QTabWidget()
+        tabs.addTab(product_tab, "SẢN PHẨM")
+        tabs.addTab(self.files_panel, "ẢNH & TỆP")
+        tabs.addTab(self.admin_storage_panel, "CẤU HÌNH LƯU TRỮ")
         container = QWidget()
-        container.setLayout(body)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.addWidget(tabs)
         self.setCentralWidget(container)
         self.search.returnPressed.connect(self.refresh)
         self.filter_status.currentIndexChanged.connect(self.refresh)
+        self.table.selectionModel().selectionChanged.connect(self._select_product_files)
         self.refresh()
+
+    def _select_product_files(self, *_args) -> None:
+        row = self.table.currentIndex().row()
+        product_id = self.model.page.items[row].internal_id if row >= 0 else None
+        self.files_panel.set_product(product_id)
 
     def refresh(self) -> None:
         self.model.set_page(self.service.list_products(search=self.search.text() or None,
@@ -136,9 +160,13 @@ class ProductMasterWindow(QMainWindow):
         self.refresh()
 
 
-def run(service: ProductService) -> int:
+def run(service: ProductService, *, managed_service=None, transfer_service=None) -> int:
     app = QApplication.instance() or QApplication(sys.argv)
-    window = ProductMasterWindow(service)
+    window = ProductMasterWindow(
+        service,
+        managed_file_service=managed_service,
+        transfer_service=transfer_service,
+    )
     window.show()
     return app.exec()
 

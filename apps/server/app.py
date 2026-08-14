@@ -29,6 +29,7 @@ from packages.persistence.tracking_repository import TrackingRepository
 from packages.persistence.workflow_repository import WorkflowRepository
 from packages.application.workflow_services import DeliveryService,GeneralReportService,PackingService,QcService,TrackingHistoryService
 from apps.mobile.web import mobile_page
+from apps.server.files import build_files_api
 
 APP_NAME = "hms-qr-server"
 
@@ -238,5 +239,7 @@ def _error(code: int, error_code: str, message: str, details: dict[str, str] | N
 app = build_api()
 tracking_api = build_tracking_api()
 app.mount("/tracking", tracking_api)
+files_api = build_files_api(start_worker=True)
+app.mount("/files", files_api)
 
-__all__ = ["APP_NAME", "app", "build_api", "build_tracking_api", "create_app", "tracking_api"]
+__all__ = ["APP_NAME", "app", "build_api", "build_tracking_api", "create_app", "tracking_api", "files_api"]

@@ -72,7 +72,7 @@ def _table_contract(inspector, table_name: str) -> dict[str, object]:
 def test_0004_revision_boundary_roundtrip_and_schema_equivalence(tmp_path):
     migration_database = tmp_path / "migration-boundary.sqlite"
     config = _config(migration_database)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0004_managed_files"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0005_store_forward"]
 
     _alembic_subprocess(migration_database, "upgrade", "0003_qc_packing_delivery")
     previous_revision_tables = _tables(migration_database)

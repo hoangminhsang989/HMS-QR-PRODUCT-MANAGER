@@ -1,10 +1,10 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: Managed storage + product files + backup + Excel template foundation
-Current Revision: R008B
-Current Branch: main
-Current Verdict: PASS_STAGE6_R008B_LOCAL_INTEGRATION
+Current WP: Safe store-and-forward + Product image/attachment API/UI candidate
+Current Revision: R009
+Current Branch: stage6-r009-store-forward-api-ui
+Current Verdict: PASS_STAGE6_R009_SAFE_STORE_FORWARD_IMAGE_ATTACHMENT_API_UI_CANDIDATE
 
 Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 bounded foundation integrated locally after R008A2 independent approval; remote delivery remains pending.
 
@@ -258,3 +258,20 @@ Current status: `STAGE6_R008_LOCAL_INTEGRATION_COMPLETE_PUSH_PENDING`.
 Next exact action: `STAGE6_R008C_REMOTE_DELIVERY_AND_R008_CLOSURE`. Do not push,
 write real NAS, perform production restore, claim exact Excel fidelity, or start
 another Stage6 tranche without that authority.
+
+R009 consumes the remotely delivered R008C baseline
+`fadaeef44d6db082bc64f3e32456b24d6bd7e6b1` and implements local-first upload,
+versioned storage configuration, a persistent leased transfer queue,
+same-target remote temp publication, size/SHA-256 verification, bounded retry,
+capacity admission control, grace retention, and revalidated local-delete-last.
+Managed-file `READY` remains availability; archive progress is separate.
+
+Product image and attachment APIs, compact Desktop Product/Admin panels, and
+bounded Mobile metadata/download access are included without raw path exposure.
+The QR payload remains exactly the existing four business fields. R009 is a
+candidate only: no merge, push, real NAS write, production restore, or exact
+Excel fidelity claim is authorized.
+
+Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009.md`
+Next exact action after terminal candidate PASS:
+`STAGE6_R009A_INDEPENDENT_SAFE_STORE_FORWARD_REVIEW`.

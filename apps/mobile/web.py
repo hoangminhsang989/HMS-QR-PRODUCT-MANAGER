@@ -38,4 +38,25 @@ MOBILE_CSS_OVERRIDES = (
 )
 MOBILE_HTML = MOBILE_HTML.replace("</style>", MOBILE_CSS_OVERRIDES + "</style>", 1)
 
+MOBILE_FILES_HTML = """<section class='card' id='product-files'><h3>ẢNH & TỆP SẢN PHẨM</h3><div id='mobile-images'>Ảnh sản phẩm sẽ hiển thị sau khi quét mã.</div><ul id='mobile-attachments'><li>Tệp đính kèm được mở an toàn qua Server.</li></ul></section>"""
+MOBILE_FILES_SCRIPT = r"""
+async function loadProductFiles(){
+  if(!current||!current.product_id)return;
+  const [imagesResponse,attachmentsResponse]=await Promise.all([
+    fetch('/files/api/v1/products/'+current.product_id+'/images'),
+    fetch('/files/api/v1/products/'+current.product_id+'/attachments')
+  ]);
+  if(!imagesResponse.ok||!attachmentsResponse.ok)return;
+  const images=(await imagesResponse.json()).items;
+  const attachments=(await attachmentsResponse.json()).items;
+  document.querySelector('#mobile-images').innerHTML=images.map(x=>`<a class='file-link' href='/files/api/v1/files/${x.file_id}' target='_blank' rel='noopener'>${x.is_primary?'★ ':''}${x.original_filename}</a>`).join('');
+  document.querySelector('#mobile-attachments').innerHTML=attachments.map(x=>`<li><a class='file-link' href='/files/api/v1/files/${x.file_id}' target='_blank' rel='noopener'>${x.original_filename}</a> · ${x.category}</li>`).join('');
+  document.querySelector('#product-files').hidden=images.length===0&&attachments.length===0;
+}
+"""
+MOBILE_HTML = MOBILE_HTML.replace("</main><script>", MOBILE_FILES_HTML + "</main><script>", 1)
+MOBILE_HTML = MOBILE_HTML.replace("await refreshProductCard();document", "await refreshProductCard();await loadProductFiles();document", 1)
+MOBILE_HTML = MOBILE_HTML.replace("restore();</script>", MOBILE_FILES_SCRIPT + "restore();</script>", 1)
+MOBILE_HTML = MOBILE_HTML.replace("</style>", ".file-link{display:block;min-height:44px;padding:10px 0;color:var(--accent);overflow-wrap:anywhere}#mobile-attachments{padding-left:20px}</style>", 1)
+
 def mobile_page():return HTMLResponse(MOBILE_HTML)

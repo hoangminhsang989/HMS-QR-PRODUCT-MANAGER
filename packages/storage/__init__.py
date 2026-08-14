@@ -13,7 +13,9 @@ from .service import (
     StorageService,
     StorageUnavailable,
     StoredObject,
+    UnconfiguredStorage,
 )
+from .store_forward import LocalCapacityError, StoreForwardService
 
 __all__ = [
     "FilesystemStorage",
@@ -28,4 +30,7 @@ __all__ = [
     "StorageService",
     "StorageUnavailable",
     "StoredObject",
+    "LocalCapacityError",
+    "StoreForwardService",
+    "UnconfiguredStorage",
 ]
