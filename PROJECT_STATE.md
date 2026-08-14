@@ -1,12 +1,12 @@
 # HMS QR Product Manager — Current State
 
-Current Stage: STAGE_5_UI_DESIGN_SYSTEM_PENPOT_UICANVAS
-Current WP: QC + NG return + packing + delivery status
-Current Revision: R007
-Current Branch: main
-Current Verdict: PASS_STAGE5_UI_DESIGN_SYSTEM_LIGHT_INDUSTRIAL_R007C_INTEGRATED
+Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
+Current WP: Managed storage + product files + backup + Excel template foundation
+Current Revision: R008
+Current Branch: stage6-storage-images-backup-excel
+Current Verdict: PASS_STAGE6_R008_STORAGE_BACKUP_EXCEL_FOUNDATION_CANDIDATE
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 UI design system integrated locally; next-stage scope frozen.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 bounded foundation candidate ready for independent review.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -187,3 +187,33 @@ evidence without inventing a screenshot.
 Next-stage freeze: NAS STORAGE + PRODUCT IMAGES / ATTACHMENTS + BACKUP
 FOUNDATION + EXACT EXCEL TEMPLATE PREPARATION. No next-stage implementation was
 started under R007C.
+
+R008 bounded storage/backup/Excel foundation candidate:
+
+```text
+STAGE6_BRANCH=stage6-storage-images-backup-excel
+STAGE6_BASE_HEAD=ee9c1f13cb20dce64996536d807d177363362a9b
+STAGE6_BASE_TREE=dae464eaad32c52b0c03d51f2c8c49ae9feb45b7
+FOCUSED_TESTS=12 passed
+FULL_REGRESSION=52 passed, 1 inherited warning
+FAILED_TEST_COUNT=0
+ALEMBIC_SMOKE=PASS
+ALEMBIC_HEAD=0004_managed_files
+TEST_ISOLATION=PASS
+QR_CONTRACT_CHANGE=NO
+NAS_WRITE_PIPELINE_NOT_YET_EXECUTED
+TEMPLATE_FIDELITY_PENDING_REFERENCE_FILE
+```
+
+R008 introduces server-owned logical storage keys, local/test atomic filesystem
+publication, a NAS-ready adapter boundary, SHA-256 and bounded MIME/signature
+validation, managed-file metadata with PENDING/READY/FAILED/ARCHIVED state,
+multiple product-image and generic attachment relations, verified backup
+manifests, non-destructive restore verification, and copy-based Excel template
+population. All automated runtime artifacts remain under
+`F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST`; no production NAS operation was
+attempted and no exact workbook fidelity was claimed.
+
+Next exact action: independent R008 candidate review on the frozen candidate.
+Do not merge to `main`, push, run a real NAS write, or claim exact Excel fidelity
+without separate authority and the canonical reference workbook.
