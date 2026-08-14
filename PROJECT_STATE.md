@@ -2,9 +2,9 @@
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
 Current WP: Managed storage + product files + backup + Excel template foundation
-Current Revision: R008
-Current Branch: stage6-storage-images-backup-excel
-Current Verdict: PASS_STAGE6_R008_STORAGE_BACKUP_EXCEL_FOUNDATION_CANDIDATE
+Current Revision: R008A1
+Current Branch: stage6-r008a1-alembic-boundary-fix
+Current Verdict: PASS_STAGE6_R008A1_ALEMBIC_REVISION_BOUNDARY_REMEDIATION_CANDIDATE
 
 Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 bounded foundation candidate ready for independent review.
 
@@ -217,3 +217,21 @@ attempted and no exact workbook fidelity was claimed.
 Next exact action: independent R008 candidate review on the frozen candidate.
 Do not merge to `main`, push, run a real NAS write, or claim exact Excel fidelity
 without separate authority and the canonical reference workbook.
+
+R008A rejected frozen candidate `de20e462522b55ff2287c4e9f545eb288c8a3f42`
+because importing the `0004` ORM models while Alembic loaded its revision graph
+registered Stage6 tables into the shared metadata used by historical migration
+`0001`. A physical database targeted at `0003_qc_packing_delivery` therefore
+incorrectly contained `managed_files` and `product_file_relations`.
+
+R008A1 preserves that rejected commit and applies only a descendant migration
+boundary remediation. Migration `0004_managed_files` now owns standalone
+Alembic DDL and has zero shared storage-ORM imports. Black-box subprocess tests
+prove Stage6 tables absent at `0003`, present at head, absent after downgrade to
+`0003`, and present after re-upgrade. The Stage6 focused suite passes with the
+new regression (`13 passed`), and the full suite passes (`53 passed, 1 inherited
+warning`). No product/storage/backup/Excel/QR/UI behavior was changed.
+
+Next exact action: `STAGE6_R008A2_INDEPENDENT_REVIEW_OF_REMEDIATED_CANDIDATE`.
+R008A1 is not integration authority. Do not merge, push, write real NAS, or
+claim exact Excel fidelity.

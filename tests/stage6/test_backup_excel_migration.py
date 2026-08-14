@@ -1,10 +1,11 @@
 import base64
 from copy import copy
 import hashlib
+import os
 from pathlib import Path
+import subprocess
+import sys
 
-from alembic import command
-from alembic.config import Config
 from openpyxl import Workbook, load_workbook
 import pytest
 from sqlalchemy import inspect
@@ -122,11 +123,28 @@ def test_excel_template_copy_preserves_source_and_bounded_template_features(tmp_
 def test_fresh_and_upgrade_path_alembic_include_stage6_tables(tmp_path: Path):
     for name, start in (("fresh.sqlite", None), ("upgrade.sqlite", "0003_qc_packing_delivery")):
         database = tmp_path / name
-        config = Config("alembic.ini")
-        config.set_main_option("sqlalchemy.url", f"sqlite:///{database.as_posix()}")
         if start:
-            command.upgrade(config, start)
-        command.upgrade(config, "head")
+            _run_clean_alembic(database, "upgrade", start)
+        _run_clean_alembic(database, "upgrade", "head")
         from sqlalchemy import create_engine
         tables = set(inspect(create_engine(f"sqlite:///{database.as_posix()}")).get_table_names())
         assert {"managed_files", "product_file_relations"} <= tables
+
+
+def _run_clean_alembic(database: Path, operation: str, revision: str) -> None:
+    code = (
+        "import sys; "
+        "from alembic.config import Config; "
+        "from alembic import command; "
+        "cfg=Config('alembic.ini'); "
+        "cfg.set_main_option('sqlalchemy.url', 'sqlite:///' + sys.argv[1]); "
+        f"command.{operation}(cfg, sys.argv[2])"
+    )
+    environment = os.environ.copy()
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    subprocess.run(
+        [sys.executable, "-B", "-c", code, database.as_posix(), revision],
+        cwd=Path.cwd(),
+        env=environment,
+        check=True,
+    )
