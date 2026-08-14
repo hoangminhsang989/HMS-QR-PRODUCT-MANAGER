@@ -3,10 +3,10 @@
 Current Stage: STAGE_5_UI_DESIGN_SYSTEM_PENPOT_UICANVAS
 Current WP: QC + NG return + packing + delivery status
 Current Revision: R007
-Current Branch: stage5-ui-design-system-open-design
-Current Verdict: CANDIDATE_STAGE5_R007B7D_LIGHT_THEME
+Current Branch: main
+Current Verdict: PASS_STAGE5_UI_DESIGN_SYSTEM_LIGHT_INDUSTRIAL_R007C_INTEGRATED
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 UI implementation in progress.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 UI design system integrated locally; next-stage scope frozen.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -150,3 +150,40 @@ The user superseded dark-mode-first wording. Semantic tokens, PySide6 theme,
 Web CSS variables, Penpot Design System, and A–G artifacts now use the light
 industrial direction. Desktop and Mobile light-theme reviews have passed using
 fresh runtime captures and responsive browser checks.
+
+R007C independent review and local integration:
+
+```text
+R007C_CANDIDATE_COMMIT=70baf17
+R007C_CANDIDATE_REVIEW=PASS_STAGE5_R007C_INDEPENDENT_UI_FUNCTIONAL_REVIEW
+CURRENT_BRANCH=main
+MAIN_PRE_INTEGRATION_HEAD=b75e994
+STAGE5_FINAL_MAIN_HEAD=70baf17
+STAGE5_FINAL_MAIN_TREE=753492c9b452e4cca771a964bccdf79e02b8261b
+UNRELATED_CHANGE_COUNT=0
+BUSINESS_LOGIC_UNINTENDED_CHANGE_COUNT=0
+LIGHT_THEME_CANONICAL_CONSISTENCY=PASS
+DESKTOP_FUNCTIONAL_SMOKE=PASS
+MOBILE_FUNCTIONAL_SMOKE=PASS
+DESKTOP_VISUAL_ACCEPTANCE=PASS
+MOBILE_RESPONSIVE_ACCEPTANCE=PASS
+PENPOT_PARALLEL_ISOLATION_REVIEW=PASS
+PENPOT_A_G_CANONICAL_SET=PASS
+PENPOT_LIGHT_ARTIFACT_REVIEW=PASS
+QR_LABEL_PAYLOAD_SEPARATION=PASS
+PENPOT_SECRET_MATCH_COUNT=0
+POST_INTEGRATION_VERIFICATION=PASS
+STAGE5_LOCAL_INTEGRATION_COMPLETE_PUSH_PENDING
+```
+
+R007C used read-only Penpot inspection for the HMS QR identity and the
+sanitized dual-project ledger. The protected Stage72 identity was not live at
+review time, so no Stage72 write, delete, or rename was attempted; its prior
+sanitized mapping remains the protection evidence. The in-app browser exposed
+the current runtime viewport only; responsive acceptance combines source/CSS
+review, computed light-runtime checks, and the retained bounded target-width
+evidence without inventing a screenshot.
+
+Next-stage freeze: NAS STORAGE + PRODUCT IMAGES / ATTACHMENTS + BACKUP
+FOUNDATION + EXACT EXCEL TEMPLATE PREPARATION. No next-stage implementation was
+started under R007C.

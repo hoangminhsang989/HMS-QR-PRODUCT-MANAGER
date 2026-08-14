@@ -106,3 +106,17 @@ Tokens, PySide6, Web CSS, Penpot Design System, and A–G artifacts now use the
 light direction. Fresh desktop and mobile reviews passed; the candidate is
 closed locally after the final isolation, secret, and diff gates, with no merge
 to main.
+
+R007C independently reviewed candidate `70baf17` against the Stage 4 main
+baseline and found zero unrelated paths and zero business-logic mutations.
+Fresh focused UI/API tests passed (`6 passed, 1 warning`), QR contract tests
+passed (`5 passed`), full regression passed (`40 passed, 1 warning`), and a
+fresh Alembic SQLite smoke passed. Desktop light captures were reproduced at
+1280x720 and 1920x1080; mobile light runtime CSS/computed-style checks passed
+with no overflow at the available browser viewport. Test isolation, secret
+scan, and diff checks passed.
+
+The candidate fast-forwarded local `main` from `b75e994` to `70baf17`.
+`POST_INTEGRATION_VERIFICATION=PASS`; no push was authorized. Stage 5 is now
+closed locally with the next major scope frozen to NAS storage, product
+images/attachments, backup foundation, and exact Excel template preparation.
