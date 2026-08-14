@@ -7,14 +7,14 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Callable
 from uuid import UUID, uuid4
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine
 
-from config.environments import Environment, load_config
+from config.environments import AppConfig, Environment
 from packages.domain.attachments import ProductAttachment
 from packages.domain.store_forward import StorageConfiguration
 from packages.persistence.managed_file_repository import ManagedFileRepository
@@ -22,6 +22,9 @@ from packages.persistence.store_forward_repository import StoreForwardRepository
 from packages.storage.managed_files import ManagedFileService
 from packages.storage.service import FilesystemStorage, UnconfiguredStorage
 from packages.storage.store_forward import LocalCapacityError, StoreForwardService
+
+
+AdminAuthorizer = Callable[[Request], bool]
 
 
 class RelationPatch(BaseModel):
@@ -43,10 +46,12 @@ def build_files_api(
     managed_service: ManagedFileService | None = None,
     transfer_service: StoreForwardService | None = None,
     *,
+    app_config: AppConfig,
+    admin_authorizer: AdminAuthorizer | None = None,
     start_worker: bool = False,
 ) -> FastAPI:
     if managed_service is None or transfer_service is None:
-        managed_service, transfer_service = _default_services()
+        managed_service, transfer_service = _default_services(app_config)
 
     @asynccontextmanager
     async def lifespan(_api):
@@ -70,14 +75,42 @@ def build_files_api(
             raise HTTPException(400, "Actor is required")
         return value
 
-    def storage_admin(x_storage_admin: Annotated[str | None, Header()] = None) -> None:
-        if load_config().environment is not Environment.DEV:
+    def storage_admin(
+        request: Request,
+        x_storage_admin: Annotated[str | None, Header()] = None,
+    ) -> None:
+        if app_config.environment is Environment.DEV:
+            if (x_storage_admin or "").strip().lower() not in {"1", "true", "yes"}:
+                raise HTTPException(
+                    status_code=403,
+                    detail={"code": "DEV_STORAGE_ADMIN_REQUIRED", "message": "Quyền quản trị lưu trữ là bắt buộc."},
+                )
+            return
+        if admin_authorizer is None:
             raise HTTPException(
                 status_code=503,
-                detail="Tích hợp xác thực quản trị production chưa được cấu hình.",
+                detail={
+                    "code": "PRODUCTION_ADMIN_AUTH_NOT_CONFIGURED",
+                    "message": "Tích hợp xác thực quản trị chưa được cấu hình.",
+                },
             )
-        if (x_storage_admin or "").strip().lower() not in {"1", "true", "yes"}:
-            raise HTTPException(status_code=403, detail="Quyền quản trị lưu trữ là bắt buộc.")
+        try:
+            authorized = bool(admin_authorizer(request))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "ADMIN_AUTHORIZATION_UNAVAILABLE",
+                    "message": "Không thể xác minh quyền quản trị.",
+                },
+            ) from exc
+        if not authorized:
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "STORAGE_ADMIN_FORBIDDEN", "message": "Không có quyền quản trị lưu trữ."},
+            )
 
     @api.exception_handler(LocalCapacityError)
     async def capacity_error(_, exc):
@@ -223,8 +256,7 @@ def build_files_api(
     return api
 
 
-def _default_services() -> tuple[ManagedFileService, StoreForwardService]:
-    config = load_config()
+def _default_services(config: AppConfig) -> tuple[ManagedFileService, StoreForwardService]:
     engine = create_engine(config.database_url, future=True)
     repository = ManagedFileRepository(engine)
     queue = StoreForwardRepository(engine)
@@ -326,4 +358,4 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
-__all__ = ["build_files_api"]
+__all__ = ["AdminAuthorizer", "build_files_api"]

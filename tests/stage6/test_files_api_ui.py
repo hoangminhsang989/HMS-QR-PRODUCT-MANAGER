@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 from apps.desktop.file_panels import AdminStoragePanel, ProductFilesPanel
 from apps.mobile.web import MOBILE_HTML
 from apps.server.files import build_files_api
+from config.environments import Environment, load_config
 
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"r009-api-image"
@@ -17,7 +18,9 @@ PDF = b"%PDF-1.7\nR009 api attachment\n%%EOF"
 
 def test_product_image_attachment_api_local_first_list_download_update_archive_and_no_paths(store_forward_env):
     env = store_forward_env
-    client = TestClient(build_files_api(env["managed"], env["transfer"]))
+    client = TestClient(build_files_api(
+        env["managed"], env["transfer"], app_config=load_config(Environment.DEV)
+    ))
     product_id = str(env["product_id"])
     image = client.post(
         f"/api/v1/products/{product_id}/images",
@@ -58,7 +61,9 @@ def test_admin_api_is_guarded_and_status_is_path_free(store_forward_env):
         declared_mime="application/pdf", content=PDF,
         actor="api-user", attachment_category="OTHER",
     )
-    client = TestClient(build_files_api(env["managed"], env["transfer"]))
+    client = TestClient(build_files_api(
+        env["managed"], env["transfer"], app_config=load_config(Environment.DEV)
+    ))
     assert client.get("/api/v1/admin/storage/health").status_code == 403
     health = client.get("/api/v1/admin/storage/health", headers={"x-storage-admin": "true"})
     assert health.status_code == 200

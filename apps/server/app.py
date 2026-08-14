@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 
-from config.environments import load_config
+from config.environments import AppConfig, load_config
 from packages.application.product_service import ProductService
 from packages.contracts.api import ProductPageResponse, ProductPatch, ProductPayload, ProductResponse, to_response
 from packages.domain.product import ProductStatus, ProductValidationError
@@ -39,10 +39,14 @@ def create_app() -> dict[str, str]:
     return {"name": APP_NAME, "status": "foundation"}
 
 
-def build_api(service: ProductService | None = None) -> FastAPI:
+def build_api(
+    service: ProductService | None = None,
+    *,
+    app_config: AppConfig | None = None,
+) -> FastAPI:
     api = FastAPI(title="HMS QR Product Manager", version="1.0")
     if service is None:
-        config = load_config()
+        config = app_config or load_config()
         db_path = Path(config.database_url.removeprefix("sqlite:///"))
         service = ProductService(SQLiteProductRepository(db_path))
 
@@ -236,10 +240,11 @@ def _error(code: int, error_code: str, message: str, details: dict[str, str] | N
     return JSONResponse(status_code=code, content={"error": {"code": error_code, "message": message, "details": details or {}}})
 
 
-app = build_api()
+SERVER_APP_CONFIG = load_config()
+app = build_api(app_config=SERVER_APP_CONFIG)
 tracking_api = build_tracking_api()
 app.mount("/tracking", tracking_api)
-files_api = build_files_api(start_worker=True)
+files_api = build_files_api(app_config=SERVER_APP_CONFIG, start_worker=True)
 app.mount("/files", files_api)
 
-__all__ = ["APP_NAME", "app", "build_api", "build_tracking_api", "create_app", "tracking_api", "files_api"]
+__all__ = ["APP_NAME", "SERVER_APP_CONFIG", "app", "build_api", "build_tracking_api", "create_app", "tracking_api", "files_api"]

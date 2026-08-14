@@ -1,10 +1,10 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: Safe store-and-forward + Product image/attachment API/UI candidate
-Current Revision: R009
-Current Branch: stage6-r009-store-forward-api-ui
-Current Verdict: PASS_STAGE6_R009_SAFE_STORE_FORWARD_IMAGE_ATTACHMENT_API_UI_CANDIDATE
+Current WP: Bounded storage-admin authorization fail-closed remediation
+Current Revision: R009A1
+Current Branch: stage6-r009a1-admin-auth-fail-closed
+Current Verdict: PASS_STAGE6_R009A1_ADMIN_AUTHORIZATION_FAIL_CLOSED_REMEDIATION_CANDIDATE
 
 Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 bounded foundation integrated locally after R008A2 independent approval; remote delivery remains pending.
 
@@ -275,3 +275,19 @@ Excel fidelity claim is authorized.
 Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009.md`
 Next exact action after terminal candidate PASS:
 `STAGE6_R009A_INDEPENDENT_SAFE_STORE_FORWARD_REVIEW`.
+
+R009A independently rejected frozen candidate `a2be6d3` because the storage
+admin guard reloaded zero-argument DEV configuration at request time. A files
+API built around production-like services therefore accepted the spoofable
+DEV header and executed storage configuration mutation.
+
+R009A1 preserves that rejected commit and is limited to explicit immutable
+`AppConfig` injection plus a real-admin-authorizer boundary. DEV convenience
+header behavior is now reachable only under explicitly injected DEV authority.
+STAGING/PROD require a supplied authorizer or return deterministic fail-closed
+`503` before any handler. No store-forward, file, UI, QR, backup, Excel, or
+migration behavior is changed.
+
+Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009A1.md`
+Next action after remediation candidate PASS:
+`STAGE6_R009A2_INDEPENDENT_REVIEW_OF_REMEDIATED_R009_CANDIDATE`.
