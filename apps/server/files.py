@@ -12,13 +12,12 @@ from uuid import UUID, uuid4
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine
-
 from config.environments import AppConfig, Environment
 from packages.domain.attachments import ProductAttachment
 from packages.domain.store_forward import StorageConfiguration
 from packages.persistence.managed_file_repository import ManagedFileRepository
 from packages.persistence.store_forward_repository import StoreForwardRepository
+from packages.persistence.database import DatabaseRuntime, create_database_runtime
 from packages.storage.managed_files import ManagedFileService
 from packages.storage.service import FilesystemStorage, StorageUnavailable, UnconfiguredStorage
 from packages.storage.store_forward import LocalCapacityError, StoreForwardService
@@ -49,9 +48,12 @@ def build_files_api(
     app_config: AppConfig,
     admin_authorizer: AdminAuthorizer | None = None,
     start_worker: bool = False,
+    database_runtime: DatabaseRuntime | None = None,
 ) -> FastAPI:
     if managed_service is None or transfer_service is None:
-        managed_service, transfer_service = _default_services(app_config)
+        managed_service, transfer_service = _default_services(
+            app_config, database_runtime=database_runtime
+        )
 
     @asynccontextmanager
     async def lifespan(_api):
@@ -264,10 +266,14 @@ def build_files_api(
     return api
 
 
-def _default_services(config: AppConfig) -> tuple[ManagedFileService, StoreForwardService]:
-    engine = create_engine(config.database_url, future=True)
-    repository = ManagedFileRepository(engine)
-    queue = StoreForwardRepository(engine)
+def _default_services(
+    config: AppConfig,
+    *,
+    database_runtime: DatabaseRuntime | None = None,
+) -> tuple[ManagedFileService, StoreForwardService]:
+    runtime = database_runtime or create_database_runtime(config)
+    repository = ManagedFileRepository(runtime)
+    queue = StoreForwardRepository(runtime)
     local = (
         FilesystemStorage(config.storage_root, create_root=False)
         if config.storage_root else UnconfiguredStorage()

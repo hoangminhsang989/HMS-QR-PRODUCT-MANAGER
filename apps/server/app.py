@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import date
 from decimal import Decimal
 from typing import Annotated
@@ -11,13 +10,20 @@ from uuid import UUID, uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 
-from config.environments import AppConfig, load_config
+from config.environments import AppConfig, Environment, load_config
 from packages.application.product_service import ProductService
 from packages.contracts.api import ProductPageResponse, ProductPatch, ProductPayload, ProductResponse, to_response
 from packages.domain.product import ProductStatus, ProductValidationError
 from packages.domain.stage2 import DeliveryScheduleEntry, POStatus, RunStatus, Stage2ValidationError, now_utc
 from packages.domain.repository import DuplicateProductCode, ProductNotFound
 from packages.persistence.sqlite_product_repository import SQLiteProductRepository
+from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+from packages.persistence.database import (
+    DatabaseRuntime,
+    create_database_runtime,
+    require_database_ready,
+    sqlite_path,
+)
 from packages.application.stage2_service import Stage2Service
 from packages.contracts.stage2 import CustomerPatch, CustomerPayload, DeliveryData, POData, POLineData, RunData, dump
 from packages.persistence.sqlalchemy_repository import Stage2Repository
@@ -43,12 +49,31 @@ def build_api(
     service: ProductService | None = None,
     *,
     app_config: AppConfig | None = None,
+    database_runtime: DatabaseRuntime | None = None,
 ) -> FastAPI:
     api = FastAPI(title="HMS QR Product Manager", version="1.0")
     if service is None:
         config = app_config or load_config()
-        db_path = Path(config.database_url.removeprefix("sqlite:///"))
-        service = ProductService(SQLiteProductRepository(db_path))
+        runtime = database_runtime or create_database_runtime(config)
+        repository = (
+            SQLiteProductRepository(sqlite_path(config.database_url))
+            if config.environment is Environment.DEV
+            else SqlAlchemyProductRepository(runtime)
+        )
+        service = ProductService(repository)
+    else:
+        runtime = database_runtime
+
+    if runtime is not None:
+        @api.get("/health/readiness/database")
+        def database_readiness():
+            result = runtime.readiness()
+            if result["state"] != "READY":
+                raise HTTPException(
+                    status_code=503,
+                    detail={"code": "DATABASE_UNAVAILABLE", "message": "Database is unavailable."},
+                )
+            return result
 
     def current_actor(x_actor: Annotated[str | None, Header()] = None) -> str:
         actor = (x_actor or "development-user").strip()
@@ -93,10 +118,17 @@ def build_api(
     return api
 
 
-def build_stage2_api(service: Stage2Service | None = None) -> FastAPI:
+def build_stage2_api(
+    service: Stage2Service | None = None,
+    *,
+    app_config: AppConfig | None = None,
+    database_runtime: DatabaseRuntime | None = None,
+) -> FastAPI:
     api = FastAPI(title="HMS QR Product Manager Stage 2", version="2.0")
     if service is None:
-        cfg = load_config(); service = Stage2Service(Stage2Repository(cfg.database_url))
+        cfg = app_config or load_config()
+        runtime = database_runtime or create_database_runtime(cfg)
+        service = Stage2Service(Stage2Repository(runtime))
     def actor(x_actor: Annotated[str | None, Header()] = None) -> str:
         return (x_actor or "development-user").strip()
     @api.exception_handler(Stage2ValidationError)
@@ -151,11 +183,13 @@ def build_stage2_api(service: Stage2Service | None = None) -> FastAPI:
         return dump(service.update_run(updated, ordered_quantity=ordered_quantity))
     return api
 
-def build_tracking_api(service:TrackingService|None=None)->FastAPI:
+def build_tracking_api(service:TrackingService|None=None,*,app_config:AppConfig|None=None,database_runtime:DatabaseRuntime|None=None)->FastAPI:
     api=FastAPI(title="HMS QR Tracking",version="3.0")
     if service is None:
-        cfg=load_config();repo=Stage2Repository(cfg.database_url);repo.create_schema();service=TrackingService(TrackingRepository(repo.engine))
-    workflow_repo=WorkflowRepository(service.repo.engine);qc_service=QcService(workflow_repo);packing_service=PackingService(workflow_repo);delivery_service=DeliveryService(workflow_repo);general_service=GeneralReportService(workflow_repo);history_service=TrackingHistoryService(workflow_repo,service.repo)
+        cfg=app_config or load_config();runtime=database_runtime or create_database_runtime(cfg);repo=Stage2Repository(runtime)
+        if cfg.environment is Environment.DEV:repo.create_schema()
+        service=TrackingService(TrackingRepository(runtime))
+    workflow_repo=WorkflowRepository(service.repo.engine,getattr(service.repo,"Session",None));qc_service=QcService(workflow_repo);packing_service=PackingService(workflow_repo);delivery_service=DeliveryService(workflow_repo);general_service=GeneralReportService(workflow_repo);history_service=TrackingHistoryService(workflow_repo,service.repo)
     for order,(code,name) in enumerate((("BLANK","TẠO PHÔI"),("TURN","TIỆN"),("MILL","PHAY"),("WIRE","CẮT DÂY"),("GRIND","MÀI"),("HEAT","NHIỆT LUYỆN"),("OTHER","KHÁC")),1):service.repo.add_machining_type(MachiningType(uuid4(),code,name,True,order))
     @api.exception_handler(TrackingError)
     async def tracking_validation(_,exc):return _error(422,"TRACKING_VALIDATION_ERROR",str(exc))
@@ -241,10 +275,13 @@ def _error(code: int, error_code: str, message: str, details: dict[str, str] | N
 
 
 SERVER_APP_CONFIG = load_config()
-app = build_api(app_config=SERVER_APP_CONFIG)
-tracking_api = build_tracking_api()
+SERVER_DATABASE_RUNTIME = create_database_runtime(SERVER_APP_CONFIG)
+if SERVER_APP_CONFIG.environment is not Environment.DEV:
+    require_database_ready(SERVER_DATABASE_RUNTIME)
+app = build_api(app_config=SERVER_APP_CONFIG, database_runtime=SERVER_DATABASE_RUNTIME)
+tracking_api = build_tracking_api(app_config=SERVER_APP_CONFIG, database_runtime=SERVER_DATABASE_RUNTIME)
 app.mount("/tracking", tracking_api)
-files_api = build_files_api(app_config=SERVER_APP_CONFIG, start_worker=True)
+files_api = build_files_api(app_config=SERVER_APP_CONFIG, start_worker=True, database_runtime=SERVER_DATABASE_RUNTIME)
 app.mount("/files", files_api)
 
-__all__ = ["APP_NAME", "SERVER_APP_CONFIG", "app", "build_api", "build_tracking_api", "create_app", "tracking_api", "files_api"]
+__all__ = ["APP_NAME", "SERVER_APP_CONFIG", "SERVER_DATABASE_RUNTIME", "app", "build_api", "build_tracking_api", "create_app", "tracking_api", "files_api"]

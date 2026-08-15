@@ -1,19 +1,17 @@
 from __future__ import annotations
 from dataclasses import asdict
 from datetime import date
-from pathlib import Path
 from uuid import UUID
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, sessionmaker
 from packages.domain.stage2 import *
 from .sqlalchemy_models import Base, CustomerORM, PurchaseOrderORM, PurchaseOrderLineORM, DeliveryScheduleORM, ProductionRunORM
+from .database import resolve_database
 
 class Stage2Repository:
     """SQLAlchemy repository; SQLite is test/dev only, PostgreSQL is target."""
-    def __init__(self, database_url: str):
-        self.engine = create_engine(database_url, future=True)
-        self.Session = sessionmaker(self.engine, expire_on_commit=False)
+    def __init__(self, database, session_factory=None):
+        self.engine, self.Session = resolve_database(database, session_factory)
     def create_schema(self): Base.metadata.create_all(self.engine)
     def add_customer(self, obj: Customer):
         try:

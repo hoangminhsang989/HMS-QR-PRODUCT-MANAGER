@@ -1,0 +1,226 @@
+# Checkpoint — Stage 6 R010R2 PostgreSQL production integration candidate
+
+Date: 2026-08-15
+Branch: `stage6-r010r2-postgresql-production-integration`
+Base HEAD: `f80b7dbf6c3744f182648b47454be0afc1105992`
+Base tree: `644d38b131ba78444b675442340ebfe6c1a6c32c`
+Status: candidate implementation only; not integrated and not pushed
+
+## Scope and architecture
+
+R010R2 adds an explicit DEV/STAGING/PROD database contract. DEV retains SQLite;
+STAGING and PROD require one server-owned `HMS_QR_DATABASE_URL` using
+`postgresql+psycopg`. Missing, empty, placeholder, SQLite, unsupported,
+incomplete, and malformed production values fail closed without DEV fallback.
+
+The server now owns one `DatabaseRuntime` with one engine/session factory,
+bounded PostgreSQL pooling, pre-ping, five-second connect timeout, rollback and
+close policy, redacted diagnostics, and an independent database readiness
+endpoint. Product Master uses the SQLAlchemy repository in STAGING/PROD while
+retaining the original SQLite adapter in DEV/test. Stage2, Tracking, workflow,
+managed-file, and store-forward repositories receive the same server runtime.
+Desktop STAGING/PROD stops before local persistence and requires the later
+reviewed Machine A server API boundary; it receives neither PostgreSQL
+credentials nor a direct database connection.
+
+The tracked PostgreSQL driver is `psycopg[binary]>=3.2,<4`. The tested host
+runtime used psycopg `3.3.4` and SQLAlchemy `2.0.52`.
+
+## Before-inventory
+
+```text
+SQLITE_DIRECT_USAGE_COUNT_BEFORE=3
+PRODUCTION_REACHABLE_SQLITE_USAGE_COUNT_BEFORE=2
+DATABASE_ENGINE_CONSTRUCTION_SITES_BEFORE=3
+SESSIONMAKER_CONSTRUCTION_SITES_BEFORE=3
+```
+
+The three direct SQLite uses were the adapter connection itself plus Product
+Master construction in Server and Desktop. The adapter is now DEV/test only;
+Server production uses PostgreSQL and Desktop production fails closed at the
+server-API boundary.
+
+## PostgreSQL runtime and migration truth
+
+```text
+POSTGRESQL_TEST_IMAGE=postgres:17
+POSTGRESQL_SERVER_VERSION=17.11 (Debian 17.11-1.pgdg13+2)
+DOCKER_SERVER_AVAILABLE=YES
+POSTGRESQL_READINESS=PASS
+POSTGRESQL_REAL_CONNECTION=PASS
+POSTGRESQL_HOST_BIND=127.0.0.1:55432
+PGDATA_AND_LOG_ROOT=F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST\stage6-r010r2-20260815T153659\postgres\pgdata
+PG_REPAIRED_0001_TABLE_COUNT=7
+PG_REPAIRED_0002_TABLE_COUNT=14
+PG_REPAIRED_0003_TABLE_COUNT=15
+PG_REPAIRED_0004_TABLE_COUNT=17
+PG_REPAIRED_0005_TABLE_COUNT=19
+PG_REPAIRED_FRESH_TO_HEAD=PASS
+POSTGRESQL_HEAD_SCHEMA_SEMANTIC_EQUIVALENCE=PASS
+OLD_PG_0001_TO_CANONICAL_HEAD=PASS
+OLD_SQLITE_0001_TO_CANONICAL_HEAD=PASS
+LEGACY_DATA_PRESERVATION_SANITY=PASS
+ALEMBIC_HEAD=0005_store_forward
+ALEMBIC_SINGLE_HEAD=PASS
+R010R2_NEW_ALEMBIC_REVISION=NO
+```
+
+The fixed localhost port replaced an initial dynamic Docker port after the
+outage control proved that Docker Desktop can reallocate an anonymous published
+port on restart. Product behavior was not changed to mask that harness defect.
+The final real outage/recovery control used the fixed endpoint and passed.
+
+Git-blob SHA-256 identities remain:
+
+```text
+0001=ceb3686f859d2727cfff6b8f6e7bc41138e4d5199834d0ce144d64d191b76e97
+0002=157cb8a430bc6b4fa920010dd2ea4088e1f30b4ff887d34a9be819c54f0cea1b
+0003=3b167d9c62100e79ed9da2ae894be6fb52daa42a05bdf3351df5ffe251848f63
+HISTORICAL_MIGRATION_BYTE_CHANGE_COUNT=0
+HISTORICAL_MIGRATION_BYTE_IDENTITY=PASS
+```
+
+## Runtime, parity, and concurrency acceptance
+
+```text
+DATABASE_ENVIRONMENT_CONTRACT=PASS
+PROD_TO_DEV_FALLBACK_COUNT=0
+STAGING_TO_DEV_FALLBACK_COUNT=0
+TRACKED_POSTGRESQL_DRIVER_DEPENDENCY=PASS
+DATABASE_CREDENTIAL_LOG_LEAK_COUNT=0
+DATABASE_CREDENTIAL_API_LEAK_COUNT=0
+DATABASE_CREDENTIAL_EVIDENCE_LEAK_COUNT=0
+SHARED_DATABASE_ENGINE_FACTORY=PASS
+SHARED_SESSION_FACTORY=PASS
+SESSION_ROLLBACK_POLICY=PASS
+POSTGRESQL_POOL_POLICY=PASS
+SERVER_OWNS_PRODUCTION_DATABASE=PASS
+PROD_CLIENT_DIRECT_DATABASE_CONNECTION_COUNT=0
+PRODUCT_MASTER_POSTGRESQL_PERSISTENCE=PASS
+PROD_SQLITE_PRODUCT_REPOSITORY_USAGE_COUNT=0
+PRODUCT_MASTER_SQLITE_DEV_TEST_COMPATIBILITY=PASS
+ALL_SERVER_PRODUCTION_REPOSITORIES_POSTGRESQL=PASS
+PRODUCTION_MIXED_SQLITE_POSTGRESQL_AUTHORITY_COUNT=0
+POSTGRESQL_URL_FILESYSTEM_PATH_CONVERSION_COUNT=0
+PROD_DB_UNAVAILABLE_FAIL_CLOSED=PASS
+PROD_DB_UNAVAILABLE_SQLITE_FALLBACK_COUNT=0
+DATABASE_READINESS=PASS
+DATABASE_HEALTH_ARCHIVE_HEALTH_SEPARATION=PASS
+POSTGRESQL_RUNTIME_OUTAGE_FAIL_SAFE=PASS
+POSTGRESQL_RECOVERY_AFTER_OUTAGE=PASS
+POSTGRESQL_POOL_RECOVERY=PASS
+POSTGRESQL_UTC_ROUND_TRIP=PASS
+SERVER_AUTHORITATIVE_TIMESTAMP=PASS
+POSTGRESQL_TYPE_SEMANTICS=PASS
+PRODUCT_MASTER_SQLITE_POSTGRESQL_PARITY=PASS
+CUSTOMER_PO_RUN_POSTGRESQL=PASS
+TRACKING_POSTGRESQL_INVARIANTS=PASS
+QR_EXACT_FOUR_FIELD_CONTRACT=PASS
+QC_PACKING_DELIVERY_POSTGRESQL=PASS
+POSTGRESQL_ROW_LOCKING=PASS
+POSTGRESQL_CONCURRENT_IDEMPOTENCY=PASS
+DUPLICATE_EFFECTIVE_EVENT_COUNT=0
+POSTGRESQL_STORE_FORWARD_LEASE_CLAIM=PASS
+POSTGRESQL_DUPLICATE_ACTIVE_WORKER_COUNT=0
+POSTGRESQL_STALE_LEASE_RECOVERY=PASS
+POSTGRESQL_CONCURRENT_ENSURE_JOB=PASS
+DUPLICATE_TRANSFER_JOB_COUNT=0
+POSTGRESQL_ACTIVE_STORAGE_CONFIG_CONCURRENCY=PASS
+POSTGRESQL_PRODUCT_PRIMARY_CONFLICT_CONTROL=PASS
+POSTGRESQL_MANAGED_FILE_RELATION_CONCURRENCY=PASS
+POSTGRESQL_TRANSACTION_ROLLBACK=PASS
+HALF_COMMITTED_BUSINESS_STATE_COUNT=0
+```
+
+Real PostgreSQL exposed one application defect: `atomic_new_order` had relied
+on SQLite's non-enforced test FK behavior and did not flush the new PO/PO Line
+before inserting its Tracking Item. R010R2 adds the required flush inside the
+same transaction. No schema correction or 0006 is required.
+
+## Test evidence
+
+```text
+R010R2_BASELINE_FULL_REGRESSION=PASS
+R010R2_BASELINE_FULL_PASSED=125
+R010R2_BASELINE_FULL_FAILED=0
+R010R2_BASELINE_FULL_WARNINGS=1 inherited Starlette/httpx deprecation
+R010R2_BASELINE_FULL_DURATION=473.36s
+
+R010R2_POSTGRESQL_FOCUSED_TESTS=PASS
+R010R2_POSTGRESQL_FOCUSED_PASSED=14
+R010R2_POSTGRESQL_FOCUSED_FAILED=0
+R010R2_PG_CONCURRENCY_PASSED=6
+R010R2_PG_CONCURRENCY_FAILED=0
+R010R2_POSTGRESQL_CONCURRENCY_TESTS=PASS
+
+SQLITE_DEV_TEST_COMPATIBILITY=PASS (38 passed, 1 inherited warning)
+R010_MIGRATION_HISTORY_REGRESSION=PASS (26 passed)
+R010R2_CRITICAL_NONREGRESSION=PASS (59 passed, 1 inherited warning)
+R009_STORE_FORWARD_REGRESSION=PASS
+PROD_ADMIN_AUTH_FAIL_CLOSED=PASS
+
+FULL_REGRESSION=PASS
+R010R2_FULL_PASSED=139
+R010R2_FULL_FAILED=0
+R010R2_FULL_WARNINGS=1 inherited Starlette/httpx deprecation
+R010R2_FULL_DURATION=491.50s
+FULL_PYTEST_TERMINAL_VERDICT_OBTAINED=YES
+```
+
+An initial unordered full invocation C-aborted in Python/Qt after a Desktop
+`QApplication` test and before a later TestClient test. It produced no product
+assertion verdict. An external test-only collection plugin then qualified
+non-Qt-first/Qt-last ordering (`2 passed`) and the terminal one-process full
+gate passed `139` tests. Retained evidence:
+
+`F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST\stage6-r010r2-20260815T153659\full-gate-qt-last-r3`
+
+The launcher retained the native handle and recorded exit `0`, duration
+`493.27s`, empty stderr, stdout SHA-256
+`7771d2506f25c91d3898fac7049a66225fe06dd08eca3a2c3c4dec56767e9457`.
+
+## Isolation, security, and delivery boundary
+
+```text
+TEST_ISOLATION_PASS=PASS
+PRODUCTION_ROOT_TEST_ARTIFACT_COUNT=0
+SECRET_SCAN=PASS
+SECRET_LITERAL_MATCH_COUNT=0
+DATABASE_SECRET_LITERAL_COUNT=0
+GIT_DIFF_CHECK=PASS
+UNRELATED_CHANGE_COUNT=0
+UNRELATED_UI_CHANGE_COUNT=0
+UNRELATED_QR_CHANGE_COUNT=0
+UNRELATED_EXCEL_CHANGE_COUNT=0
+UNRELATED_BACKUP_CHANGE_COUNT=0
+UNRELATED_STORAGE_DATAFLOW_CHANGE_COUNT=0
+PRODUCTION_GAP_RELABEL_COUNT=0
+REAL_NAS_WRITE_COUNT=0
+PRODUCTION_RESTORE_COUNT=0
+MACHINE_A_ACTION_COUNT=0
+CLOUDFLARE_ACTION_COUNT=0
+EXACT_EXCEL_FIDELITY_CLAIM_COUNT=0
+POSTGRESQL_TEST_RUNTIME_STOPPED=YES
+POSTGRESQL_TEST_CONTAINER_REMAINING_COUNT=0
+MERGE_COUNT=0
+PUSH_COUNT=0
+```
+
+## Preserved production gaps and next boundary
+
+```text
+POSTGRESQL_PRODUCTION_INTEGRATION_NOT_YET_EXECUTED
+TEMPLATE_FIDELITY_PENDING_REFERENCE_FILE
+NAS_WRITE_PIPELINE_NOT_YET_EXECUTED
+MACHINE_A_PRODUCTION_DEPLOYMENT_NOT_YET_EXECUTED
+MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
+PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
+```
+
+This is a PostgreSQL production-integration candidate only. It is not merged,
+not pushed, not deployed to Machine A, not accepted against a real NAS, and not
+Cloudflare deployed. The exact candidate commit identity is recorded by Git and
+the terminal R010R2 report after the single candidate commit is created.
+
+Next exact action:
+`STAGE6_R010R2_INDEPENDENT_POSTGRESQL_PRODUCTION_INTEGRATION_REVIEW`.

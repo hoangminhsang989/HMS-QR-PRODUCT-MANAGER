@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, or_, select, update
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError
 
 from packages.domain.store_forward import (
     ArchiveTransferJob,
@@ -15,6 +15,7 @@ from packages.domain.store_forward import (
 )
 from .storage_models import ManagedFileORM
 from .store_forward_models import ArchiveTransferJobORM, StorageConfigurationORM
+from .database import resolve_database, transaction_lock
 
 
 TRANSFER_PENDING_STATES = (
@@ -41,15 +42,15 @@ def transfer_retry_eligible(state: ArchiveTransferState | str) -> bool:
 
 
 class StoreForwardRepository:
-    def __init__(self, engine) -> None:
-        self.engine = engine
-        self.Session = sessionmaker(engine, expire_on_commit=False)
+    def __init__(self, engine, session_factory=None) -> None:
+        self.engine, self.Session = resolve_database(engine, session_factory)
 
     def create_configuration(self, configuration: StorageConfiguration) -> StorageConfiguration:
         configuration.validate()
         now = configuration.created_at or _now()
         with self.Session.begin() as session:
             if configuration.active:
+                transaction_lock(session, "active-storage-configuration")
                 session.execute(update(StorageConfigurationORM).values(active=False, updated_at=now))
             session.add(StorageConfigurationORM(
                 internal_id=str(configuration.configuration_id),
@@ -90,26 +91,30 @@ class StoreForwardRepository:
         at: datetime | None = None,
     ) -> ArchiveTransferJob:
         timestamp = at or _now()
-        with self.Session.begin() as session:
-            existing = session.scalar(select(ArchiveTransferJobORM).where(
-                ArchiveTransferJobORM.managed_file_id == str(managed_file_id)
-            ))
-            if existing is None:
-                if session.get(StorageConfigurationORM, str(configuration_id)) is None:
-                    raise LookupError("storage configuration not found")
-                existing = ArchiveTransferJobORM(
-                    internal_id=str(uuid4()), managed_file_id=str(managed_file_id),
-                    configuration_id=str(configuration_id),
-                    state=ArchiveTransferState.TRANSFER_QUEUED.value,
-                    attempt_count=0, next_retry_at=timestamp, last_attempt_at=None,
-                    last_error_code=None, last_error_summary=None,
-                    remote_verified_at=None, grace_expires_at=None, local_purged_at=None,
-                    lease_token=None, lease_expires_at=None,
-                    created_at=timestamp, updated_at=timestamp,
-                )
-                session.add(existing)
-                session.flush()
-            job_id = existing.internal_id
+        try:
+            with self.Session.begin() as session:
+                existing = session.scalar(select(ArchiveTransferJobORM).where(
+                    ArchiveTransferJobORM.managed_file_id == str(managed_file_id)
+                ))
+                if existing is None:
+                    if session.get(StorageConfigurationORM, str(configuration_id)) is None:
+                        raise LookupError("storage configuration not found")
+                    existing = ArchiveTransferJobORM(
+                        internal_id=str(uuid4()), managed_file_id=str(managed_file_id),
+                        configuration_id=str(configuration_id),
+                        state=ArchiveTransferState.TRANSFER_QUEUED.value,
+                        attempt_count=0, next_retry_at=timestamp, last_attempt_at=None,
+                        last_error_code=None, last_error_summary=None,
+                        remote_verified_at=None, grace_expires_at=None, local_purged_at=None,
+                        lease_token=None, lease_expires_at=None,
+                        created_at=timestamp, updated_at=timestamp,
+                    )
+                    session.add(existing)
+                    session.flush()
+                job_id = existing.internal_id
+        except IntegrityError:
+            # A concurrent ensure may win the unique(managed_file_id) race.
+            return self.get_job(managed_file_id)
         return self.get_job_by_id(UUID(job_id))
 
     def get_job(self, managed_file_id: UUID) -> ArchiveTransferJob:

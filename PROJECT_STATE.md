@@ -1,12 +1,12 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: R010M1 migration-history repair locally integrated, push pending
-Current Revision: R010M1B
-Current Branch: main
-Current Verdict: PASS_STAGE6_R010M1B_LOCAL_INTEGRATION
+Current WP: R010R2 PostgreSQL production integration candidate
+Current Revision: R010R2
+Current Branch: stage6-r010r2-postgresql-production-integration
+Current Verdict: PASS_STAGE6_R010R2_POSTGRESQL_PRODUCTION_INTEGRATION_CANDIDATE
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; the independently approved R010M1A1 migration-history remediation is fast-forward integrated into local `main`; remote delivery remains pending and R010 product implementation remains not resumed.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; R010M1 migration-history repair is canonical and remotely delivered at `f80b7dbf`; R010R2 PostgreSQL production persistence is implemented and validated as a local candidate only. It is not integrated or pushed.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -15,19 +15,18 @@ focus states, and 44px touch-safe controls.
 Visual evidence: Penpot exports plus external desktop captures at 1280x720 and
 1920x1080; mobile runtime was checked at 360/390/414/768 with no horizontal
 overflow and no browser console errors.
-Regression results: post-integration R010M1B full suite `125 passed, 1 warning`
-in 453.43s with real PostgreSQL 17.11 and SQLite fresh-history,
-old-partial-history, malformed-schema, data-preservation, downgrade/re-upgrade,
-and head-convergence coverage under the controlled external test root; warning
-is the inherited Starlette/httpx deprecation.
+Regression results: R010R2 baseline `125 passed, 1 warning`; final Qt-last
+one-process full regression `139 passed, 1 warning` in 491.50s. Focused real
+PostgreSQL returned `14 passed`; concurrency returned `6 passed`; migration
+regression returned `26 passed`; SQLite Stage1-Stage4 returned `38 passed`.
+The warning is the inherited Starlette/httpx deprecation.
 
-Latest completed work: local `main` fast-forwarded from `fdf7cc80` to approved
-candidate `a494621a` with no merge commit or push. Post-integration evidence
-re-proves deterministic fresh PostgreSQL/SQLite history, all six delivered old
-partial-history forward paths with legacy data preservation, fail-closed
-column/table/FK/index/unique controls, existing-head raw no-op, and unchanged
-business/QR/R009 behavior. R010 PostgreSQL application implementation remains
-pending.
+Latest completed work: R010R2 adds fail-closed STAGING/PROD PostgreSQL config,
+tracked psycopg 3, one server-owned engine/session runtime, Product Master
+PostgreSQL persistence, shared server repository wiring, DB readiness, bounded
+pool/outage recovery, and real PostgreSQL row-lock/concurrency coverage while
+preserving SQLite DEV/test. Historical 0001-0005 bytes and Alembic head remain
+unchanged. The candidate is not merged or pushed.
 
 Known gaps:
 
@@ -40,11 +39,12 @@ MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Next exact action: `STAGE6_R010M1C_REMOTE_DELIVERY`. Do not push or resume R010
-product implementation without that separate authority.
+Next exact action: `STAGE6_R010R2_INDEPENDENT_POSTGRESQL_PRODUCTION_INTEGRATION_REVIEW`.
+Do not merge, push, deploy, write real NAS, or close the PostgreSQL production
+gap without separate authority.
 
-Latest authority: Stage 6 R010M1B local fast-forward integration authority (external task attachment)
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R010M1B.md
+Latest authority: Stage 6 R010R2 candidate implementation authority (external task attachment)
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R010R2.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
 
 R007B4 toolchain migration evidence:

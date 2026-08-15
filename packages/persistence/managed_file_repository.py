@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
 
 from packages.domain.attachments import (
     ManagedFile,
@@ -21,12 +20,12 @@ from .sqlalchemy_models import ProductORM
 from .storage_models import ManagedFileORM, ProductFileRelationORM
 from .store_forward_models import ArchiveTransferJobORM, StorageConfigurationORM
 from packages.domain.store_forward import ArchiveTransferState
+from .database import resolve_database, transaction_lock
 
 
 class ManagedFileRepository:
-    def __init__(self, engine) -> None:
-        self.engine = engine
-        self.Session = sessionmaker(engine, expire_on_commit=False)
+    def __init__(self, engine, session_factory=None) -> None:
+        self.engine, self.Session = resolve_database(engine, session_factory)
 
     def create_pending(self, managed_file: ManagedFile, relation: ProductFileRelation) -> None:
         if managed_file.status is not ManagedFileStatus.PENDING:
@@ -108,6 +107,7 @@ class ManagedFileRepository:
             if make_primary:
                 if relation.kind != ProductFileKind.IMAGE.value:
                     raise ValueError("Only a product image can be primary.")
+                transaction_lock(session, "product-primary-image", relation.product_id)
                 active_images = session.scalars(select(ProductFileRelationORM).where(
                     ProductFileRelationORM.product_id == relation.product_id,
                     ProductFileRelationORM.kind == ProductFileKind.IMAGE.value,
@@ -173,6 +173,7 @@ class ManagedFileRepository:
 
     def set_primary_image(self, *, product_id: UUID, file_id: UUID) -> None:
         with self.Session.begin() as session:
+            transaction_lock(session, "product-primary-image", str(product_id))
             target = session.scalar(select(ProductFileRelationORM).where(
                 ProductFileRelationORM.product_id == str(product_id),
                 ProductFileRelationORM.managed_file_id == str(file_id),

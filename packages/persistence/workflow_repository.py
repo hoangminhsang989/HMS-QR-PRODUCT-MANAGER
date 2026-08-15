@@ -5,7 +5,6 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
 
 from packages.domain.tracking import TrackingError, TrackingStatus, utc_now
 from packages.domain.workflow import TrackingWorkflowEvent, WorkflowEventType
@@ -16,6 +15,7 @@ from packages.persistence.tracking_models import (
     TrackingItemORM,
     TrackingWorkflowEventORM,
 )
+from packages.persistence.database import resolve_database
 
 
 def _values(event):
@@ -26,11 +26,11 @@ def _values(event):
 
 
 class WorkflowRepository:
-    def __init__(self, engine):
-        self.engine = engine
+    def __init__(self, engine, session_factory=None):
+        self.engine, self.Session = resolve_database(engine, session_factory)
 
     def submit(self, event: TrackingWorkflowEvent, inject_failure: bool = False):
-        with Session(self.engine) as session:
+        with self.Session() as session:
             item = session.scalar(select(TrackingItemORM).where(
                 TrackingItemORM.internal_id == str(event.tracking_item_id)
             ).with_for_update())
@@ -58,7 +58,7 @@ class WorkflowRepository:
             return event
 
     def revise(self, original_id, event: TrackingWorkflowEvent, inject_failure: bool = False):
-        with Session(self.engine) as session:
+        with self.Session() as session:
             original = session.get(TrackingWorkflowEventORM, str(original_id))
             item = session.scalar(select(TrackingItemORM).where(
                 TrackingItemORM.internal_id == str(event.tracking_item_id)
@@ -87,14 +87,14 @@ class WorkflowRepository:
             return event
 
     def get(self, event_id):
-        with Session(self.engine) as session:
+        with self.Session() as session:
             row = session.get(TrackingWorkflowEventORM, str(event_id))
             if not row:
                 raise LookupError("workflow event not found")
             return self._event(row)
 
     def events(self, item_id, effective_only: bool = False):
-        with Session(self.engine) as session:
+        with self.Session() as session:
             query = select(TrackingWorkflowEventORM).where(
                 TrackingWorkflowEventORM.tracking_item_id == str(item_id)
             )
@@ -107,7 +107,7 @@ class WorkflowRepository:
             return tuple(self._event(row) for row in rows)
 
     def summary(self, item_id):
-        with Session(self.engine) as session:
+        with self.Session() as session:
             item = session.get(TrackingItemORM, str(item_id))
             if not item:
                 raise LookupError("tracking item not found")
@@ -127,7 +127,7 @@ class WorkflowRepository:
             }
 
     def list_summaries(self, search=None, status_filter=None):
-        with Session(self.engine) as session:
+        with self.Session() as session:
             query = select(TrackingItemORM)
             if search:
                 query = query.where(TrackingItemORM.tracking_code.contains(search))
