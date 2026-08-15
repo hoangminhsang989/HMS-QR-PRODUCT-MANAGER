@@ -1,0 +1,19 @@
+{
+  "fixture_schema": "r011.synthetic-inventory-cases.v1",
+  "source": "synthetic-only",
+  "cases": [
+    {"name": "clean_windows_host", "section": "os", "state": "KNOWN"},
+    {"name": "postgresql_17_present", "section": "postgresql", "state": "KNOWN", "major": 17},
+    {"name": "postgresql_incompatible_major", "section": "postgresql", "state": "KNOWN", "major": 16},
+    {"name": "port_collision", "section": "listeners", "state": "KNOWN", "collision": true},
+    {"name": "low_disk", "section": "volumes", "state": "KNOWN", "capacity": "BELOW_POLICY"},
+    {"name": "multiple_volumes", "section": "volumes", "state": "KNOWN", "count": 2},
+    {"name": "existing_hms_service", "section": "hms_qr", "state": "KNOWN", "service_present": true},
+    {"name": "firewall_conflict", "section": "firewall", "state": "KNOWN", "conflict": true},
+    {"name": "reverse_proxy_present", "section": "tls", "state": "KNOWN", "termination_present": true},
+    {"name": "no_tls_infrastructure", "section": "tls", "state": "NOT_PRESENT"},
+    {"name": "non_admin", "section": "security", "state": "KNOWN", "elevated": false},
+    {"name": "read_access_denied", "section": "firewall", "state": "ACCESS_DENIED"},
+    {"name": "pending_reboot", "section": "pending_reboot", "state": "KNOWN", "pending": true}
+  ]
+}

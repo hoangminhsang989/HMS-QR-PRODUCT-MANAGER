@@ -1,15 +1,22 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
-Current WP: R011B local integration of approved Machine A deployment foundation roadmap
-Current Revision: R011B
-Current Branch: main
-Current Verdict: PASS_STAGE6_R011B_ROADMAP_LOCAL_INTEGRATION
+Current WP: R011-WP1A source-side deployment foundation implementation candidate
+Current Revision: R011-WP1A
+Current Branch: stage6-r011-wp1a-source-side-deployment-foundation
+Current Verdict: CANDIDATE_PENDING_INDEPENDENT_REVIEW
 
-R011B status: the independently approved R011 roadmap was fast-forward
-integrated locally into `main` at `4ff89c934`. The roadmap remains docs/state
-only; WP1A has not started. The R011A implementation-plan review passed, remote
-delivery is pending, and `MACHINE_A_MUTATION_AUTHORIZED=NO` remains in force.
+R011-WP1A status: source-side deployment modules, immutable artifact contract,
+read-only inventory collector, plan/preflight/dry-run/lifecycle models, evidence
+sanitizer, tests, and operator runbook are implemented on an isolated branch.
+No Machine A access or mutation occurred. WP1B and WP2 remain separately
+unauthorized. See `docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A.md`.
+
+Historical R011B status: the independently approved R011 roadmap was fast-forward
+integrated locally into `main` at `4ff89c934`; its later remote-delivery/state
+chain established the current `94c33180` WP1A baseline. The roadmap remained
+docs/state only until this WP1A candidate. `MACHINE_A_MUTATION_AUTHORIZED=NO`
+remains in force.
 No Machine A mutation, production PostgreSQL install, Windows service/user/
 registry/firewall change, real NAS, Cloudflare, public exposure, source
 implementation, test/dependency/migration change, or push occurred.
@@ -19,10 +26,10 @@ R011B pre-integration baseline: local/origin `main` HEAD
 `c45e571cc78e3fd474da19c611e99c390757c78f`. Integrated roadmap HEAD is
 `4ff89c9343aac23343068e8cd3e2dfdfef4ad700`, tree
 `21011b9165a1c225ac1785721301b33b90c12d4c`. The five production gaps remain
-open and unchanged. Next exact action:
-`STAGE6_R011C_ROADMAP_REMOTE_DELIVERY`.
+open and unchanged. The current next action is the independent review of the
+frozen R011-WP1A candidate.
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; R010M1 migration-history repair is canonical and remotely delivered at `f80b7dbf`; independently approved R010R2A1 test-only concurrency evidence is fast-forward integrated into local `main` at `c8e893c0`, with no push. Remote delivery remains pending.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008, R009, R010, and the R011 roadmap are remotely delivered. R011-WP1A is the current isolated implementation candidate and is not merged or pushed.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -57,7 +64,7 @@ PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 
 Production PostgreSQL integration is closed by R010; Machine A production
 deployment remains a separate open gap. Next exact action:
-`STAGE6_R011C_ROADMAP_REMOTE_DELIVERY`.
+`STAGE6_R011_WP1A_INDEPENDENT_REVIEW`.
 
 Latest authority: Stage 6 R011B local integration of approved Machine A deployment foundation roadmap (external task attachment)
 Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R011B_LOCAL_INTEGRATION.md
