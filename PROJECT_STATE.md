@@ -1,12 +1,12 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: Bounded archive-only offline download API contract remediation
-Current Revision: R009A3A
-Current Branch: stage6-r009a3a-archive-download-unavailable-contract
-Current Verdict: PASS_STAGE6_R009A3A_ARCHIVE_OFFLINE_DOWNLOAD_API_CONTRACT_REMEDIATION_CANDIDATE
+Current WP: R009 local integration complete; remote delivery pending
+Current Revision: R009B
+Current Branch: main
+Current Verdict: PASS_STAGE6_R009B_LOCAL_INTEGRATION
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 bounded foundation integrated locally after R008A2 independent approval; remote delivery remains pending.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 remotely delivered; R009 independently approved and integrated into local `main`; R009 remote delivery remains pending.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -15,13 +15,14 @@ focus states, and 44px touch-safe controls.
 Visual evidence: Penpot exports plus external desktop captures at 1280x720 and
 1920x1080; mobile runtime was checked at 360/390/414/768 with no horizontal
 overflow and no browser console errors.
-Regression results: `40 passed, 1 warning` in 92.18s with controlled external
-pytest temp root; warning is external Starlette/httpx deprecation.
+Regression results: R009B post-integration full suite `105 passed, 1 warning`
+in 412.54s with controlled external pytest temp root; warning is the inherited
+Starlette/httpx deprecation.
 
-Latest completed work: typed event-based QC/shortage/NG-rework/packing/delivery/
-general-report workflows anchored to Tracking Item, atomic status projection,
-active-revision quantity aggregates, semantic idempotency, structured APIs,
-desktop actions/history, mobile QC/GIAO HÀNG mode and fresh R006A review.
+Latest completed work: approved R009 safe store-and-forward, product image and
+attachment API/Desktop/Mobile surface, auth fail-closed remediation, monotonic
+manual retry remediation, bounded archive-offline download contract, local
+fast-forward integration, and fresh post-integration acceptance.
 
 Known gaps:
 
@@ -34,12 +35,11 @@ MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Next exact action: separately authorize NAS storage + Product images/attachments
-+ backup foundation + exact Excel template preparation. Do not start it inside
-R006A without new authority.
+Next exact action: `STAGE6_R009C_REMOTE_DELIVERY_AND_R009_CLOSURE`. Do not push
+or begin another Stage 6 tranche without that authority.
 
-Latest authority: docs/authorities/AUTHORITY_STAGE4_R006A.md
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE4_R006A_INTEGRATION.md
+Latest authority: Stage 6 R009B local integration authority (external task attachment)
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R009B.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
 
 R007B4 toolchain migration evidence:
@@ -346,3 +346,31 @@ introduced.
 Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009A3A.md`
 Next exact action:
 `STAGE6_R009A4_FINAL_INDEPENDENT_REVIEW_OF_REMEDIATED_R009_CANDIDATE`.
+
+R009A4 independently approved the fully remediated candidate
+`3e0c2437d6351e0e015cbe12ee6a4de0a95bba00`, tree
+`69bba5356981834b3a68501e70765f0ba4e41c4a`, for local integration. R009B
+fetched and re-proved local and remote `main` at `fadaeef4`, exact candidate
+identity, the complete four-commit remediation chain, and fast-forward
+ancestry. Local `main` then advanced with `git merge --ff-only`; no merge commit,
+squash, rebase, amend, rewrite, or push occurred.
+
+Post-integration evidence re-proved auth fail-closed (`10 passed`), remote-
+verified retry immutability (`13 passed`), archive-offline download contract
+(`7 passed`), R009 focused (`22 passed`), runtime hardening and physical
+Alembic boundary (`23 passed`), storage security (`12 passed`), QR critical
+(`6 passed`), and the one-process Qt-last full regression (`105 passed, 1
+inherited warning`). Actual Files API black-box evidence returned JSON `503`
+and `STORAGE_UNAVAILABLE` from `ARCHIVED_REMOTE_ONLY` with zero state mutation;
+local-present/archive-offline download returned matching file bytes. Isolation,
+whole-worktree high-confidence secret, diff, single-head Alembic, scope, and
+six-gap gates passed. Runtime symlink control remains unavailable without
+Windows privilege; static containment remains `PASS_STATIC_CONTAINMENT`.
+
+Current status: `STAGE6_R009_LOCAL_INTEGRATION_COMPLETE_PUSH_PENDING` and
+`R009_STATUS=LOCAL_INTEGRATED_PUSH_PENDING`.
+
+Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009B.md`
+Next exact action: `STAGE6_R009C_REMOTE_DELIVERY_AND_R009_CLOSURE`. Do not push,
+write real NAS, perform production restore, claim exact Excel fidelity, or
+begin R010 without that separate authority.
