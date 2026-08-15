@@ -1,23 +1,26 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
-Current WP: R011 roadmap freeze
-Current Revision: R011
-Current Branch: stage6-r011-machine-a-server-deployment-foundation-roadmap-freeze
-Current Verdict: PASS_STAGE6_R011_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION_ROADMAP_FREEZE
+Current WP: R011B local integration of approved Machine A deployment foundation roadmap
+Current Revision: R011B
+Current Branch: main
+Current Verdict: PASS_STAGE6_R011B_ROADMAP_LOCAL_INTEGRATION
 
-R011 status: planning/static audit only. The Machine A product/deployment
-definition is frozen in `docs/R011_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION_PRODUCT_DEFINITION.json`;
-the checkpoint is `docs/checkpoints/CHECKPOINT_STAGE6_R011_ROADMAP_FREEZE.md`.
+R011B status: the independently approved R011 roadmap was fast-forward
+integrated locally into `main` at `4ff89c934`. The roadmap remains docs/state
+only; WP1A has not started. The R011A implementation-plan review passed, remote
+delivery is pending, and `MACHINE_A_MUTATION_AUTHORIZED=NO` remains in force.
 No Machine A mutation, production PostgreSQL install, Windows service/user/
 registry/firewall change, real NAS, Cloudflare, public exposure, source
-implementation, merge, or push occurred. `MACHINE_A_MUTATION_AUTHORIZED=NO`.
+implementation, test/dependency/migration change, or push occurred.
 
-R011 canonical baseline: HEAD `3c77a29341ecb36ae2aa90c84413206b0c7adbd1`,
-tree `c45e571cc78e3fd474da19c611e99c390757c78f`, origin/main exact, zero
-divergence before roadmap commit. The five production gaps remain open and
-unchanged. Next exact action:
-`STAGE6_R011_MACHINE_A_DEPLOYMENT_FOUNDATION_IMPLEMENTATION_PLAN_REVIEW`.
+R011B pre-integration baseline: local/origin `main` HEAD
+`3c77a29341ecb36ae2aa90c84413206b0c7adbd1`, tree
+`c45e571cc78e3fd474da19c611e99c390757c78f`. Integrated roadmap HEAD is
+`4ff89c9343aac23343068e8cd3e2dfdfef4ad700`, tree
+`21011b9165a1c225ac1785721301b33b90c12d4c`. The five production gaps remain
+open and unchanged. Next exact action:
+`STAGE6_R011C_ROADMAP_REMOTE_DELIVERY`.
 
 Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; R010M1 migration-history repair is canonical and remotely delivered at `f80b7dbf`; independently approved R010R2A1 test-only concurrency evidence is fast-forward integrated into local `main` at `c8e893c0`, with no push. Remote delivery remains pending.
 
@@ -54,10 +57,10 @@ PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 
 Production PostgreSQL integration is closed by R010; Machine A production
 deployment remains a separate open gap. Next exact action:
-`STAGE6_R011_MACHINE_A_DEPLOYMENT_FOUNDATION_IMPLEMENTATION_PLAN_REVIEW`.
+`STAGE6_R011C_ROADMAP_REMOTE_DELIVERY`.
 
-Latest authority: Stage 6 R011 Machine A roadmap freeze authority (external task attachment)
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R011_ROADMAP_FREEZE.md
+Latest authority: Stage 6 R011B local integration of approved Machine A deployment foundation roadmap (external task attachment)
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R011B_LOCAL_INTEGRATION.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
 
 R007B4 toolchain migration evidence:
