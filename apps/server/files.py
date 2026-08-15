@@ -20,7 +20,7 @@ from packages.domain.store_forward import StorageConfiguration
 from packages.persistence.managed_file_repository import ManagedFileRepository
 from packages.persistence.store_forward_repository import StoreForwardRepository
 from packages.storage.managed_files import ManagedFileService
-from packages.storage.service import FilesystemStorage, UnconfiguredStorage
+from packages.storage.service import FilesystemStorage, StorageUnavailable, UnconfiguredStorage
 from packages.storage.store_forward import LocalCapacityError, StoreForwardService
 
 
@@ -115,6 +115,14 @@ def build_files_api(
     @api.exception_handler(LocalCapacityError)
     async def capacity_error(_, exc):
         return _json_error(507, "LOCAL_CAPACITY_UNSAFE", str(exc))
+
+    @api.exception_handler(StorageUnavailable)
+    async def storage_unavailable_error(_, _exc):
+        return _json_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "STORAGE_UNAVAILABLE",
+            "Tệp hiện chưa thể truy cập do vị trí lưu trữ tạm thời không khả dụng.",
+        )
 
     @api.exception_handler(LookupError)
     async def missing_error(_, exc):

@@ -1,10 +1,10 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: Bounded manual-retry / remote-verified lifecycle remediation
-Current Revision: R009A2A
-Current Branch: stage6-r009a2a-manual-retry-lifecycle-fix
-Current Verdict: PASS_STAGE6_R009A2A_MANUAL_RETRY_REMOTE_VERIFIED_LIFECYCLE_REMEDIATION_CANDIDATE
+Current WP: Bounded archive-only offline download API contract remediation
+Current Revision: R009A3A
+Current Branch: stage6-r009a3a-archive-download-unavailable-contract
+Current Verdict: PASS_STAGE6_R009A3A_ARCHIVE_OFFLINE_DOWNLOAD_API_CONTRACT_REMEDIATION_CANDIDATE
 
 Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 bounded foundation integrated locally after R008A2 independent approval; remote delivery remains pending.
 
@@ -316,3 +316,33 @@ occurred.
 Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009A2A.md`
 Next exact action:
 `STAGE6_R009A3_INDEPENDENT_REVIEW_OF_REMEDIATED_R009_CANDIDATE`.
+
+R009A3 independently re-proved auth fail-closed, retry lifecycle monotonicity,
+store-forward integrity, UI, migration, security and the `98`-test full suite,
+but rejected candidate `098e4a4` after reproducing an uncovered API contract
+defect. An archive-only file whose archive backend became unavailable returned
+generic plain-text HTTP `500` because Files API did not map the existing
+`StorageUnavailable` exception.
+
+R009A3A preserves that rejected candidate and changes only the Files API error
+boundary. Exact `StorageUnavailable` failures now return structured HTTP `503`
+with code `STORAGE_UNAVAILABLE` and a bounded Vietnamese message. The handler
+does not expose exception text, roots, storage keys, credentials, backend type
+or tracebacks. Local-present downloads still bypass the offline archive and
+succeed; archive-only offline reads do not mutate lifecycle state, requeue a
+transfer, invoke a worker or change purge state. Other unexpected and integrity
+exceptions remain real `500` errors rather than being over-caught.
+
+Fresh evidence: download contract `7 passed`; auth `10 passed`; retry lifecycle
+`13 passed`; R009 focused `22 passed`; runtime hardening `23 passed`; QR
+critical `6 passed`; full one-process Qt-last regression `105 passed, 1
+inherited warning`. Black-box actual Files API returned `503`,
+`application/json`, `STORAGE_UNAVAILABLE`, with unchanged
+`ARCHIVED_REMOTE_ONLY` state. Alembic remains `0005_store_forward`; isolation,
+secret, diff, scope and six-gap gates pass. No UI/storage-engine/migration byte,
+NAS write, production restore, exact Excel fidelity claim, merge or push was
+introduced.
+
+Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009A3A.md`
+Next exact action:
+`STAGE6_R009A4_FINAL_INDEPENDENT_REVIEW_OF_REMEDIATED_R009_CANDIDATE`.
