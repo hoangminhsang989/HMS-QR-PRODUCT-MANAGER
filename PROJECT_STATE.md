@@ -1,12 +1,12 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: R009 local integration complete; remote delivery pending
-Current Revision: R009B
-Current Branch: main
-Current Verdict: PASS_STAGE6_R009B_LOCAL_INTEGRATION
+Current WP: R010M1 historical migration boundary remediation candidate
+Current Revision: R010M1
+Current Branch: stage6-r010m1-historical-migration-boundary-remediation
+Current Verdict: PASS_STAGE6_R010M1_HISTORICAL_MIGRATION_BOUNDARY_REMEDIATION_CANDIDATE
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 remotely delivered; R009 independently approved and integrated into local `main`; R009 remote delivery remains pending.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; R010M1 migration-history remediation is a local candidate awaiting independent review; R010 product implementation remains not resumed.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -15,14 +15,14 @@ focus states, and 44px touch-safe controls.
 Visual evidence: Penpot exports plus external desktop captures at 1280x720 and
 1920x1080; mobile runtime was checked at 360/390/414/768 with no horizontal
 overflow and no browser console errors.
-Regression results: R009B post-integration full suite `105 passed, 1 warning`
-in 412.54s with controlled external pytest temp root; warning is the inherited
-Starlette/httpx deprecation.
+Regression results: R010M1 full suite `110 passed, 1 warning` in 406.22s with
+real PostgreSQL 17 and SQLite migration-boundary coverage under the controlled
+external test root; warning is the inherited Starlette/httpx deprecation.
 
-Latest completed work: approved R009 safe store-and-forward, product image and
-attachment API/Desktop/Mobile surface, auth fail-closed remediation, monotonic
-manual retry remediation, bounded archive-offline download contract, local
-fast-forward integration, and fresh post-integration acceptance.
+Latest completed work: R010M1 replaces mutable current-ORM ownership in
+historical migrations 0001-0003 with deterministic revision-owned DDL, repairs
+0002 downgrade ownership, and proves exact SQLite/PostgreSQL physical boundaries
+without changing the intended head schema or any application behavior.
 
 Known gaps:
 
@@ -35,11 +35,11 @@ MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Next exact action: `STAGE6_R009C_REMOTE_DELIVERY_AND_R009_CLOSURE`. Do not push
-or begin another Stage 6 tranche without that authority.
+Next exact action: independent review of the frozen R010M1 candidate. Do not
+merge, push, or resume R010 product implementation without separate authority.
 
-Latest authority: Stage 6 R009B local integration authority (external task attachment)
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R009B.md
+Latest authority: Stage 6 R010M1 historical migration boundary remediation authority (external task attachment)
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R010M1.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
 
 R007B4 toolchain migration evidence:
