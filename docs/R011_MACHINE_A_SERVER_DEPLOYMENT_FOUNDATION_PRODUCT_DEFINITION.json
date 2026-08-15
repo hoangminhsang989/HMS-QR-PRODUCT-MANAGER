@@ -1,0 +1,247 @@
+{
+  "authority": "HMS QR PRODUCT MANAGER STAGE 6 R011 MACHINE A SERVER DEPLOYMENT FOUNDATION ROADMAP AUDIT + PRODUCT/SCOPE FREEZE",
+  "roadmap_revision": "R011",
+  "audit_mode": "PLANNING_STATIC_AUDIT_ONLY",
+  "baseline_head": "3c77a29341ecb36ae2aa90c84413206b0c7adbd1",
+  "baseline_tree": "c45e571cc78e3fd474da19c611e99c390757c78f",
+  "baseline_branch": "main",
+  "origin_main_head": "3c77a29341ecb36ae2aa90c84413206b0c7adbd1",
+  "previous_tranche": "PASS_STAGE6_R010R2C_REMOTE_DELIVERY_AND_R010_CLOSURE",
+  "product_goal": "Freeze the exact Machine A production deployment definition using the PostgreSQL-capable server architecture delivered by R010, without performing deployment.",
+  "production_topology": {
+    "diagram": "Desktop Client / Mobile Web-PWA / Production Web frontend -> HMS QR Server/API on Machine A -> PostgreSQL on Machine A; server -> persistent local ingest and store-forward queue -> configurable archive target later",
+    "machine_a_server_authoritative": true,
+    "client_direct_postgresql_allowed": false,
+    "client_direct_archive_storage_allowed": false,
+    "client_boundaries": ["Desktop -> server API only", "Mobile -> server API only", "Web frontend -> server API only"],
+    "database_client_exposure": "DENIED",
+    "archive_client_exposure": "DENIED"
+  },
+  "static_inventory": {
+    "server_entrypoints": [
+      "apps/server/app.py:app (uvicorn import target; composed application object)",
+      "apps/server/app.py:build_api",
+      "apps/server/app.py:build_stage2_api",
+      "apps/server/app.py:build_tracking_api",
+      "apps/server/files.py:build_files_api"
+    ],
+    "database_config_paths": ["config/environments.py", "packages/persistence/database.py", "apps/server/app.py"],
+    "storage_config_paths": ["config/environments.py", "config/paths.py", "apps/server/files.py", "packages/storage/service.py", "packages/storage/store_forward.py", "packages/persistence/store_forward_repository.py"],
+    "health_endpoints": ["GET /health/readiness/database", "GET /api/v1/admin/storage/health"],
+    "deployment_script_count": 0,
+    "windows_service_support_count": 0,
+    "package_build_support_count": 0,
+    "alembic_path": "migrations/ (single head 0005_store_forward)",
+    "dependency_manifest": "pyproject.toml",
+    "logging_implementation": "NOT_PRESENT_AS_PRODUCTION_CONTRACT",
+    "inventory_note": "README documents a development uvicorn invocation; no bounded Machine A launcher, service installer, package builder, Docker/Compose deployment, firewall script, or Windows service wrapper is tracked."
+  },
+  "service_model": {
+    "product_requirement": "WINDOWS_SERVICE",
+    "unattended_required": true,
+    "interactive_login_runtime_dependency_allowed": false,
+    "mechanism_recommendation": "AUDITABLE_SERVICE_WRAPPER_AROUND_VERSIONED_PYTHON_ENTRYPOINT",
+    "mechanism_reason": "A reviewed wrapper provides boot-time start, bounded recovery, service stop semantics, deterministic working directory/environment, and explicit install/remove evidence without making a developer shell or Scheduled Task the production authority. The exact wrapper binary/version and installer are implementation-tranche deliverables.",
+    "scheduled_task_primary_allowed": false,
+    "future_process_contract": ["boot start", "bounded crash restart/backoff", "operator-visible failed state", "graceful stop", "no terminal/IDE dependency"]
+  },
+  "service_identity_policy": {
+    "service_account_model": "DEDICATED_NON_INTERACTIVE_LEAST_PRIVILEGE_MACHINE_ACCOUNT_OR_MANAGED_SERVICE_IDENTITY_SELECTED_AFTER_MACHINE_A_INVENTORY",
+    "required_rights": ["read/execute immutable release root", "read/write application data root", "read/write local ingest root", "read/write log root", "connect to local PostgreSQL service", "read service-private secret material", "later: access archive credential boundary only when separately authorized"],
+    "forbidden_rights": ["interactive logon", "local administrator", "database superuser", "unbounded network share access", "write/delete release packages", "write registry/firewall", "access to developer profiles or personal credentials"],
+    "least_privilege_policy": "PASS"
+  },
+  "release_artifact_contract": {
+    "source_delivery_model": "CERTIFIED_IMMUTABLE_DEPLOYMENT_ARTIFACT",
+    "dirty_worktree_deployment_allowed": false,
+    "unpinned_main_deployment_allowed": false,
+    "required_manifest_fields": ["release version", "Git HEAD", "Git tree where practical", "file manifest", "SHA-256", "dependency metadata", "Alembic migration head", "build timestamp", "compatibility metadata", "rollback metadata"],
+    "artifact_policy": "Build from an exact approved commit in an isolated clean checkout; verify archive/package hash before staging and retain the prior known-good artifact."
+  },
+  "persistent_directory_model": {
+    "logical_roots": {
+      "APP_INSTALL_ROOT": "Immutable versioned application releases",
+      "APP_DATA_ROOT": "Mutable application state and operational metadata",
+      "APP_LOG_ROOT": "Service logs and rotated evidence",
+      "LOCAL_INGEST_ROOT": "Durable local-first managed-file bytes on Machine A",
+      "SECRET_STORE": "Service-private protected secret injection location",
+      "POSTGRESQL_DATA_ROOT": "PostgreSQL-owned persistent data directory",
+      "DEPLOYMENT_STAGING_ROOT": "Hash-verified temporary release staging",
+      "ROLLBACK_RELEASE_ROOT": "Retained previous known-good release"
+    },
+    "drive_letters": "UNSPECIFIED_UNTIL_READ_ONLY_MACHINE_A_INVENTORY",
+    "application_runtime_data_separation": "PASS",
+    "immutable_release_package_model": "PASS",
+    "runtime_data_in_release_package_allowed": false,
+    "local_ingest_persistent": true,
+    "capacity_monitoring": {"requirement": "PASS", "monitored": ["local ingest free bytes", "PostgreSQL data free bytes", "log volume", "staging volume", "rollback copy volume"], "threshold_policy": "Configurable warning and refusal thresholds are required; actual capacities and values are deferred to Machine A preflight."}
+  },
+  "python_runtime_model": {
+    "supported_python": ">=3.11 as declared by pyproject.toml; exact supported minor pinned during implementation preflight",
+    "virtual_environment_strategy": "Dedicated service-owned virtual environment beside or referenced by the certified release",
+    "dependency_installation": "Install from the certified artifact dependency manifest/lock with hashes; never rely on global site packages",
+    "offline_online_bootstrap": "Explicitly record whether a vetted internal wheelhouse or controlled online source is used; no implicit Internet dependency",
+    "dependency_hash_lock_expectation": "PASS_REQUIRED_FOR_IMPLEMENTATION",
+    "isolated_production_python_runtime": true,
+    "global_site_package_authority_allowed": false
+  },
+  "postgresql_production_major": {
+    "frozen_major": 17,
+    "basis": "R010 real test baseline used PostgreSQL 17.11",
+    "provisioning_gates": ["approved PostgreSQL 17 installer/source", "service startup", "persistent data directory", "UTF-8 and UTC policy", "application database and least-privilege role", "listen_addresses loopback/local only", "pg_hba local policy", "connection limits", "readiness probe", "Alembic upgrade and head verification"],
+    "production_installation_performed": false
+  },
+  "postgresql_network_policy": {
+    "bind_policy": "Loopback/local-Machine-A connectivity preferred; listen_addresses must not be a general LAN/public interface.",
+    "lan_client_access": "DENIED",
+    "public_access": "DENIED",
+    "application_connectivity": "Only the Machine A HMS QR service may use the application role; client applications receive no database URL or credentials.",
+    "application_db_superuser_allowed": false,
+    "application_db_role_least_privilege": true,
+    "role_separation": ["bootstrap/admin identity", "HMS QR application role", "human operator identity"]
+  },
+  "database_role_policy": {
+    "bootstrap_identity": "Separate PostgreSQL administrative/bootstrap identity used only for provisioning and controlled maintenance",
+    "application_identity": "Dedicated HMS QR role with only required schema/data privileges; never a superuser",
+    "human_operator_identity": "Separate named operator identity; not embedded in the service connection",
+    "application_db_superuser_allowed": false,
+    "application_db_role_least_privilege": true
+  },
+  "secret_storage_model": {
+    "primary": "DPAPI-BACKED_MACHINE_OR_SERVICE_PRIVATE_SECRET_STORE_INJECTED_AT_SERVICE_START",
+    "recovery_bootstrap": "A separately authorized administrator provisions/rotates the protected value out-of-band, validates access as the service identity, records only secret-free evidence, and never commits or displays the value.",
+    "rotation": "Versioned service-private secret replacement with quiesce/reload, connectivity probe, old-secret revocation after acceptance, and evidence of actor/time without secret bytes.",
+    "production_secret_storage_model": "PASS_REQUIRED_FOR_IMPLEMENTATION",
+    "production_secret_rotation_model": "PASS_REQUIRED_FOR_IMPLEMENTATION",
+    "plaintext_repository_secret_allowed": false,
+    "client_database_secret_allowed": false
+  },
+  "alembic_deployment_contract": {
+    "schema_authority": "ALEMBIC",
+    "migration_head": "0005_store_forward",
+    "sequence": ["stop/quiesce as required", "backup/precheck", "database connectivity", "alembic current", "alembic upgrade head", "verify intended head", "start server", "readiness"],
+    "orm_create_all_production_migration_allowed": false,
+    "migration_failure_fail_closed": true,
+    "failure_conditions": ["database unavailable", "upgrade failure", "unexpected head", "invalid migration graph"],
+    "failure_behavior": "Do not start or advertise a healthy production service; do not fall back to SQLite."
+  },
+  "local_ingest_model": {
+    "policy": "Durable local Machine A storage first; successful upload means local bytes are persisted and a store-forward job is durable.",
+    "archive_target": "Configurable later; offline archive does not invalidate local-safe operation.",
+    "survives": ["application upgrade", "service restart", "interactive user logout"],
+    "real_nas_write_count": 0,
+    "nas_credential_provision_count": 0
+  },
+  "logging_model": {
+    "contract": "PASS",
+    "implementation_status": "NOT_IMPLEMENTED_UNDER_R011",
+    "root": "APP_LOG_ROOT outside immutable release package",
+    "events": ["startup/configuration validation", "PostgreSQL readiness", "migration", "local storage readiness", "archive optional/offline state", "service lifecycle", "critical failures", "restart/backoff"],
+    "retention": "Bounded rotation/retention configurable by policy; evidence export excludes secrets.",
+    "secret_leakage": "Never log passwords, secret URLs, tokens, or protected credential values."
+  },
+  "health_model": {
+    "contract": "PASS",
+    "implementation_status": "NOT_IMPLEMENTED_UNDER_R011",
+    "components": ["SERVER_PROCESS", "DATABASE", "LOCAL_STORAGE", "ARCHIVE_TARGET"],
+    "semantics": {"process": "alive", "database": "usable via bounded query", "local_storage": "persistent root writable and capacity-admissible", "archive_target": "available or explicitly OFFLINE/OPTIONAL"},
+    "healthy_production_readiness": "Requires process, database, and local storage readiness; archive may be offline under R009 local-first policy.",
+    "current_repo": "Database and storage probes exist; composed component readiness and production service contract are not yet implemented."
+  },
+  "api_binding_policy": {
+    "bind_address": "Explicit configured LAN/listener address selected after Machine A inventory; never wildcard by default.",
+    "port": "Explicit configured HMS QR API port recorded in deployment manifest; no unknown port is invented during R011.",
+    "lan_allowed_source": "Only the accepted intended LAN scope from preflight/firewall policy; subnet remains unspecified until inventory.",
+    "public_internet_exposure_allowed": false,
+    "postgresql_port_private": true
+  },
+  "firewall_policy": {
+    "frozen": "PASS",
+    "allow": "Only required HMS QR API ingress from the accepted LAN scope.",
+    "deny": ["PostgreSQL ingress to normal clients", "unnecessary inbound ports", "public Internet ingress"],
+    "rollback": "Record deterministic rule identifiers and remove/revert commands before any future mutation; no firewall mutation in R011."
+  },
+  "tls_model": {
+    "termination": "RECOMMEND_LOCAL_REVERSE_PROXY_TERMINATION_FOR_LAN_HTTPS_WITH_HMS_SERVICE_ON_PRIVATE_LOOPBACK",
+    "certificate_scope": "Certificate issuance/provisioning is deferred to the LAN/TLS implementation tranche; no public certificate or Cloudflare deployment under R011.",
+    "plaintext_public_internet_api_allowed": false
+  },
+  "startup_sequence": ["Windows boot", "PostgreSQL service ready", "HMS QR service starts", "validate deterministic configuration and secret availability", "validate migration graph/current head", "probe database readiness", "probe local-storage readiness/capacity", "expose API readiness", "run archive worker as optional bounded background function"],
+  "shutdown_sequence": ["stop accepting new work", "finish or roll back active transaction", "release database sessions", "stop store-forward worker safely", "flush/close logs", "retain all local authoritative files"],
+  "restart_policy": {"contract": "PASS_REQUIRED_FOR_IMPLEMENTATION", "on_crash": true, "backoff": "bounded exponential/backoff policy", "rapid_failure_window": "finite configurable maximum; exact values frozen during implementation", "operator_state": "After threshold, remain failed and require operator intervention; database outage must not cause an uncontrolled storm."},
+  "deployment_transaction": {"contract": "PASS", "sequence": ["certified artifact", "hash verify", "stage new release", "read-only preflight", "stop/quiesce service", "database migration precheck", "activate release atomically or reversibly", "start service", "health/readiness", "accept", "retain previous release"], "only_known_good_release_overwrite_allowed": false},
+  "application_rollback": {"contract": "Deterministic service stop, prior release activation, hash/HEAD/tree verification, restart/readiness, and retained failure evidence.", "retain_previous_release": true, "db_downgrade_conflation_count": 0},
+  "database_rollback_policy": {"frozen": "PASS", "policy": "Do not promise arbitrary Alembic downgrade. Require pre-deployment recovery/backup; application rollback is allowed only when compatible with the resulting schema. Database restore is an operator-owned recovery action with separately authorized evidence."},
+  "backup_prerequisite": {"frozen": "PASS", "pre_major_upgrade_backup": "Required before schema-affecting release", "destination_class": "Approved protected backup destination separate from PostgreSQL data root", "credential_isolation": "Separate protected backup credential boundary", "restore_validation": "Restore validation must prove usable database and intended Alembic head before acceptance", "operator_ownership": "Named human operator; no backup execution under R011", "production_backup_execution_count": 0},
+  "machine_a_preflight": {"frozen": "PASS", "read_only": true, "checks": ["OS/version", "CPU architecture", "RAM", "free disk/filesystem", "host name", "LAN/IP and DNS as applicable", "clock synchronization", "Python/runtime", "PostgreSQL prerequisite/version", "port conflicts", "current firewall state", "service existence", "application/data/log roots", "database existing state", "archive target configuration state"]},
+  "machine_a_clock_sync_requirement": "PASS: Machine A clock synchronization must be healthy; server/PostgreSQL store UTC and Vietnamese-local time is presentation only.",
+  "default_production_admin_password_allowed": false,
+  "deployment_evidence_contract": {"required": ["release SHA, Git HEAD/tree", "Machine A inventory", "PostgreSQL version", "migration head", "service state", "listener/port state", "firewall state", "database/local storage readiness", "archive state", "smoke tests", "restart/reboot test", "authorized rollback drill", "secret scan"], "secret_values_in_evidence": false},
+  "deployment_acceptance": {"contract": "PASS", "implementation_status": "NOT_EXECUTED_UNDER_R011", "criteria": ["exact certified artifact", "automatic boot start", "survives logout", "bounded restart behavior proven", "real PostgreSQL connection", "Alembic intended head", "production fail-closed behavior", "no SQLite production authority", "no client DB credentials", "LAN-bound API only", "PostgreSQL not client exposed", "durable local ingest", "safe archive-offline behavior", "acceptable DB outage/recovery", "reboot/startup smoke", "functional logs/rotation", "no secret leakage"], "real_nas_required": false},
+  "reboot_acceptance": {"required_later": true, "evidence": ["POST_REBOOT_POSTGRESQL_READY", "POST_REBOOT_HMS_SERVICE_READY", "POST_REBOOT_DATABASE_READINESS", "POST_REBOOT_LOCAL_STORAGE_READINESS"], "performed_in_r011": false},
+  "work_packages": [
+    {"id": "R011-WP1", "name": "Machine A inventory + immutable deployment artifact"},
+    {"id": "R011-WP2", "name": "Persistent directories, secret, and service identity foundation"},
+    {"id": "R011-WP3", "name": "PostgreSQL 17 provisioning, application role, and Alembic"},
+    {"id": "R011-WP4", "name": "HMS QR Windows service installation"},
+    {"id": "R011-WP5", "name": "LAN binding, firewall, and TLS foundation"},
+    {"id": "R011-WP6", "name": "Health/readiness, startup/restart, and reboot acceptance"},
+    {"id": "R011-WP7", "name": "Deployment upgrade/rollback drill"},
+    {"id": "R011-WP8", "name": "Independent review and closure"}
+  ],
+  "risk_register": [
+    {"risk": "production secret leakage", "severity": "CRITICAL", "detection": "secret scan/log review", "prevention": "DPAPI/service-private injection and redacted evidence", "recovery": "rotate/revoke secret and preserve incident evidence"},
+    {"risk": "wrong service account rights", "severity": "HIGH", "detection": "ACL/read-write preflight", "prevention": "dedicated least-privilege identity", "recovery": "remove excess rights and retest"},
+    {"risk": "PostgreSQL exposed to LAN", "severity": "CRITICAL", "detection": "listener and firewall inspection", "prevention": "loopback bind, pg_hba and deny rules", "recovery": "close listener/rules before service acceptance"},
+    {"risk": "wrong persistent data root or upgrade deletion", "severity": "CRITICAL", "detection": "root manifest and upgrade simulation", "prevention": "separate persistent roots and delete-last policy", "recovery": "stop deployment and restore retained release/data"},
+    {"risk": "migration failure or schema-incompatible rollback", "severity": "CRITICAL", "detection": "precheck/current/upgrade/head verification", "prevention": "Alembic-only, backup prerequisite, fail closed", "recovery": "service remains stopped; operator restores backup or compatible release"},
+    {"risk": "database unavailable at boot/service starts before DB", "severity": "HIGH", "detection": "ordered readiness probes", "prevention": "PostgreSQL dependency and bounded retry", "recovery": "failed-visible state without restart storm"},
+    {"risk": "restart storm", "severity": "HIGH", "detection": "service failure counter/logs", "prevention": "finite backoff/window", "recovery": "hold failed state for operator"},
+    {"risk": "firewall lockout or port collision", "severity": "HIGH", "detection": "read-only listener/firewall preflight", "prevention": "scoped rule and rollback commands", "recovery": "remove only identified rule/change"},
+    {"risk": "clock drift", "severity": "MEDIUM", "detection": "time-sync preflight", "prevention": "healthy authoritative clock", "recovery": "operator corrects synchronization before acceptance"},
+    {"risk": "archive/NAS unavailable", "severity": "MEDIUM", "detection": "component archive health", "prevention": "local-first durable queue", "recovery": "retain local bytes and bounded retry"},
+    {"risk": "release identity mismatch", "severity": "CRITICAL", "detection": "manifest/hash/HEAD/tree comparison", "prevention": "certified clean artifact only", "recovery": "reject staging and preserve evidence"}
+  ],
+  "mutation_preconditions": {"frozen": "PASS", "gates": {"GATE_A": "canonical main exact", "GATE_B": "exact deployment artifact/hash valid", "GATE_C": "Machine A read-only inventory accepted", "GATE_D": "persistent root plan accepted", "GATE_E": "service identity accepted", "GATE_F": "secret mechanism accepted", "GATE_G": "PostgreSQL provisioning plan accepted", "GATE_H": "network/firewall plan accepted", "GATE_I": "rollback plan accepted"}, "machine_a_mutation_authorized": false, "mutation_count": 0},
+  "machine_a_mutation_precondition_gates_frozen": "PASS",
+  "r011_work_package_sequence_frozen": "PASS",
+  "r011_before_real_nas_acceptance": true,
+  "gap_matrix": [
+    {"capability": "server startup", "current_repo_support": "uvicorn-compatible app object and builders", "missing": "unattended service launcher/lifecycle", "r011_required": "freeze Windows service model", "later_tranche": "R011-WP4/WP6"},
+    {"capability": "production config", "current_repo_support": "HMS_QR_ENV and HMS_QR_DATABASE_URL validation", "missing": "persistent service environment and secret injection", "r011_required": "define contract", "later_tranche": "R011-WP2"},
+    {"capability": "PostgreSQL driver", "current_repo_support": "psycopg[binary] in pyproject.toml", "missing": "Machine A isolated install", "r011_required": "record dependency contract", "later_tranche": "R011-WP3"},
+    {"capability": "PostgreSQL provisioning", "current_repo_support": "application runtime and migrations", "missing": "installer/service/role/data-root procedure", "r011_required": "freeze gates", "later_tranche": "R011-WP3"},
+    {"capability": "Alembic upgrade", "current_repo_support": "migrations through 0005_store_forward", "missing": "production runner and evidence", "r011_required": "freeze sequence", "later_tranche": "R011-WP3"},
+    {"capability": "persistent local storage", "current_repo_support": "R009 local-first storage/store-forward", "missing": "Machine A roots/ACL/capacity setup", "r011_required": "freeze layout", "later_tranche": "R011-WP2/WP6"},
+    {"capability": "log path", "current_repo_support": "no production logging contract", "missing": "external rotating logs", "r011_required": "define APP_LOG_ROOT contract", "later_tranche": "R011-WP6"},
+    {"capability": "secret injection", "current_repo_support": "environment validation only", "missing": "protected store integration", "r011_required": "select DPAPI model", "later_tranche": "R011-WP2"},
+    {"capability": "service account", "current_repo_support": "none", "missing": "dedicated identity and ACLs", "r011_required": "freeze least privilege", "later_tranche": "R011-WP2/WP4"},
+    {"capability": "Windows startup", "current_repo_support": "none", "missing": "boot service registration", "r011_required": "service requirement", "later_tranche": "R011-WP4"},
+    {"capability": "service supervision", "current_repo_support": "none", "missing": "bounded restart/backoff", "r011_required": "freeze policy", "later_tranche": "R011-WP4/WP6"},
+    {"capability": "LAN binding", "current_repo_support": "no frozen production bind contract", "missing": "explicit listener policy", "r011_required": "freeze interface", "later_tranche": "R011-WP5"},
+    {"capability": "HTTPS", "current_repo_support": "no certificate/termination implementation", "missing": "LAN TLS termination", "r011_required": "recommend reverse proxy", "later_tranche": "R011-WP5"},
+    {"capability": "firewall", "current_repo_support": "none", "missing": "scoped allow/deny rules", "r011_required": "freeze no-mutation contract", "later_tranche": "R011-WP5"},
+    {"capability": "health/readiness", "current_repo_support": "database and storage probes", "missing": "composed process/DB/local/archive readiness", "r011_required": "freeze component model", "later_tranche": "R011-WP6"},
+    {"capability": "DB outage", "current_repo_support": "bounded DB readiness and fail-closed helper", "missing": "service lifecycle behavior", "r011_required": "freeze fail-closed rule", "later_tranche": "R011-WP6"},
+    {"capability": "archive-offline handling", "current_repo_support": "R009 durable local queue", "missing": "Machine A operational acceptance", "r011_required": "preserve as optional", "later_tranche": "R011-WP6; NAS later"},
+    {"capability": "deployment package", "current_repo_support": "setuptools build metadata only", "missing": "certified artifact builder/manifest", "r011_required": "freeze artifact contract", "later_tranche": "R011-WP1"},
+    {"capability": "artifact hashes", "current_repo_support": "Git identity available", "missing": "release manifest/hash verifier", "r011_required": "require SHA-256", "later_tranche": "R011-WP1"},
+    {"capability": "upgrade", "current_repo_support": "none", "missing": "reversible staged transaction", "r011_required": "freeze sequence", "later_tranche": "R011-WP7"},
+    {"capability": "rollback", "current_repo_support": "none", "missing": "retained release activation", "r011_required": "freeze app/db separation", "later_tranche": "R011-WP7"},
+    {"capability": "backup prerequisite", "current_repo_support": "backup library and tests exist", "missing": "Machine A backup policy/ownership", "r011_required": "freeze prerequisite", "later_tranche": "R011-WP3/WP7"},
+    {"capability": "restore prerequisite", "current_repo_support": "restore verification service exists", "missing": "authorized operational restore drill", "r011_required": "freeze evidence requirement", "later_tranche": "R011-WP7"},
+    {"capability": "operator runbook", "current_repo_support": "no Machine A runbook", "missing": "bounded install/upgrade/recovery instructions", "r011_required": "identify deliverable", "later_tranche": "R011-WP8"}
+  ],
+  "in_scope": ["static deployment inventory", "product/deployment topology and boundary freeze", "Windows service requirement and recommended mechanism", "least-privilege identity policy", "immutable artifact and persistent-root contract", "PostgreSQL 17/network/role policy", "secret, Alembic, storage, logging, health, startup, rollback, backup, preflight, evidence, acceptance, risk, and gate definitions", "docs-only roadmap artifacts"],
+  "out_of_scope": ["Machine A connection or mutation", "PostgreSQL production installation/database/secrets", "Windows service/user/registry/firewall changes", "real NAS or archive credentials", "Cloudflare/public hosting", "mobile real-device acceptance", "template fidelity/reference workbook", "production backup/restore", "source implementation, tests, migrations, dependencies, merge, push"],
+  "remaining_production_gaps": ["TEMPLATE_FIDELITY_PENDING_REFERENCE_FILE", "NAS_WRITE_PIPELINE_NOT_YET_EXECUTED", "MACHINE_A_PRODUCTION_DEPLOYMENT_NOT_YET_EXECUTED", "MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED", "PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED"],
+  "production_gap_relabel_count": 0,
+  "production_gaps_remaining": 5,
+  "machine_a_production_deployment_not_yet_executed": "OPEN",
+  "real_nas_write_count": 0,
+  "production_backup_execution_count": 0,
+  "next_authority": "STAGE6_R011_MACHINE_A_DEPLOYMENT_FOUNDATION_IMPLEMENTATION_PLAN_REVIEW",
+  "verdict": "PASS_STAGE6_R011_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION_ROADMAP_FREEZE",
+  "scope_frozen": true,
+  "machine_a_mutation_authorized": false
+}

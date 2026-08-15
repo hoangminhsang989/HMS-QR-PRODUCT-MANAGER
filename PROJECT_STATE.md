@@ -1,10 +1,23 @@
 # HMS QR Product Manager — Current State
 
-Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: R010R2B local PostgreSQL integration
-Current Revision: R010R2B
-Current Branch: main
-Current Verdict: PASS_STAGE6_R010R2B_LOCAL_INTEGRATION
+Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
+Current WP: R011 roadmap freeze
+Current Revision: R011
+Current Branch: stage6-r011-machine-a-server-deployment-foundation-roadmap-freeze
+Current Verdict: PASS_STAGE6_R011_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION_ROADMAP_FREEZE
+
+R011 status: planning/static audit only. The Machine A product/deployment
+definition is frozen in `docs/R011_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION_PRODUCT_DEFINITION.json`;
+the checkpoint is `docs/checkpoints/CHECKPOINT_STAGE6_R011_ROADMAP_FREEZE.md`.
+No Machine A mutation, production PostgreSQL install, Windows service/user/
+registry/firewall change, real NAS, Cloudflare, public exposure, source
+implementation, merge, or push occurred. `MACHINE_A_MUTATION_AUTHORIZED=NO`.
+
+R011 canonical baseline: HEAD `3c77a29341ecb36ae2aa90c84413206b0c7adbd1`,
+tree `c45e571cc78e3fd474da19c611e99c390757c78f`, origin/main exact, zero
+divergence before roadmap commit. The five production gaps remain open and
+unchanged. Next exact action:
+`STAGE6_R011_MACHINE_A_DEPLOYMENT_FOUNDATION_IMPLEMENTATION_PLAN_REVIEW`.
 
 Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; R010M1 migration-history repair is canonical and remotely delivered at `f80b7dbf`; independently approved R010R2A1 test-only concurrency evidence is fast-forward integrated into local `main` at `c8e893c0`, with no push. Remote delivery remains pending.
 
@@ -32,7 +45,6 @@ migrations remain byte-unchanged. No push was performed.
 Known gaps:
 
 ```text
-POSTGRESQL_PRODUCTION_INTEGRATION_NOT_YET_EXECUTED
 TEMPLATE_FIDELITY_PENDING_REFERENCE_FILE
 NAS_WRITE_PIPELINE_NOT_YET_EXECUTED
 MACHINE_A_PRODUCTION_DEPLOYMENT_NOT_YET_EXECUTED
@@ -40,12 +52,12 @@ MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Next exact action: `STAGE6_R010R2C_REMOTE_DELIVERY_AND_R010_CLOSURE`.
-Do not push or close the PostgreSQL production gap remotely without that separate
-authority.
+Production PostgreSQL integration is closed by R010; Machine A production
+deployment remains a separate open gap. Next exact action:
+`STAGE6_R011_MACHINE_A_DEPLOYMENT_FOUNDATION_IMPLEMENTATION_PLAN_REVIEW`.
 
-Latest authority: Stage 6 R010R2B local fast-forward integration authority (external task attachment)
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R010R2B.md
+Latest authority: Stage 6 R011 Machine A roadmap freeze authority (external task attachment)
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R011_ROADMAP_FREEZE.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
 
 R007B4 toolchain migration evidence:
