@@ -1,12 +1,12 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: R010R2A1 true PostgreSQL concurrency evidence remediation candidate
-Current Revision: R010R2A1
-Current Branch: stage6-r010r2a1-true-postgresql-concurrency-evidence
-Current Verdict: PASS_STAGE6_R010R2A1_TRUE_POSTGRESQL_CONCURRENCY_EVIDENCE_REMEDIATION_CANDIDATE
+Current WP: R010R2B local PostgreSQL integration
+Current Revision: R010R2B
+Current Branch: main
+Current Verdict: PASS_STAGE6_R010R2B_LOCAL_INTEGRATION
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; R010M1 migration-history repair is canonical and remotely delivered at `f80b7dbf`; R010R2 PostgreSQL production persistence remains a frozen, rejected local implementation candidate. R010R2A1 remediates only its concurrency-test evidence and is not integrated or pushed.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; R010M1 migration-history repair is canonical and remotely delivered at `f80b7dbf`; independently approved R010R2A1 test-only concurrency evidence is fast-forward integrated into local `main` at `c8e893c0`, with no push. Remote delivery remains pending.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -15,23 +15,19 @@ focus states, and 44px touch-safe controls.
 Visual evidence: Penpot exports plus external desktop captures at 1280x720 and
 1920x1080; mobile runtime was checked at 360/390/414/768 with no horizontal
 overflow and no browser console errors.
-Regression results: R010R2A1 true-concurrency focused returned `10 passed`;
-the complete PostgreSQL-focused gate returned `18 passed, 1 warning`; migration
-regression returned `26 passed`; SQLite Stage1-Stage4 returned `38 passed`;
-critical Product/Tracking/QC/QR/auth/R009 coverage returned `88 passed`; and the
-native-exit-safe Qt-last one-process full regression returned
-`143 passed, 1 warning` in 547.50s with exit 0 and empty stderr.
+Regression results: R010R2B post-integration migration regression returned
+`26 passed`; the complete PostgreSQL-focused gate returned `18 passed, 1 warning`;
+SQLite DEV compatibility returned `38 passed, 1 warning`; critical
+Product/Tracking/QC/QR/auth/R009 coverage returned `88 passed, 1 warning`; and
+the native-exit-safe Qt-last one-process full regression returned
+`143 passed, 1 warning` in 562.61s with exit 0 and empty stderr.
 The warning is the inherited Starlette/httpx deprecation.
 
-Latest completed work: R010R2A1 preserves all frozen production bytes and
-replaces sequential-passable ThreadPoolExecutor evidence with test-only
-Barrier/Event and SQLAlchemy decisive-SQL synchronization. Every concurrent
-domain proves two distinct PostgreSQL backend PIDs, two live sessions, bounded
-overlap before first completion, and a final physical invariant. Row locking
-also proves the competing backend waits on a PostgreSQL lock while the holder
-transaction remains open. Ten repetitions per critical domain found no product
-defect. Historical 0001-0005 bytes and Alembic head remain unchanged. The
-candidate still requires fresh independent review and is not merged or pushed.
+Latest completed work: R010R2B locally integrated the independently approved
+R010R2A1 chain by exact FF-only merge and re-ran real PostgreSQL 17.11 migration,
+outage/recovery, concurrency, product, QR, auth, R009, SQLite, native-process,
+secret, isolation, and Git gates. The production implementation and historical
+migrations remain byte-unchanged. No push was performed.
 
 Known gaps:
 
@@ -44,12 +40,12 @@ MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Next exact action: fresh independent review of the frozen R010R2A1 candidate.
-Do not merge, push, deploy, write real NAS, or close the PostgreSQL production
-gap without separate authority.
+Next exact action: `STAGE6_R010R2C_REMOTE_DELIVERY_AND_R010_CLOSURE`.
+Do not push or close the PostgreSQL production gap remotely without that separate
+authority.
 
-Latest authority: Stage 6 R010R2A1 true PostgreSQL concurrency evidence remediation authority (external task attachment)
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R010R2A1.md
+Latest authority: Stage 6 R010R2B local fast-forward integration authority (external task attachment)
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R010R2B.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
 
 R007B4 toolchain migration evidence:
