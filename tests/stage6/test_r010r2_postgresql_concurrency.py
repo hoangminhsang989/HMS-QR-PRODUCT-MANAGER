@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import os
 from pathlib import Path
+from threading import Event
+from time import monotonic
 from uuid import UUID, uuid4
 
 from alembic import command
 from alembic.config import Config
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from config.environments import AppConfig, Environment
@@ -20,6 +21,13 @@ from config.paths import TEST_ROOT
 from packages.application.stage2_service import Stage2Service
 from packages.application.tracking_service import TrackingService
 from packages.application.workflow_services import DeliveryService, PackingService, QcService
+from packages.domain.attachments import (
+    ManagedFile,
+    ManagedFileSource,
+    ManagedFileStatus,
+    ProductFileKind,
+    ProductFileRelation,
+)
 from packages.domain.store_forward import ArchiveTransferState, StorageConfiguration
 from packages.domain.tracking import Operator, TrackingError
 from packages.domain.workflow import WorkflowEventType
@@ -38,6 +46,19 @@ from packages.persistence.store_forward_repository import StoreForwardRepository
 from packages.persistence.tracking_models import TrackingWorkflowEventORM
 from packages.persistence.tracking_repository import TrackingRepository
 from packages.persistence.workflow_repository import WorkflowRepository
+from tests.stage6.true_concurrency import DecisiveSqlWindow, run_worker_pair
+
+
+CONCURRENCY_REPEAT_ITERATIONS = 10
+CONCURRENCY_EVIDENCE_MATRIX = (
+    ("ROW_LOCK", "SELECT FOR UPDATE", "decisive SQL barrier + held result", "pg_stat_activity Lock wait", "one effective event", "missing row lock"),
+    ("IDEMPOTENCY", "row lock + unique request UUID", "decisive SQL barrier", "one winner and one semantic replay/conflict", "one committed event", "duplicate or incompatible reuse"),
+    ("ENSURE_JOB", "unique managed_file_id", "INSERT barrier", "concurrent insert arbitration", "one transfer job", "duplicate job"),
+    ("LEASE", "conditional UPDATE", "UPDATE barrier", "one rowcount winner", "one active lease", "double ownership"),
+    ("ACTIVE_CONFIG", "transaction advisory lock", "advisory-lock barrier", "serialized activation", "one active config", "multiple active configs"),
+    ("PRIMARY_IMAGE", "product-scoped advisory lock", "advisory-lock barrier", "serialized primary update", "one primary", "multiple primaries"),
+    ("FILE_RELATION", "PK/unique constraints", "INSERT barrier", "one commit and one conflict", "one logical relation", "duplicate relation"),
+)
 
 
 def _postgresql_url() -> str:
@@ -48,6 +69,25 @@ def _postgresql_url() -> str:
     if not value:
         pytest.skip("isolated R010R2 PostgreSQL runtime is not configured")
     return value
+
+
+def _sql_contains(*tokens: str):
+    lowered = tuple(token.casefold() for token in tokens)
+    return lambda statement: all(token in statement.casefold() for token in lowered)
+
+
+def _wait_for_backend_lock(runtime, backend_pid: int) -> tuple[str, str]:
+    deadline = monotonic() + 5.0
+    poll_gate = Event()
+    with runtime.engine.connect() as connection:
+        while monotonic() < deadline:
+            row = connection.execute(text(
+                "SELECT wait_event_type, wait_event FROM pg_stat_activity WHERE pid = :pid"
+            ), {"pid": backend_pid}).one()
+            if row.wait_event_type == "Lock":
+                return row.wait_event_type, row.wait_event
+            poll_gate.wait(0.02)
+    raise AssertionError(f"backend {backend_pid} was not observed waiting on a PostgreSQL lock")
 
 
 @pytest.fixture(scope="module")
@@ -154,27 +194,93 @@ def test_customer_po_production_run_and_tracking_qr_invariants(runtime):
     assert new_item.tracking_code != issued.tracking_code
 
 
-def test_real_row_lock_serializes_concurrent_idempotency(runtime):
-    _, item, operator = _seed_tracking(runtime)
-    request_id = uuid4()
+def test_true_row_lock_serializes_overlapping_idempotent_requests(runtime):
+    blocking_observations = 0
+    for _iteration in range(CONCURRENCY_REPEAT_ITERATIONS):
+        _, item, operator = _seed_tracking(runtime)
+        request_id = uuid4()
 
-    def submit(quantity=Decimal("10")):
-        return QcService(WorkflowRepository(runtime)).submit(
-            request_id=request_id, tracking_item_id=item.internal_id,
-            event_type=WorkflowEventType.QC_CHECKED, quantity=quantity, notes="PG lock",
-            actor_user_id=operator.internal_id, actor_display_name=operator.display_name,
-        )
+        def submit():
+            return QcService(WorkflowRepository(runtime)).submit(
+                request_id=request_id, tracking_item_id=item.internal_id,
+                event_type=WorkflowEventType.QC_CHECKED, quantity=Decimal("10"),
+                notes="PG true overlap", actor_user_id=operator.internal_id,
+                actor_display_name=operator.display_name,
+            )
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        results = tuple(executor.map(lambda _: submit(), range(2)))
-    assert results[0].internal_id == results[1].internal_id
-    with runtime.session_factory() as session:
-        rows = session.scalar(select(func.count()).select_from(TrackingWorkflowEventORM).where(
-            TrackingWorkflowEventORM.request_id == str(request_id)
-        ))
-    assert rows == 1
-    with pytest.raises(TrackingError, match="idempotency"):
-        submit(Decimal("11"))
+        predicate = _sql_contains("from order_tracking_items", "for update")
+        with DecisiveSqlWindow(
+            runtime.engine, predicate, hold_first_result=True
+        ) as window:
+            def observe_wait(futures):
+                nonlocal blocking_observations
+                window.assert_distinct_backends()
+                waiter_pid = next(
+                    pid for pid in window.backend_pids.values()
+                    if pid != window.holder_backend_pid
+                )
+                assert not futures[0].done() and not futures[1].done()
+                wait_type, _wait_event = _wait_for_backend_lock(runtime, waiter_pid)
+                assert wait_type == "Lock"
+                assert not futures[0].done() and not futures[1].done()
+                blocking_observations += 1
+
+            outcomes = run_worker_pair(
+                window, submit, submit, while_first_result_held=observe_wait
+            )
+
+        assert all(outcome.error is None for outcome in outcomes)
+        assert outcomes[0].value.internal_id == outcomes[1].value.internal_id
+        with runtime.session_factory() as session:
+            rows = session.scalar(select(func.count()).select_from(
+                TrackingWorkflowEventORM
+            ).where(TrackingWorkflowEventORM.request_id == str(request_id)))
+        assert rows == 1
+    assert blocking_observations == CONCURRENCY_REPEAT_ITERATIONS
+
+
+def test_overlapping_incompatible_idempotency_reuse_fails_closed(runtime):
+    for _iteration in range(CONCURRENCY_REPEAT_ITERATIONS):
+        _, item, operator = _seed_tracking(runtime)
+        request_id = uuid4()
+
+        def submit(quantity: Decimal):
+            return QcService(WorkflowRepository(runtime)).submit(
+                request_id=request_id, tracking_item_id=item.internal_id,
+                event_type=WorkflowEventType.QC_CHECKED, quantity=quantity,
+                notes="PG incompatible overlap", actor_user_id=operator.internal_id,
+                actor_display_name=operator.display_name,
+            )
+
+        predicate = _sql_contains("from order_tracking_items", "for update")
+        with DecisiveSqlWindow(
+            runtime.engine, predicate, hold_first_result=True
+        ) as window:
+            def observe_wait(futures):
+                waiter_pid = next(
+                    pid for pid in window.backend_pids.values()
+                    if pid != window.holder_backend_pid
+                )
+                assert not futures[0].done() and not futures[1].done()
+                assert _wait_for_backend_lock(runtime, waiter_pid)[0] == "Lock"
+
+            outcomes = run_worker_pair(
+                window,
+                lambda: submit(Decimal("10")),
+                lambda: submit(Decimal("11")),
+                while_first_result_held=observe_wait,
+            )
+
+        errors = tuple(outcome.error for outcome in outcomes if outcome.error is not None)
+        committed = tuple(outcome.value for outcome in outcomes if outcome.error is None)
+        assert len(committed) == 1
+        assert len(errors) == 1 and isinstance(errors[0], TrackingError)
+        assert "idempotency" in str(errors[0])
+        with runtime.session_factory() as session:
+            rows = session.scalar(select(func.count()).select_from(
+                TrackingWorkflowEventORM
+            ).where(TrackingWorkflowEventORM.request_id == str(request_id)))
+        assert rows == 1
 
 
 def test_qc_packing_delivery_and_transaction_failure_are_atomic(runtime):
@@ -232,96 +338,212 @@ def _managed_file(runtime, product_id: UUID) -> UUID:
     return file_id
 
 
-def test_store_forward_ensure_lease_and_stale_recovery_concurrency(runtime):
-    product_id = _seed_product(runtime)
-    file_id = _managed_file(runtime, product_id)
-    repository = StoreForwardRepository(runtime)
-    configuration = repository.create_configuration(_configuration())
+def test_true_concurrent_ensure_job_converges_to_one_row(runtime):
+    for _iteration in range(CONCURRENCY_REPEAT_ITERATIONS):
+        product_id = _seed_product(runtime)
+        file_id = _managed_file(runtime, product_id)
+        configuration = StoreForwardRepository(runtime).create_configuration(_configuration())
 
-    def ensure():
-        return StoreForwardRepository(runtime).ensure_job(
-            file_id, configuration.configuration_id
-        )
+        def ensure():
+            return StoreForwardRepository(runtime).ensure_job(
+                file_id, configuration.configuration_id
+            )
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        jobs = tuple(executor.map(lambda _: ensure(), range(2)))
-    assert jobs[0].job_id == jobs[1].job_id
-    with runtime.session_factory() as session:
-        assert session.scalar(select(func.count()).select_from(ArchiveTransferJobORM).where(
-            ArchiveTransferJobORM.managed_file_id == str(file_id)
-        )) == 1
-
-    now = datetime.now(timezone.utc)
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        claims = tuple(executor.map(
-            lambda worker: StoreForwardRepository(runtime).claim_next(
-                worker_id=f"worker-{worker}", now=now, lease_seconds=1
-            ),
-            range(2),
-        ))
-    active = tuple(claim for claim in claims if claim is not None)
-    assert len(active) == 1
-    assert active[0].state is ArchiveTransferState.TRANSFERRING
-    assert repository.recover_expired_leases(at=now + timedelta(seconds=2)) == 1
-    reclaimed = repository.claim_next(worker_id="worker-recovery", now=now + timedelta(seconds=2))
-    assert reclaimed is not None
+        with DecisiveSqlWindow(
+            runtime.engine, _sql_contains("insert into archive_transfer_jobs")
+        ) as window:
+            outcomes = run_worker_pair(window, ensure, ensure)
+        assert all(outcome.error is None for outcome in outcomes)
+        assert outcomes[0].value.job_id == outcomes[1].value.job_id
+        with runtime.session_factory() as session:
+            count = session.scalar(select(func.count()).select_from(
+                ArchiveTransferJobORM
+            ).where(ArchiveTransferJobORM.managed_file_id == str(file_id)))
+        assert count == 1
 
 
-def test_active_storage_configuration_and_primary_image_concurrency(runtime):
-    repository = StoreForwardRepository(runtime)
-    configurations = (_configuration(), _configuration())
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        tuple(executor.map(repository.create_configuration, configurations))
-    with runtime.session_factory() as session:
-        assert session.scalar(select(func.count()).select_from(StorageConfigurationORM).where(
-            StorageConfigurationORM.active.is_(True)
-        )) == 1
-
-    product_id = _seed_product(runtime)
-    file_ids = (_managed_file(runtime, product_id), _managed_file(runtime, product_id))
-    now = datetime.now(timezone.utc)
+def test_true_concurrent_lease_claim_and_stale_recovery(runtime):
+    pre_expiry_second_owner_count = 0
+    post_expiry_recovery_owner_count = 0
+    # claim_next is intentionally queue-wide. Quarantine jobs left QUEUED by
+    # earlier module tests so each repetition contains exactly one eligible
+    # job and therefore measures competing ownership of that same job.
     with runtime.session_factory.begin() as session:
-        for order, file_id in enumerate(file_ids):
-            session.add(ProductFileRelationORM(
-                internal_id=str(uuid4()), product_id=str(product_id), managed_file_id=str(file_id),
-                kind="IMAGE", attachment_category=None, is_primary=False,
-                sort_order=order, caption=None, created_at=now, archived_at=None,
+        session.execute(update(ArchiveTransferJobORM).where(
+            ArchiveTransferJobORM.state.in_((
+                ArchiveTransferState.LOCAL_READY.value,
+                ArchiveTransferState.TRANSFER_QUEUED.value,
+                ArchiveTransferState.TRANSFER_FAILED_RETRYABLE.value,
             ))
-    managed = ManagedFileRepository(runtime)
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        tuple(executor.map(
-            lambda file_id: managed.set_primary_image(product_id=product_id, file_id=file_id),
-            file_ids,
-        ))
-    with runtime.session_factory() as session:
-        assert session.scalar(select(func.count()).select_from(ProductFileRelationORM).where(
-            ProductFileRelationORM.product_id == str(product_id),
-            ProductFileRelationORM.is_primary.is_(True),
-        )) == 1
+        ).values(state=ArchiveTransferState.TRANSFER_FAILED_PERMANENT.value))
+    for iteration in range(CONCURRENCY_REPEAT_ITERATIONS):
+        product_id = _seed_product(runtime)
+        file_id = _managed_file(runtime, product_id)
+        repository = StoreForwardRepository(runtime)
+        configuration = repository.create_configuration(_configuration())
+        repository.ensure_job(file_id, configuration.configuration_id)
+        now = datetime.now(timezone.utc)
+
+        def claim(label: str, at: datetime):
+            return StoreForwardRepository(runtime).claim_next(
+                worker_id=f"worker-{iteration}-{label}", now=at, lease_seconds=1
+            )
+
+        with DecisiveSqlWindow(
+            runtime.engine,
+            _sql_contains("update archive_transfer_jobs", "lease_token"),
+        ) as claim_window:
+            outcomes = run_worker_pair(
+                claim_window, lambda: claim("A", now), lambda: claim("B", now)
+            )
+        assert all(outcome.error is None for outcome in outcomes)
+        active = tuple(outcome.value for outcome in outcomes if outcome.value is not None)
+        assert len(active) == 1
+        assert active[0].state is ArchiveTransferState.TRANSFERRING
+        with runtime.session_factory() as session:
+            owners = session.scalar(select(func.count()).select_from(
+                ArchiveTransferJobORM
+            ).where(
+                ArchiveTransferJobORM.internal_id == str(active[0].job_id),
+                ArchiveTransferJobORM.state == ArchiveTransferState.TRANSFERRING.value,
+                ArchiveTransferJobORM.lease_token.is_not(None),
+            ))
+        assert owners == 1
+
+        pre_expiry = now + timedelta(milliseconds=500)
+        with DecisiveSqlWindow(
+            runtime.engine,
+            _sql_contains("select archive_transfer_jobs.internal_id", "limit"),
+        ) as pre_expiry_window:
+            denied = run_worker_pair(
+                pre_expiry_window,
+                lambda: claim("pre-A", pre_expiry),
+                lambda: claim("pre-B", pre_expiry),
+            )
+        pre_expiry_second_owner_count += sum(
+            outcome.value is not None for outcome in denied
+        )
+        assert all(outcome.error is None for outcome in denied)
+        assert all(outcome.value is None for outcome in denied)
+
+        expired = now + timedelta(seconds=2)
+        assert repository.recover_expired_leases(at=expired) == 1
+        reclaimed = repository.claim_next(
+            worker_id=f"worker-{iteration}-recovery", now=expired
+        )
+        assert reclaimed is not None
+        post_expiry_recovery_owner_count += 1
+
+    assert pre_expiry_second_owner_count == 0
+    assert post_expiry_recovery_owner_count == CONCURRENCY_REPEAT_ITERATIONS
 
 
-def test_managed_file_relation_unique_conflict_is_controlled(runtime):
-    product_id = _seed_product(runtime)
-    file_id = _managed_file(runtime, product_id)
-    now = datetime.now(timezone.utc)
+def test_true_concurrent_active_storage_configuration(runtime):
+    for iteration in range(CONCURRENCY_REPEAT_ITERATIONS):
+        repository = StoreForwardRepository(runtime)
+        configurations = [_configuration(), _configuration()]
+        if iteration % 2:
+            configurations.reverse()
+        with DecisiveSqlWindow(
+            runtime.engine, _sql_contains("pg_advisory_xact_lock")
+        ) as window:
+            outcomes = run_worker_pair(
+                window,
+                lambda: repository.create_configuration(configurations[0]),
+                lambda: repository.create_configuration(configurations[1]),
+            )
+        assert all(outcome.error is None for outcome in outcomes)
+        with runtime.session_factory() as session:
+            active = session.scalar(select(func.count()).select_from(
+                StorageConfigurationORM
+            ).where(StorageConfigurationORM.active.is_(True)))
+        assert active == 1
 
-    def insert_relation():
-        try:
-            with runtime.session_factory.begin() as session:
+
+def test_true_concurrent_product_primary_selection(runtime):
+    for iteration in range(CONCURRENCY_REPEAT_ITERATIONS):
+        product_id = _seed_product(runtime)
+        file_ids = [_managed_file(runtime, product_id), _managed_file(runtime, product_id)]
+        if iteration % 2:
+            file_ids.reverse()
+        now = datetime.now(timezone.utc)
+        with runtime.session_factory.begin() as session:
+            for order, file_id in enumerate(file_ids):
                 session.add(ProductFileRelationORM(
                     internal_id=str(uuid4()), product_id=str(product_id),
-                    managed_file_id=str(file_id), kind="ATTACHMENT",
-                    attachment_category="DRAWING", is_primary=False,
-                    sort_order=0, caption=None, created_at=now, archived_at=None,
+                    managed_file_id=str(file_id), kind="IMAGE",
+                    attachment_category=None, is_primary=False, sort_order=order,
+                    caption=None, created_at=now, archived_at=None,
                 ))
-            return "committed"
-        except IntegrityError:
-            return "conflict"
+        with DecisiveSqlWindow(
+            runtime.engine, _sql_contains("pg_advisory_xact_lock")
+        ) as window:
+            outcomes = run_worker_pair(
+                window,
+                lambda: ManagedFileRepository(runtime).set_primary_image(
+                    product_id=product_id, file_id=file_ids[0]
+                ),
+                lambda: ManagedFileRepository(runtime).set_primary_image(
+                    product_id=product_id, file_id=file_ids[1]
+                ),
+            )
+        assert all(outcome.error is None for outcome in outcomes)
+        with runtime.session_factory() as session:
+            primary_count = session.scalar(select(func.count()).select_from(
+                ProductFileRelationORM
+            ).where(
+                ProductFileRelationORM.product_id == str(product_id),
+                ProductFileRelationORM.is_primary.is_(True),
+            ))
+        assert primary_count == 1
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        outcomes = tuple(executor.map(lambda _: insert_relation(), range(2)))
-    assert sorted(outcomes) == ["committed", "conflict"]
-    with runtime.session_factory() as session:
-        assert session.scalar(select(func.count()).select_from(ProductFileRelationORM).where(
-            ProductFileRelationORM.managed_file_id == str(file_id)
-        )) == 1
+
+def test_true_concurrent_managed_file_relation_conflict(runtime):
+    for _iteration in range(CONCURRENCY_REPEAT_ITERATIONS):
+        product_id = _seed_product(runtime)
+        file_id = uuid4()
+        relation_id = uuid4()
+        now = datetime.now(timezone.utc)
+        managed_file = ManagedFile(
+            file_id=file_id, original_filename="drawing.pdf",
+            stored_filename=f"{file_id}.pdf", storage_key=f"r010r2a1/{file_id}.pdf",
+            category="DRAWING", media_type="application/pdf", extension=".pdf",
+            size_bytes=8, sha256="0" * 64, status=ManagedFileStatus.PENDING,
+            source=ManagedFileSource.UPLOAD, version=1, created_at=now,
+            created_by="r010r2a1", updated_at=now,
+        )
+        relation = ProductFileRelation(
+            relation_id=relation_id, product_id=product_id, managed_file_id=file_id,
+            kind=ProductFileKind.ATTACHMENT, attachment_category="DRAWING",
+            is_primary=False, sort_order=0, caption=None, created_at=now,
+        )
+
+        def create_relation():
+            return ManagedFileRepository(runtime).create_pending(managed_file, relation)
+
+        with DecisiveSqlWindow(
+            runtime.engine, _sql_contains("insert into managed_files")
+        ) as window:
+            outcomes = run_worker_pair(window, create_relation, create_relation)
+        errors = tuple(outcome.error for outcome in outcomes if outcome.error is not None)
+        committed = tuple(outcome for outcome in outcomes if outcome.error is None)
+        assert len(committed) == 1
+        assert len(errors) == 1 and isinstance(errors[0], IntegrityError)
+        with runtime.session_factory() as session:
+            managed_count = session.scalar(select(func.count()).select_from(
+                ManagedFileORM
+            ).where(ManagedFileORM.internal_id == str(file_id)))
+            relation_count = session.scalar(select(func.count()).select_from(
+                ProductFileRelationORM
+            ).where(ProductFileRelationORM.managed_file_id == str(file_id)))
+        assert managed_count == 1
+        assert relation_count == 1
+
+
+def test_concurrency_evidence_matrix_is_complete():
+    assert len(CONCURRENCY_EVIDENCE_MATRIX) == 7
+    assert {row[0] for row in CONCURRENCY_EVIDENCE_MATRIX} == {
+        "ROW_LOCK", "IDEMPOTENCY", "ENSURE_JOB", "LEASE",
+        "ACTIVE_CONFIG", "PRIMARY_IMAGE", "FILE_RELATION",
+    }
+    assert all(all(str(value).strip() for value in row) for row in CONCURRENCY_EVIDENCE_MATRIX)
