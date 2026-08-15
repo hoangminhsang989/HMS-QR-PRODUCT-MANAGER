@@ -1,12 +1,12 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_NAS_STORAGE_IMAGES_ATTACHMENTS_BACKUP_EXCEL
-Current WP: R010M1 historical migration boundary remediation candidate
-Current Revision: R010M1
-Current Branch: stage6-r010m1-historical-migration-boundary-remediation
-Current Verdict: PASS_STAGE6_R010M1_HISTORICAL_MIGRATION_BOUNDARY_REMEDIATION_CANDIDATE
+Current WP: R010M1A1 partial-history forward-compatibility remediation candidate
+Current Revision: R010M1A1
+Current Branch: stage6-r010m1a1-partial-history-forward-compatibility
+Current Verdict: PASS_STAGE6_R010M1A1_PARTIAL_HISTORY_FORWARD_COMPATIBILITY_REMEDIATION_CANDIDATE
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; R010M1 migration-history remediation is a local candidate awaiting independent review; R010 product implementation remains not resumed.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008 and R009 remotely delivered; R010M1 was rejected by independent review for partial-history incompatibility; R010M1A1 is the local descendant remediation candidate awaiting independent review; R010 product implementation remains not resumed.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -15,14 +15,18 @@ focus states, and 44px touch-safe controls.
 Visual evidence: Penpot exports plus external desktop captures at 1280x720 and
 1920x1080; mobile runtime was checked at 360/390/414/768 with no horizontal
 overflow and no browser console errors.
-Regression results: R010M1 full suite `110 passed, 1 warning` in 406.22s with
-real PostgreSQL 17 and SQLite migration-boundary coverage under the controlled
+Regression results: R010M1A1 full suite `125 passed, 1 warning` in 547.43s with
+real PostgreSQL 17.11 and SQLite fresh-history, old-partial-history, malformed-
+schema, data-preservation, and head-convergence coverage under the controlled
 external test root; warning is the inherited Starlette/httpx deprecation.
 
-Latest completed work: R010M1 replaces mutable current-ORM ownership in
-historical migrations 0001-0003 with deterministic revision-owned DDL, repairs
-0002 downgrade ownership, and proves exact SQLite/PostgreSQL physical boundaries
-without changing the intended head schema or any application behavior.
+Latest completed work: R010M1A1 preserves the deterministic R010M1 fresh
+history while allowing legitimately stamped delivered old 0001/0002/0003
+PostgreSQL and SQLite databases to advance safely. Existing matching 0002/0003
+objects are physically validated then adopted without mutation; absent objects
+are created; malformed objects and duplicate unique values fail closed before
+stamp advancement. All six old-partial paths preserve seeded legacy rows and
+converge to the intended head schema without application behavior changes.
 
 Known gaps:
 
@@ -35,11 +39,12 @@ MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Next exact action: independent review of the frozen R010M1 candidate. Do not
-merge, push, or resume R010 product implementation without separate authority.
+Next exact action: independent review of the frozen R010M1A1 descendant
+candidate. Do not merge, push, or resume R010 product implementation without
+separate authority.
 
-Latest authority: Stage 6 R010M1 historical migration boundary remediation authority (external task attachment)
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R010M1.md
+Latest authority: Stage 6 R010M1A1 partially-applied historical migration forward-compatibility remediation authority (external task attachment)
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R010M1A1.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
 
 R007B4 toolchain migration evidence:
