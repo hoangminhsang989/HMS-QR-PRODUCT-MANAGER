@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy.engine import make_url
 
-from config.paths import TEST_ROOT
+from config.paths import require_test_root
 
 
 class Environment(StrEnum):
@@ -90,8 +90,9 @@ def load_config(environment: Environment | str | None = None) -> AppConfig:
     except ValueError:
         raise DatabaseConfigurationError("HMS_QR_ENV must be dev, staging, or prod.") from None
     if env is Environment.DEV:
-        db = Path(TEST_ROOT, "db", "stage1_r002_dev.sqlite")
-        return AppConfig(env, f"sqlite:///{db.as_posix()}", "local", str(TEST_ROOT / "storage"))
+        test_root = require_test_root()
+        db = Path(test_root, "db", "stage1_r002_dev.sqlite")
+        return AppConfig(env, f"sqlite:///{db.as_posix()}", "local", str(test_root / "storage"))
     database_url = validate_database_url(env, os.environ.get(DATABASE_URL_ENV, ""))
     if env is Environment.STAGING:
         return AppConfig(env, database_url, "configured")

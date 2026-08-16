@@ -10,7 +10,7 @@ from openpyxl import Workbook, load_workbook
 import pytest
 from sqlalchemy import inspect
 
-from config.paths import TEST_ROOT
+from config.paths import require_test_root
 from packages.backup import BackupRetentionPolicy, BackupService, RestoreVerifier
 from packages.excel.template_adapter import (
     TemplateCellUpdate,
@@ -64,7 +64,7 @@ def test_backup_manifest_publish_and_restore_detect_missing_and_tampered(managed
 
 
 def test_excel_template_copy_preserves_source_and_bounded_template_features(tmp_path: Path):
-    assert TEST_ROOT.resolve() in tmp_path.resolve().parents
+    assert require_test_root() in tmp_path.resolve().parents
     source = tmp_path / "canonical-reference.xlsx"
     workbook = Workbook()
     try:

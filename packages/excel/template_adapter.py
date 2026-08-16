@@ -18,7 +18,7 @@ from uuid import uuid4
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as OpenpyxlImage
 
-from config.paths import TEST_ROOT
+from packages.generated_assets import generated_asset_root, require_generated_asset_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,8 +47,13 @@ class TemplateExportResult:
 
 
 class TemplatePreservingExporter:
-    def __init__(self, *, allowed_output_root: str | Path = TEST_ROOT) -> None:
-        self.allowed_output_root = Path(allowed_output_root).resolve(strict=False)
+    def __init__(self, *, allowed_output_root: str | Path | None = None) -> None:
+        selected_root = (
+            generated_asset_root()
+            if allowed_output_root is None
+            else require_generated_asset_path(allowed_output_root)
+        )
+        self.allowed_output_root = Path(selected_root).resolve(strict=False)
         self.allowed_output_root.mkdir(parents=True, exist_ok=True)
 
     def export(

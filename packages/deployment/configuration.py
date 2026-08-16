@@ -1,6 +1,7 @@
 """Production configuration contract with secret-reference-only values."""
 from __future__ import annotations
 from typing import Any
+from config.paths import PathConfigurationError, validate_external_runtime_path
 
 CONFIG_SCHEMA = "r011.production-config.v1"
 REQUIRED = {"environment", "bind_address", "port", "database_secret_ref", "app_data_root", "app_log_root", "local_ingest_root", "archive", "secret_store_ref", "tls", "service_identity_ref", "release_id", "logging", "health"}
@@ -24,6 +25,11 @@ def validate_production_config(config: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(v, str): yield v.lower()
     if any(x in unsafe or any(token in x for token in ("changeme", "replace-me", "<resolved", "<certified")) for x in values(config)):
         raise ConfigValidationError("unsafe placeholder or broad bind value")
+    for key in ("app_data_root", "app_log_root", "local_ingest_root"):
+        try:
+            validate_external_runtime_path(config.get(key, ""), authority=key)
+        except PathConfigurationError as exc:
+            raise ConfigValidationError(str(exc)) from None
     if config.get("tls", {}).get("mode") == "PLAINTEXT": raise ConfigValidationError("plaintext production traffic is forbidden")
     return config
 

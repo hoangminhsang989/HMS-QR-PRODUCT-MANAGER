@@ -12,6 +12,5 @@ dependencies = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-ra --basetemp=F:/PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST/pytest-temp-r007b"
-cache_dir = "F:/PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST/pytest-cache"
+addopts = "-ra"
 testpaths = ["tests"]

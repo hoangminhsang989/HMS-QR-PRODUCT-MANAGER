@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 
-from packages.generated_assets import require_test_output_path
+from packages.generated_assets import require_generated_asset_path
 from packages.qr.payload import QrPayload, QrPayloadService
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +67,7 @@ class LabelTemplateRenderer:
 
 class LabelPrintExportService:
     def export_html(self, rendered_label: str, path: str | Path) -> Path:
-        target = require_test_output_path(path)
+        target = require_generated_asset_path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(rendered_label, encoding="utf-8")
         return target

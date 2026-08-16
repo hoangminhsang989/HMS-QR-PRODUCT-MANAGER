@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from config.paths import TEST_ROOT
+from config.paths import require_test_root
 from packages.storage import LocalDevStorage, StorageConflict, StorageUnavailable
 from packages.storage.keys import (
     generate_storage_key,
@@ -62,7 +62,7 @@ def test_mime_extension_signature_and_central_size_limit():
 
 
 def test_atomic_publication_checksum_conflict_missing_and_tamper(tmp_path: Path, monkeypatch):
-    assert TEST_ROOT.resolve() in tmp_path.resolve().parents
+    assert require_test_root() in tmp_path.resolve().parents
     storage = LocalDevStorage(tmp_path / "storage")
     key = "products/00000000-0000-0000-0000-000000000001/images/00000000-0000-0000-0000-000000000002/v0001/a.png"
     content = b"managed-content"

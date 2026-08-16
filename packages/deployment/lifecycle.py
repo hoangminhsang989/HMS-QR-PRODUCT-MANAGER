@@ -3,18 +3,18 @@ from __future__ import annotations
 import json, shutil
 from pathlib import Path
 from dataclasses import dataclass
+from config.paths import require_test_root
 from .artifact import verify_release
 from .preflight import PreflightResult
 
 PERSISTENT_ROOTS = ("APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT", "SECRET_STORE", "POSTGRESQL_DATA_ROOT")
-EXTERNAL_TEST_ROOT = Path("F:/PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST")
 
 @dataclass
 class LocalDeploymentBackend:
     root: Path
     def __post_init__(self):
         self.root = Path(self.root)
-        try: self.root.resolve().relative_to(EXTERNAL_TEST_ROOT.resolve())
+        try: self.root.resolve().relative_to(require_test_root())
         except ValueError as exc: raise ValueError("local deployment backend must remain under external test root") from exc
         self.state_path = self.root / "fake-state.json"; self.root.mkdir(parents=True, exist_ok=True)
     def state(self) -> dict:

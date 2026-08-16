@@ -16,7 +16,6 @@ from packages.deployment.preflight import PreflightResult, dry_run, run_prefligh
 from packages.deployment.mutation import Mutation, MutationManifest
 
 ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = Path("F:/PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST/r011-wp1a")
 
 def _fixture_release(tmp_path, release_id="release"):
     source = tmp_path / f"source-{release_id}"; source.mkdir(); (source / "pyproject.toml").write_text("[project]\nname='fixture'\n")
@@ -24,7 +23,8 @@ def _fixture_release(tmp_path, release_id="release"):
     return source, build_release(source, tmp_path / "releases", release_id=release_id, build_timestamp="2026-01-01T00:00:00+00:00", files=["pyproject.toml"])
 
 def _valid_config():
-    cfg = production_config_template(); cfg["port"] = 8080; cfg["bind_address"] = "inventory-selected-interface"; cfg["release_id"] = "release"; cfg["archive"]["identity"] = "archive-policy-v1"; return cfg
+    cfg = production_config_template(); cfg["port"] = 8080; cfg["bind_address"] = "inventory-selected-interface"; cfg["release_id"] = "release"; cfg["archive"]["identity"] = "archive-policy-v1"
+    cfg["app_data_root"] = "Z:/synthetic-machine/app-data"; cfg["app_log_root"] = "Z:/synthetic-machine/app-logs"; cfg["local_ingest_root"] = "Z:/synthetic-machine/local-ingest"; return cfg
 
 def _valid_inventory():
     doc = ReadOnlyInventoryCollector().collect()

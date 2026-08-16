@@ -4,7 +4,7 @@ from pathlib import Path
 
 import qrcode
 
-from packages.generated_assets import require_test_output_path
+from packages.generated_assets import require_generated_asset_path
 from packages.qr.payload import QrPayload, QrPayloadService
 
 
@@ -23,7 +23,7 @@ class QRService:
         return f"data:image/png;base64,{b64encode(image).decode('ascii')}", encoded
 
     def render(self, payload: QrPayload, path):
-        target = require_test_output_path(path)
+        target = require_generated_asset_path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         image, encoded = self.png_bytes(payload)
         target.write_bytes(image)

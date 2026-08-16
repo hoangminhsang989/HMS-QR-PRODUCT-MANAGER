@@ -1,17 +1,21 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
-Current WP: R011-WP1A-R1A1 artifact reproducibility and inventory secrecy remediation
-Current Revision: R011-WP1A-R1A1
-Current Branch: stage6-r011-wp1a-r1a-artifact-reproducibility-remediation
-Current Verdict: REMEDIATION_CANDIDATE_PENDING_FRESH_INDEPENDENT_REVIEW
+Current WP: R011-WP1A-R1A2 runtime path portability remediation
+Current Revision: R011-WP1A-R1A2
+Current Branch: stage6-r011-wp1a-r1a2-runtime-path-portability-remediation
+Current Verdict: PRECOMMIT_GATES_PASS_POSTCOMMIT_ARTIFACT_PROOF_PENDING
 
-R011-WP1A-R1A1 preserves the rejected `4620396e` candidate and combines the
-authorized Git-object artifact correction with source-minimized service
-inventory. Certified payload bytes come from committed Git blobs; service
-inventory does not acquire raw command lines. Machine A remains unread and
-unmodified, and WP1B/WP2 remain unauthorized. See
-`docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A_R1A1.md`.
+R011-WP1A-R1A2 preserves the accepted R1A1 Git-object artifact and inventory
+security remediations while removing host-specific development/test path
+authority from the packaged runtime. Source location is module-relative; test
+outputs require explicit external harness authority; STAGING/PROD generated
+outputs and persistent paths require explicit absolute configuration and fail
+closed on source, test, CWD-relative, or personal-profile paths. Current-byte
+path, focused, critical, full PostgreSQL-backed Qt-last, isolation, secret, and
+diff gates pass. Exact committed identity and post-commit dual-clone artifact
+proof are intentionally recorded only after the one allowed commit. See
+`docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A_R1A2.md`.
 
 Historical R011-WP1A candidate status: source-side deployment modules, immutable artifact contract,
 read-only inventory collector, plan/preflight/dry-run/lifecycle models, evidence
@@ -33,10 +37,10 @@ R011B pre-integration baseline: local/origin `main` HEAD
 `c45e571cc78e3fd474da19c611e99c390757c78f`. Integrated roadmap HEAD is
 `4ff89c9343aac23343068e8cd3e2dfdfef4ad700`, tree
 `21011b9165a1c225ac1785721301b33b90c12d4c`. The five production gaps remain
-open and unchanged. The current next action is fresh independent review of the
-R011-WP1A-R1A1 remediated descendant candidate.
+open and unchanged. The earlier R1A1 review route was superseded by the R1A2
+runtime-path remediation authority.
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008, R009, R010, and the R011 roadmap are remotely delivered. R011-WP1A-R1A1 is the current isolated remediated descendant candidate and is not merged or pushed.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008, R009, R010, and the R011 roadmap are remotely delivered. R011-WP1A-R1A2 is the current isolated remediated descendant candidate and is not merged or pushed.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -70,8 +74,9 @@ PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
 Production PostgreSQL integration is closed by R010; Machine A production
-deployment remains a separate open gap. Next exact action:
-`STAGE6_R011_WP1A_INDEPENDENT_REVIEW`.
+deployment remains a separate open gap. This commit-embedded state stops before
+R1A2 post-commit artifact proof; the terminal handoff determines whether the
+next exact action becomes `STAGE6_R011_WP1A_R1B_FRESH_INDEPENDENT_REVIEW`.
 
 Latest authority: Stage 6 R011B local integration of approved Machine A deployment foundation roadmap (external task attachment)
 Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R011B_LOCAL_INTEGRATION.md

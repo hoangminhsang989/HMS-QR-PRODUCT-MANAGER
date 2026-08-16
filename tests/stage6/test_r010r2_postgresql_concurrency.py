@@ -17,7 +17,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from config.environments import AppConfig, Environment
-from config.paths import TEST_ROOT
+from config.paths import require_test_root
 from packages.application.stage2_service import Stage2Service
 from packages.application.tracking_service import TrackingService
 from packages.application.workflow_services import DeliveryService, PackingService, QcService
@@ -314,7 +314,7 @@ def test_qc_packing_delivery_and_transaction_failure_are_atomic(runtime):
 
 def _configuration() -> StorageConfiguration:
     token = uuid4().hex
-    root = Path(TEST_ROOT, "r010r2-postgresql-concurrency", token)
+    root = Path(require_test_root(), "r010r2-postgresql-concurrency", token)
     return StorageConfiguration(
         configuration_id=uuid4(), local_ingest_root=str(root / "local"),
         archive_target_root=str(root / "archive"), grace_period_hours=24,

@@ -1,12 +1,12 @@
 """Deterministic immutable release artifact builder and fail-closed verifier."""
 from __future__ import annotations
-import hashlib, json, subprocess
+import hashlib, json, re, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
+from config.paths import require_test_root
 
 MANIFEST_SCHEMA = "r011.release-manifest.v1"
-EXTERNAL_TEST_ROOT = Path("F:/PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST")
 class ArtifactBuildError(ValueError): pass
 
 def _git(root: Path, *args: str) -> str:
@@ -66,7 +66,7 @@ def build_release(source_root: str | Path, output_root: str | Path, *, release_i
                   builder_version: str = "r011-wp1a-r1a-1", files: Iterable[str] | None = None,
                   git_head: str | None = None, git_tree: str | None = None) -> Path:
     source, output = Path(source_root), Path(output_root)
-    try: output.resolve().relative_to(EXTERNAL_TEST_ROOT.resolve())
+    try: output.resolve().relative_to(require_test_root())
     except ValueError as exc: raise ArtifactBuildError("certified build output must remain under the external test root") from exc
     try: output.resolve().relative_to(source.resolve())
     except ValueError: pass
@@ -131,3 +131,24 @@ def verify_release(artifact_root: str | Path, *, expected_release_id: str | None
     if manifest.get("artifact_identity") != expected_identity: raise ArtifactBuildError("whole artifact identity mismatch")
     if manifest.get("source_baseline") != {"git_head": manifest["git_head"], "git_tree": manifest["git_tree"]}: raise ArtifactBuildError("source baseline mismatch")
     return manifest
+
+def scan_release_payload_for_paths(
+    artifact_root: str | Path,
+    forbidden_roots: Iterable[str | Path],
+) -> tuple[dict[str, str], ...]:
+    """Return payload files containing caller-supplied host-specific roots."""
+    root = Path(artifact_root); manifest = verify_release(root); findings = []
+    normalized_forbidden = []
+    for forbidden in forbidden_roots:
+        raw = str(forbidden).strip()
+        if not raw: continue
+        normalized = re.sub(r"/+", "/", raw.replace("\\", "/")).casefold().rstrip("/")
+        if normalized: normalized_forbidden.append((raw, normalized))
+    for entry in manifest["files"]:
+        payload_path = root / "payload" / entry["path"]
+        text = payload_path.read_bytes().decode("utf-8", errors="ignore")
+        normalized_text = re.sub(r"/+", "/", text.replace("\\", "/")).casefold()
+        for raw, normalized in normalized_forbidden:
+            if normalized in normalized_text:
+                findings.append({"path": entry["path"], "forbidden_root": raw})
+    return tuple(findings)
