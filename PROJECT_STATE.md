@@ -1,12 +1,19 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
-Current WP: R011-WP1A source-side deployment foundation implementation candidate
-Current Revision: R011-WP1A
-Current Branch: stage6-r011-wp1a-source-side-deployment-foundation
-Current Verdict: CANDIDATE_PENDING_INDEPENDENT_REVIEW
+Current WP: R011-WP1A-R1A1 artifact reproducibility and inventory secrecy remediation
+Current Revision: R011-WP1A-R1A1
+Current Branch: stage6-r011-wp1a-r1a-artifact-reproducibility-remediation
+Current Verdict: REMEDIATION_CANDIDATE_PENDING_FRESH_INDEPENDENT_REVIEW
 
-R011-WP1A status: source-side deployment modules, immutable artifact contract,
+R011-WP1A-R1A1 preserves the rejected `4620396e` candidate and combines the
+authorized Git-object artifact correction with source-minimized service
+inventory. Certified payload bytes come from committed Git blobs; service
+inventory does not acquire raw command lines. Machine A remains unread and
+unmodified, and WP1B/WP2 remain unauthorized. See
+`docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A_R1A1.md`.
+
+Historical R011-WP1A candidate status: source-side deployment modules, immutable artifact contract,
 read-only inventory collector, plan/preflight/dry-run/lifecycle models, evidence
 sanitizer, tests, and operator runbook are implemented on an isolated branch.
 No Machine A access or mutation occurred. WP1B and WP2 remain separately
@@ -26,10 +33,10 @@ R011B pre-integration baseline: local/origin `main` HEAD
 `c45e571cc78e3fd474da19c611e99c390757c78f`. Integrated roadmap HEAD is
 `4ff89c9343aac23343068e8cd3e2dfdfef4ad700`, tree
 `21011b9165a1c225ac1785721301b33b90c12d4c`. The five production gaps remain
-open and unchanged. The current next action is the independent review of the
-frozen R011-WP1A candidate.
+open and unchanged. The current next action is fresh independent review of the
+R011-WP1A-R1A1 remediated descendant candidate.
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008, R009, R010, and the R011 roadmap are remotely delivered. R011-WP1A is the current isolated implementation candidate and is not merged or pushed.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008, R009, R010, and the R011 roadmap are remotely delivered. R011-WP1A-R1A1 is the current isolated remediated descendant candidate and is not merged or pushed.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.

@@ -1,6 +1,6 @@
 """Deterministic immutable release artifact builder and fail-closed verifier."""
 from __future__ import annotations
-import hashlib, json, shutil, subprocess
+import hashlib, json, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -15,13 +15,44 @@ def _git(root: Path, *args: str) -> str:
         raise ArtifactBuildError(f"git command failed: {' '.join(args)}")
     return p.stdout.strip()
 
-def _identity(root: Path) -> tuple[str, str]:
+def _git_bytes(root: Path, *args: str) -> bytes:
+    p = subprocess.run(["git", *args], cwd=root, capture_output=True, check=False)
+    if p.returncode:
+        raise ArtifactBuildError(f"git object command failed: {' '.join(args)}")
+    return p.stdout
+
+def _identity(root: Path, requested_head: str | None = None, requested_tree: str | None = None) -> tuple[str, str]:
     if _git(root, "status", "--porcelain"):
         raise ArtifactBuildError("certified build requires a clean worktree")
     head, tree = _git(root, "rev-parse", "HEAD"), _git(root, "rev-parse", "HEAD^{tree}")
     if not head or not tree or head == "HEAD":
         raise ArtifactBuildError("unknown Git identity")
+    if requested_head is not None:
+        resolved = _git(root, "rev-parse", f"{requested_head}^{{commit}}")
+        if resolved != head: raise ArtifactBuildError("requested Git HEAD does not match clean build environment")
+    if requested_tree is not None and requested_tree != tree:
+        raise ArtifactBuildError("requested Git tree does not match clean build environment")
     return head, tree
+
+def _tree_entries(root: Path, head: str) -> dict[str, tuple[str, str, str]]:
+    records = _git_bytes(root, "ls-tree", "-r", "-z", "--full-tree", head).split(b"\0")
+    result: dict[str, tuple[str, str, str]] = {}
+    for record in records:
+        if not record: continue
+        try:
+            metadata, raw_path = record.split(b"\t", 1)
+            mode, kind, oid = metadata.decode("ascii").split(" ")
+            path = raw_path.decode("utf-8", "surrogateescape")
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ArtifactBuildError("malformed Git tree entry") from exc
+        if path in result: raise ArtifactBuildError("duplicate Git tree path")
+        result[path] = (mode, kind, oid)
+    return result
+
+def _blob_bytes(root: Path, mode: str, kind: str, oid: str, path: str) -> bytes:
+    if kind != "blob" or mode not in {"100644", "100755"}:
+        raise ArtifactBuildError(f"unsupported Git tree entry for release payload: {path} ({mode} {kind})")
+    return _git_bytes(root, "cat-file", "blob", oid)
 
 def _sha(path: Path) -> str:
     h = hashlib.sha256()
@@ -32,17 +63,19 @@ def _sha(path: Path) -> str:
 
 def build_release(source_root: str | Path, output_root: str | Path, *, release_id: str,
                   expected_alembic_head: str = "0005_store_forward", build_timestamp: str | None = None,
-                  builder_version: str = "r011-wp1a-1", files: Iterable[str] | None = None) -> Path:
+                  builder_version: str = "r011-wp1a-r1a-1", files: Iterable[str] | None = None,
+                  git_head: str | None = None, git_tree: str | None = None) -> Path:
     source, output = Path(source_root), Path(output_root)
     try: output.resolve().relative_to(EXTERNAL_TEST_ROOT.resolve())
     except ValueError as exc: raise ArtifactBuildError("certified build output must remain under the external test root") from exc
     try: output.resolve().relative_to(source.resolve())
     except ValueError: pass
     else: raise ArtifactBuildError("release output must not be inside the source repository")
-    head, tree = _identity(source)
+    head, tree = _identity(source, git_head, git_tree)
     if not release_id or any(c in release_id for c in "\\/:"):
         raise ArtifactBuildError("invalid release id")
-    selected = list(files) if files is not None else [p for p in _git(source, "ls-files", "-z").split("\0") if p and (p.startswith(("apps/", "packages/", "config/", "migrations/")) or p in {"pyproject.toml", "alembic.ini"})]
+    entries_by_path = _tree_entries(source, head)
+    selected = list(files) if files is not None else [p for p in entries_by_path if p.startswith(("apps/", "packages/", "config/", "migrations/")) or p in {"pyproject.toml", "alembic.ini", "scripts/r011_collect_inventory_readonly.ps1"}]
     selected = sorted(set(selected))
     dest = output / release_id
     if dest.exists():
@@ -51,18 +84,18 @@ def build_release(source_root: str | Path, output_root: str | Path, *, release_i
     payload.mkdir(parents=True)
     entries = []
     for rel in selected:
-        src = source / rel
-        if not src.is_file():
-            raise ArtifactBuildError(f"release input missing: {rel}")
+        if rel not in entries_by_path: raise ArtifactBuildError(f"release Git tree input missing: {rel}")
+        mode, kind, oid = entries_by_path[rel]
+        content = _blob_bytes(source, mode, kind, oid, rel)
         target = payload / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, target)
-        entries.append({"path": rel.replace("\\", "/"), "sha256": _sha(target), "size": target.stat().st_size, "role": "source"})
+        target.write_bytes(content)
+        entries.append({"path": rel.replace("\\", "/"), "sha256": hashlib.sha256(content).hexdigest(), "size": len(content), "role": "source"})
     inventory_identity = hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
     manifest = {
         "manifest_schema": MANIFEST_SCHEMA, "release_id": release_id, "git_head": head, "git_tree": tree,
         "expected_alembic_head": expected_alembic_head, "created_at": build_timestamp or datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-        "builder_version": builder_version, "artifact_identity": {"algorithm": "sha256", "file_inventory": inventory_identity},
+        "builder_version": builder_version, "artifact_identity": {"algorithm": "sha256", "semantic_input": "canonical-json(files)", "volatile_fields_excluded": ["created_at"], "file_inventory": inventory_identity},
         "source_baseline": {"git_head": head, "git_tree": tree}, "python_runtime": {"requires": ">=3.11", "global_site_packages": False},
         "dependency_identity": {"authority": "pyproject.toml", "file": "pyproject.toml"},
         "config_schema_version": "r011.production-config.v1", "compatibility": {"rollback": "application-only-compatible-schema"},
@@ -94,6 +127,7 @@ def verify_release(artifact_root: str | Path, *, expected_release_id: str | None
     actual = {p.relative_to(root / "payload").as_posix() for p in (root / "payload").rglob("*") if p.is_file()}
     if actual != seen: raise ArtifactBuildError("unexpected or missing artifact file")
     identity = hashlib.sha256(json.dumps(manifest["files"], sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-    if manifest.get("artifact_identity") != {"algorithm": "sha256", "file_inventory": identity}: raise ArtifactBuildError("whole artifact identity mismatch")
+    expected_identity = {"algorithm": "sha256", "semantic_input": "canonical-json(files)", "volatile_fields_excluded": ["created_at"], "file_inventory": identity}
+    if manifest.get("artifact_identity") != expected_identity: raise ArtifactBuildError("whole artifact identity mismatch")
     if manifest.get("source_baseline") != {"git_head": manifest["git_head"], "git_tree": manifest["git_tree"]}: raise ArtifactBuildError("source baseline mismatch")
     return manifest
