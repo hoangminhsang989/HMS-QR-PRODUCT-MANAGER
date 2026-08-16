@@ -22,9 +22,48 @@ def validate_inventory(doc: dict[str, Any]) -> dict[str, Any]:
         value = doc.get(section)
         if isinstance(value, dict) and value.get("state") == "NOT_PRESENT" and value.get("items"):
             raise InventoryValidationError(f"contradictory {section} state")
-    import json
-    forbidden = ("password", "private_key", "private key", "credential_value", "connection_string")
-    if any(x in json.dumps(doc, sort_keys=True).lower() for x in forbidden): raise InventoryValidationError("secret material in inventory")
+    import re
+    forbidden_key_prefixes = ("password", "passwd", "credential", "secret", "token")
+    forbidden_exact_keys = {
+        "apikey", "authorization", "connectionstring", "privatekey",
+        "commandline", "imagepath", "pathname", "arguments", "environment",
+    }
+    credential_value_patterns = (
+        re.compile(r"(?i)-----BEGIN [^-]*(?:PRIVATE KEY|OPENSSH KEY)-----"),
+        re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+        re.compile(
+            r"(?i)\b(?:password|passwd|pwd|credential|secret|token|api[_ -]?key|"
+            r"authorization|connection[_ -]?string)\s*[:=]\s*[^\s,;}]{3,}"
+        ),
+        re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s\"/:]+:[^\s\"@]+@"),
+    )
+
+    def reject_secret_material(value: Any) -> None:
+        if isinstance(value, dict):
+            for raw_key, item in value.items():
+                normalized_key = re.sub(r"[^a-z0-9]", "", str(raw_key).casefold())
+                forbidden_key = (
+                    normalized_key != "hasprivatekey"
+                    and (
+                        normalized_key in forbidden_exact_keys
+                        or normalized_key.startswith(forbidden_key_prefixes)
+                        or normalized_key.endswith(
+                            ("password", "credential", "secret", "token")
+                        )
+                    )
+                )
+                if forbidden_key:
+                    raise InventoryValidationError("secret-bearing field in inventory")
+                reject_secret_material(item)
+        elif isinstance(value, list):
+            for item in value:
+                reject_secret_material(item)
+        elif isinstance(value, str) and any(
+            pattern.search(value) for pattern in credential_value_patterns
+        ):
+            raise InventoryValidationError("secret-bearing value in inventory")
+
+    reject_secret_material(doc)
     return doc
 
 @dataclass

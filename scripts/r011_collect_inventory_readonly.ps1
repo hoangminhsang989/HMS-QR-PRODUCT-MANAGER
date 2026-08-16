@@ -118,10 +118,10 @@ $certificates = Read-Section -Name "certificates"
 $security = Read-Section -Name "security"
 $time = Read-Section -Name "time"
 $pendingReboot = Read-Section -Name "pending_reboot"
-$executionContext = Read-Section -Name "execution_context"
+$inventoryExecutionContext = Read-Section -Name "execution_context"
 
 $unknowns = @()
-$sections = @{ os=$os; hardware=$computer; volumes=$volumes; network=$network; listeners=$listeners; firewall_profiles=$firewallProfiles; firewall_rules=$firewallRules; services=$services; postgresql=$postgresql; python=$python; hms_qr=$hms; tls=$certificates; time=$time; security=$security; pending_reboot=$pendingReboot; execution_context=$executionContext }
+$sections = @{ os=$os; hardware=$computer; volumes=$volumes; network=$network; listeners=$listeners; firewall_profiles=$firewallProfiles; firewall_rules=$firewallRules; services=$services; postgresql=$postgresql; python=$python; hms_qr=$hms; tls=$certificates; time=$time; security=$security; pending_reboot=$pendingReboot; execution_context=$inventoryExecutionContext }
 foreach ($entry in $sections.GetEnumerator()) {
     if ($entry.Value.state -in @("UNKNOWN", "ACCESS_DENIED", "UNSUPPORTED")) {
         $unknowns += @{ section = $entry.Key; state = $entry.Value.state }
@@ -131,7 +131,7 @@ foreach ($entry in $sections.GetEnumerator()) {
 $inventory = [ordered]@{
     inventory_schema_version = "r011.machine-inventory.v1"
     captured_at = [DateTimeOffset]::UtcNow.ToString("o")
-    machine_identity = @{ state = "KNOWN"; hostname = $env:COMPUTERNAME; execution_context = $executionContext }
+    machine_identity = @{ state = "KNOWN"; hostname = $env:COMPUTERNAME; execution_context = $inventoryExecutionContext }
     os = $os
     hardware = $computer
     volumes = $volumes
