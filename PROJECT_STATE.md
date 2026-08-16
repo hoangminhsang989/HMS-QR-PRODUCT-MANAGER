@@ -1,27 +1,28 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
-Current WP: R011-WP1A-R1A2 runtime path portability remediation
-Current Revision: R011-WP1A-R1A2
-Current Branch: stage6-r011-wp1a-r1a2-runtime-path-portability-remediation
-Current Verdict: PRECOMMIT_GATES_PASS_POSTCOMMIT_ARTIFACT_PROOF_PENDING
+Current WP: R011-WP1A local integration
+Current Revision: R011-WP1A-I1
+Current Branch: main
+Current Verdict: LOCAL_INTEGRATED_REMOTE_DELIVERY_PENDING
 
-R011-WP1A-R1A2 preserves the accepted R1A1 Git-object artifact and inventory
-security remediations while removing host-specific development/test path
-authority from the packaged runtime. Source location is module-relative; test
-outputs require explicit external harness authority; STAGING/PROD generated
-outputs and persistent paths require explicit absolute configuration and fail
-closed on source, test, CWD-relative, or personal-profile paths. Current-byte
-path, focused, critical, full PostgreSQL-backed Qt-last, isolation, secret, and
-diff gates pass. Exact committed identity and post-commit dual-clone artifact
-proof are intentionally recorded only after the one allowed commit. See
-`docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A_R1A2.md`.
+R011-WP1A is locally integrated by exact fast-forward from canonical
+`94c33180a31597c9386554a36a9f203659789a29` to the independently approved final
+candidate `09454caed3d29d98c3d9669c0512c80483bc0b62`, tree
+`c7e3845eb7defa8f851b52384336e09258ca0acd`. The approved certified artifact
+identity is `1629e9ebfdd91f21ea7eada6912d311dc23aac49fcc1664a64373ba5aed4b58d`.
+R1B independently proved all 86 payload files against Git blobs, cross-EOL
+reproducibility, path and secret safety, tamper failure, focused `44`,
+qualifying critical `51`, and full `187` tests with zero failures and zero
+skips. I1 re-proved the exact integrated bytes, artifact binding, collector
+static safety, path/config imports, and the focused `44` tests.
 
-Historical R011-WP1A candidate status: source-side deployment modules, immutable artifact contract,
+WP1A supplies source-side deployment modules, immutable artifact and verifier,
 read-only inventory collector, plan/preflight/dry-run/lifecycle models, evidence
-sanitizer, tests, and operator runbook are implemented on an isolated branch.
-No Machine A access or mutation occurred. WP1B and WP2 remain separately
-unauthorized. See `docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A.md`.
+sanitizer, tests, and Vietnamese-first operator runbook. No Machine A inventory,
+read, or mutation occurred. WP1B read remains unauthorized until WP1A is
+remotely delivered; Machine A mutation remains separately unauthorized. See
+`docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A_LOCAL_INTEGRATION.md`.
 
 Historical R011B status: the independently approved R011 roadmap was fast-forward
 integrated locally into `main` at `4ff89c934`; its later remote-delivery/state
@@ -40,7 +41,7 @@ R011B pre-integration baseline: local/origin `main` HEAD
 open and unchanged. The earlier R1A1 review route was superseded by the R1A2
 runtime-path remediation authority.
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008, R009, R010, and the R011 roadmap are remotely delivered. R011-WP1A-R1A2 is the current isolated remediated descendant candidate and is not merged or pushed.
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008, R009, R010, and the R011 roadmap are remotely delivered. R011-WP1A is independently approved and locally integrated; remote delivery remains pending and no push occurred under I1.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -49,19 +50,19 @@ focus states, and 44px touch-safe controls.
 Visual evidence: Penpot exports plus external desktop captures at 1280x720 and
 1920x1080; mobile runtime was checked at 360/390/414/768 with no horizontal
 overflow and no browser console errors.
-Regression results: R010R2B post-integration migration regression returned
-`26 passed`; the complete PostgreSQL-focused gate returned `18 passed, 1 warning`;
-SQLite DEV compatibility returned `38 passed, 1 warning`; critical
-Product/Tracking/QC/QR/auth/R009 coverage returned `88 passed, 1 warning`; and
-the native-exit-safe Qt-last one-process full regression returned
-`143 passed, 1 warning` in 562.61s with exit 0 and empty stderr.
-The warning is the inherited Starlette/httpx deprecation.
+Regression results: R011-WP1A-R1B focused returned `44 passed`; qualifying
+critical returned `51 passed, 1 inherited warning`; and the native-exit-safe,
+Qt-last full regression returned `187 passed, 1 inherited warning` with zero
+failures, zero skips, exit 0, and empty stderr. I1 bounded post-integration
+verification returned `44 passed` and independently reverified the approved
+artifact manifest, integrated Git identity, config/path imports, and collector
+AST safety. The warning is the inherited Starlette/httpx deprecation.
 
-Latest completed work: R010R2B locally integrated the independently approved
-R010R2A1 chain by exact FF-only merge and re-ran real PostgreSQL 17.11 migration,
-outage/recovery, concurrency, product, QR, auth, R009, SQLite, native-process,
-secret, isolation, and Git gates. The production implementation and historical
-migrations remain byte-unchanged. No push was performed.
+Latest completed work: R011-WP1A-I1 fast-forwarded local `main` from the exact
+remote baseline `94c33180a31597c9386554a36a9f203659789a29` to approved WP1A
+`09454caed3d29d98c3d9669c0512c80483bc0b62`. No candidate/source/test/runtime
+byte was changed during integration. No Machine A action, production action,
+merge commit, or push occurred.
 
 Known gaps:
 
@@ -74,12 +75,12 @@ PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
 Production PostgreSQL integration is closed by R010; Machine A production
-deployment remains a separate open gap. This commit-embedded state stops before
-R1A2 post-commit artifact proof; the terminal handoff determines whether the
-next exact action becomes `STAGE6_R011_WP1A_R1B_FRESH_INDEPENDENT_REVIEW`.
+deployment remains a separate open gap. WP1A is local-only integrated and has
+not been pushed. The next exact action is
+`STAGE6_R011_WP1A_REMOTE_DELIVERY`; WP1B Machine A read remains unauthorized.
 
-Latest authority: Stage 6 R011B local integration of approved Machine A deployment foundation roadmap (external task attachment)
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R011B_LOCAL_INTEGRATION.md
+Latest authority: Stage 6 R011-WP1A-I1 local integration of final independently approved WP1A (external task attachment)
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A_LOCAL_INTEGRATION.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
 
 R007B4 toolchain migration evidence:
