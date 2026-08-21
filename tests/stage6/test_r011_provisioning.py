@@ -100,6 +100,442 @@ def _assert_boundary_rejection(plan: ProvisioningPlan):
     return result
 
 
+def _production_plan() -> ProvisioningPlan:
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+    return build_provisioning_plan(
+        binding.target_root,
+        service_account_name=binding.service_account_name,
+        service_sid=binding.service_sid,
+        administrator_sid=binding.administrator_sid,
+        production_binding=True,
+    )
+
+
+def _forged_production_policies() -> tuple[str, str, str, SecurityPolicy, dict[str, SecurityPolicy]]:
+    fake_service_sid = "S-1-5-21-999-888-777-666"
+    fake_administrator_sid = "S-1-5-21-999-888-777-667"
+    fake_owner_sid = "S-1-5-21-999-888-777-668"
+    fake_system_sid = "S-1-5-21-999-888-777-669"
+    root_policy = provisioning_module._root_security_policy(
+        service_sid=fake_service_sid,
+        administrator_sid=fake_administrator_sid,
+        owner_sid=fake_owner_sid,
+        system_sid=fake_system_sid,
+    )
+    policies = {
+        role: provisioning_module._role_security_policy(
+            role,
+            service_sid=fake_service_sid,
+            administrator_sid=fake_administrator_sid,
+            owner_sid=fake_owner_sid,
+            system_sid=fake_system_sid,
+        )
+        for role in REQUIRED_NOW
+    }
+    return fake_service_sid, fake_administrator_sid, fake_owner_sid, root_policy, policies
+
+
+def test_certified_production_binding_is_immutable_primitive_authority():
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+
+    for field in binding._fields:
+        assert type(getattr(binding, field)) is str
+        with pytest.raises(AttributeError):
+            object.__setattr__(binding, field, "forged")
+        assert getattr(binding, field) != "forged"
+
+
+def test_normal_certified_production_plan_construction_is_possible():
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+    plan = _production_plan()
+
+    assert plan.production_binding is True
+    assert str(plan.target_root) == binding.target_root
+    assert plan.service_account_name == binding.service_account_name
+    assert plan.service_sid == binding.service_sid
+    assert plan.administrator_sid == plan.owner_sid == binding.administrator_sid
+    assert plan.root_policy == provisioning_module._certified_root_policy()
+    assert dict(plan.role_policies) == {
+        role: provisioning_module._certified_role_policy(role) for role in REQUIRED_NOW
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "message"),
+    [
+        ("service_sid", "S-1-5-21-999-888-777-666", "service SID"),
+        ("administrator_sid", "S-1-5-21-999-888-777-667", "administrator SID"),
+        ("owner_sid", "S-1-5-21-999-888-777-668", "owner SID"),
+    ],
+)
+def test_production_constructor_rejects_uncertified_identity(
+    field, replacement, message
+):
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+    kwargs = {
+        "service_account_name": binding.service_account_name,
+        "service_sid": binding.service_sid,
+        "administrator_sid": binding.administrator_sid,
+        "owner_sid": binding.owner_sid,
+        "production_binding": True,
+    }
+    kwargs[field] = replacement
+
+    with pytest.raises(ProvisioningContractError, match=message):
+        build_provisioning_plan(binding.target_root, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("service_account_name", "service_sid"),
+    [
+        (r"HMS-PC\HMSQRService", "S-1-5-21-999-888-777-666"),
+        (r"HMS-PC\OtherService", "S-1-5-21-170807328-2858633000-3406472961-1009"),
+        (r"HMS-PC\OtherService", "S-1-5-21-999-888-777-666"),
+    ],
+)
+def test_production_constructor_rejects_service_account_name_sid_cross_binding(
+    service_account_name, service_sid
+):
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+
+    with pytest.raises(ProvisioningContractError):
+        build_provisioning_plan(
+            binding.target_root,
+            service_account_name=service_account_name,
+            service_sid=service_sid,
+            administrator_sid=binding.administrator_sid,
+            owner_sid=binding.owner_sid,
+            production_binding=True,
+        )
+
+
+def test_coordinated_production_identity_and_policy_forgery_rejects_before_backend():
+    plan = _production_plan()
+    fake_service, fake_administrator, fake_owner, root_policy, policies = (
+        _forged_production_policies()
+    )
+    object.__setattr__(plan, "service_sid", fake_service)
+    object.__setattr__(plan, "administrator_sid", fake_administrator)
+    object.__setattr__(plan, "owner_sid", fake_owner)
+    object.__setattr__(plan, "root_policy", root_policy)
+    object.__setattr__(plan, "role_policies", MappingProxyType(policies))
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "service SID" in result.errors[0]
+
+
+def test_production_service_account_tamper_rejects_before_backend():
+    plan = _production_plan()
+    object.__setattr__(plan, "service_account_name", r"HMS-PC\OtherService")
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "service account name" in result.errors[0]
+
+
+def test_production_binding_flag_tamper_cannot_escape_canonical_root_gate():
+    plan = _production_plan()
+    object.__setattr__(plan, "production_binding", False)
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "production binding" in result.errors[0]
+
+
+def test_production_target_tamper_cannot_rebind_certified_identity():
+    plan = _production_plan()
+    object.__setattr__(plan, "target_root", Path(r"D:\HMS-QR-PROD-OTHER"))
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "production binding" in result.errors[0]
+
+
+def test_generic_binding_cannot_construct_or_tamper_to_production_root(
+    tmp_path, security_context
+):
+    _, generic_plan, _, _ = _caller_owned_plan(tmp_path, security_context)
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+
+    with pytest.raises(ProvisioningContractError, match="production binding"):
+        build_provisioning_plan(
+            binding.target_root,
+            service_sid=generic_plan.service_sid,
+            production_binding=False,
+        )
+
+    object.__setattr__(generic_plan, "target_root", Path(binding.target_root))
+    result = _assert_boundary_rejection(generic_plan)
+    assert "production binding" in result.errors[0]
+
+
+def test_local_drive_alias_to_production_root_is_rejected_at_construction(monkeypatch):
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+    alias = Path("X:\\")
+    monkeypatch.setattr(
+        provisioning_module,
+        "_resolve_existing_target_root",
+        lambda target: Path(binding.target_root) if target == alias else None,
+    )
+
+    with pytest.raises(ProvisioningContractError, match="production binding"):
+        build_provisioning_plan(
+            alias,
+            service_sid=binding.service_sid,
+            production_binding=False,
+        )
+
+
+def test_local_drive_alias_tamper_rejects_at_boundary_before_backend(
+    tmp_path, security_context, monkeypatch
+):
+    _, generic_plan, _, _ = _caller_owned_plan(tmp_path, security_context)
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+    alias = Path("X:\\")
+    object.__setattr__(generic_plan, "target_root", alias)
+    monkeypatch.setattr(
+        provisioning_module,
+        "_resolve_existing_target_root",
+        lambda target: Path(binding.target_root) if target == alias else None,
+    )
+
+    result = _assert_boundary_rejection(generic_plan)
+
+    assert "production binding" in result.errors[0]
+
+
+def test_nonexisting_generic_root_stays_constructible_but_cannot_reach_backend(
+    tmp_path, security_context
+):
+    _, _, service_sid = security_context
+    plan = build_provisioning_plan(tmp_path / "not-created", service_sid=service_sid)
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "final-path identity is unavailable" in result.errors[0]
+
+
+def test_final_path_resolution_error_fails_closed_before_backend(
+    tmp_path, security_context, monkeypatch
+):
+    _, generic_plan, _, _ = _caller_owned_plan(tmp_path, security_context)
+    monkeypatch.setattr(
+        provisioning_module,
+        "_resolve_existing_target_root",
+        lambda target: (_ for _ in ()).throw(
+            ProvisioningContractError("simulated final-path failure")
+        ),
+    )
+
+    result = _assert_boundary_rejection(generic_plan)
+
+    assert "simulated final-path failure" in result.errors[0]
+
+
+def test_parent_reparse_rejects_before_final_resolver_or_backend(
+    tmp_path, security_context, monkeypatch
+):
+    _, plan, _, _ = _caller_owned_plan(tmp_path, security_context)
+    reparse_parent = tmp_path / "reported-reparse-parent"
+    object.__setattr__(plan, "target_root", reparse_parent / "child-root")
+    resolver_calls: list[Path] = []
+
+    monkeypatch.setattr(
+        provisioning_module,
+        "_target_is_filesystem_reparse_point",
+        lambda path: path == reparse_parent,
+    )
+    monkeypatch.setattr(
+        provisioning_module,
+        "_resolve_existing_target_root",
+        lambda path: resolver_calls.append(path) or None,
+    )
+
+    result = _assert_boundary_rejection(plan)
+
+    assert result.reparse_rejection == str(reparse_parent)
+    assert result.root_namespace_status == "NOT_RUN"
+    assert resolver_calls == []
+
+
+@pytest.mark.parametrize(("attributes", "expected"), [(WindowsSecurityBackend.FILE_ATTRIBUTE_REPARSE_POINT, True), (0, False)])
+def test_reparse_detector_uses_windows_attributes_not_path_is_junction(monkeypatch, attributes, expected):
+    monkeypatch.setattr(provisioning_module.os, "lstat", lambda path: type("Stat", (), {"st_file_attributes": attributes})())
+    assert provisioning_module._target_is_filesystem_reparse_point(Path("X:\\missing")) is expected
+
+
+def test_reparse_detector_missing_is_false_and_other_failures_fail_closed(monkeypatch):
+    monkeypatch.setattr(provisioning_module.os, "lstat", lambda path: (_ for _ in ()).throw(FileNotFoundError()))
+    assert provisioning_module._target_is_filesystem_reparse_point(Path("X:\\missing")) is False
+    monkeypatch.setattr(provisioning_module.os, "lstat", lambda path: object())
+    with pytest.raises(ProvisioningContractError, match="attribute authority"):
+        provisioning_module._target_is_filesystem_reparse_point(Path("X:\\missing"))
+    monkeypatch.setattr(provisioning_module.os, "lstat", lambda path: (_ for _ in ()).throw(OSError("denied")))
+    with pytest.raises(ProvisioningContractError, match="reparse inspection failed"):
+        provisioning_module._target_is_filesystem_reparse_point(Path("X:\\missing"))
+
+
+def test_boundary_uses_resolved_generic_target_not_later_alias_redirect(
+    tmp_path, security_context, monkeypatch
+):
+    backend, plan = _plan(tmp_path, security_context)
+    physical_root = plan.target_root
+    redirect_root = tmp_path / "later-alias-redirect"
+    alias = Path("X:\\")
+    extended_physical_root = Path("\\\\?\\" + str(physical_root))
+    alias_resolution_count = 0
+    observed_paths: list[Path] = []
+
+    class RecordingBackend(WindowsSecurityBackend):
+        def is_reparse_point(self, path):
+            observed_paths.append(path)
+            return super().is_reparse_point(path)
+
+        def is_directory(self, path):
+            observed_paths.append(path)
+            return super().is_directory(path)
+
+        def inspect_security(self, path):
+            observed_paths.append(path)
+            return super().inspect_security(path)
+
+        def create_secure_directory(self, path, policy):
+            observed_paths.append(path)
+            return super().create_secure_directory(path, policy)
+
+    def resolve_target(target):
+        nonlocal alias_resolution_count
+        if target == alias:
+            alias_resolution_count += 1
+            return extended_physical_root if alias_resolution_count == 1 else redirect_root
+        if target == physical_root:
+            return physical_root
+        raise AssertionError(f"unexpected final-path lookup: {target}")
+
+    object.__setattr__(plan, "target_root", alias)
+    monkeypatch.setattr(provisioning_module, "_resolve_existing_target_root", resolve_target)
+
+    result = provision(plan, dry_run=False, backend=RecordingBackend())
+
+    assert result.overall_status == "APPLIED"
+    assert result.target_root == str(physical_root)
+    assert alias_resolution_count == 1
+    assert observed_paths
+    assert all(not str(path).casefold().startswith("x:") for path in observed_paths)
+    assert all(
+        physical_root == path
+        or physical_root in path.parents
+        or path in physical_root.parents
+        for path in observed_paths
+    )
+    assert not redirect_root.exists()
+
+
+def test_production_binding_true_alias_to_production_root_rejects(monkeypatch):
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+    alias = Path("X:\\")
+    monkeypatch.setattr(
+        provisioning_module,
+        "_resolve_existing_target_root",
+        lambda target: Path(binding.target_root),
+    )
+
+    with pytest.raises(ProvisioningContractError, match="production binding"):
+        build_provisioning_plan(
+            alias,
+            service_account_name=binding.service_account_name,
+            service_sid=binding.service_sid,
+            administrator_sid=binding.administrator_sid,
+            owner_sid=binding.owner_sid,
+            production_binding=True,
+        )
+
+
+def test_production_system_policy_forgery_rejects_before_backend():
+    plan = _production_plan()
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+    fake_system_sid = "S-1-5-21-999-888-777-669"
+    root_policy = provisioning_module._root_security_policy(
+        service_sid=binding.service_sid,
+        administrator_sid=binding.administrator_sid,
+        owner_sid=binding.owner_sid,
+        system_sid=fake_system_sid,
+    )
+    policies = {
+        role: provisioning_module._role_security_policy(
+            role,
+            service_sid=binding.service_sid,
+            administrator_sid=binding.administrator_sid,
+            owner_sid=binding.owner_sid,
+            system_sid=fake_system_sid,
+        )
+        for role in REQUIRED_NOW
+    }
+    object.__setattr__(plan, "root_policy", root_policy)
+    object.__setattr__(plan, "role_policies", MappingProxyType(policies))
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "root policy" in result.errors[0]
+
+
+def test_production_apply_host_hook_rejects_before_backend(monkeypatch):
+    plan = _production_plan()
+    binding = provisioning_module._CERTIFIED_PRODUCTION_BINDING
+    monkeypatch.setattr(
+        provisioning_module,
+        "_resolve_existing_target_root",
+        lambda target: Path(binding.target_root),
+    )
+    monkeypatch.setattr(provisioning_module, "_production_host_name", lambda: "OTHER-HOST")
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "production host" in result.errors[0]
+
+
+def test_generic_apply_does_not_consult_production_host_hook(
+    tmp_path, security_context, monkeypatch
+):
+    backend, plan = _plan(tmp_path, security_context)
+    monkeypatch.setattr(provisioning_module, "_production_host_name", lambda: "OTHER-HOST")
+
+    result = provision(plan, dry_run=False, backend=backend)
+
+    assert result.overall_status == "APPLIED"
+
+
+def test_cli_rejects_noncertified_name_before_account_resolution(monkeypatch):
+    class MustNotConstructBackend:
+        def __init__(self):
+            raise AssertionError("wrong account name must reject before resolution")
+
+    monkeypatch.setattr(provisioning_module, "WindowsSecurityBackend", MustNotConstructBackend)
+
+    with pytest.raises(ProvisioningContractError, match="service account name"):
+        provisioning_module.main(
+            [
+                "--target-root",
+                r"D:\HMS-QR-PROD",
+                "--service-account",
+                r"HMS-PC\OtherService",
+            ]
+        )
+
+
+def test_cli_rejects_wrong_resolved_sid_before_provision(monkeypatch):
+    class WrongSidBackend:
+        def resolve_account_sid(self, account):
+            assert account == provisioning_module._CERTIFIED_PRODUCTION_BINDING.service_account_name
+            return "S-1-5-21-999-888-777-666"
+
+    monkeypatch.setattr(provisioning_module, "WindowsSecurityBackend", WrongSidBackend)
+
+    with pytest.raises(ProvisioningContractError, match="service SID"):
+        provisioning_module.main(["--target-root", r"D:\HMS-QR-PROD"])
+
+
 class _HostileSecurityPolicy(SecurityPolicy):
     """A policy subclass that attempts to bypass normal dataclass equality."""
 

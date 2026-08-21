@@ -44,12 +44,41 @@ REQUIRED_LATER: Final = (
 NOT_REQUIRED: Final = ("temp",)
 
 
+class _ProductionIdentityBinding(NamedTuple):
+    """Primitive-only, project-owned authority for the certified Machine-A target."""
+
+    host_name: str
+    target_root: str
+    service_account_name: str
+    service_sid: str
+    administrator_sid: str
+    owner_sid: str
+    system_sid: str
+
+
+_CERTIFIED_PRODUCTION_BINDING: Final = _ProductionIdentityBinding(
+    host_name="HMS-PC",
+    target_root=r"D:\HMS-QR-PROD",
+    service_account_name=r"HMS-PC\HMSQRService",
+    service_sid="S-1-5-21-170807328-2858633000-3406472961-1009",
+    administrator_sid=ADMINISTRATORS_SID,
+    owner_sid=ADMINISTRATORS_SID,
+    system_sid=SYSTEM_SID,
+)
+
+
 class ProvisioningContractError(ValueError):
     """The requested target, role, or security contract is unsafe."""
 
 
 class SecurityInspectionError(OSError):
     """Windows could not prove the required filesystem security state."""
+
+
+class _TargetReparseError(ProvisioningContractError):
+    def __init__(self, target: Path) -> None:
+        super().__init__(f"unsafe reparse path: {target}")
+        self.target = target
 
 
 @dataclass(frozen=True, order=True)
@@ -195,17 +224,22 @@ class ProvisioningPlan:
     role_policies: Mapping[str, SecurityPolicy]
     production_binding: bool = False
     owner_sid: str | None = field(default=None, kw_only=True)
+    service_account_name: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
-        target, roles, owner, root_policy, policies = _validate_plan_state(self)
+        state = _validate_plan_state(self)
         # A frozen dataclass does not freeze caller-owned lists or dictionaries.
         # Take ownership during construction, before the public instance escapes,
         # and retain only policies freshly derived from ROLE_SPECS.
-        object.__setattr__(self, "target_root", target)
-        object.__setattr__(self, "roles", roles)
-        object.__setattr__(self, "owner_sid", owner)
-        object.__setattr__(self, "root_policy", root_policy)
-        object.__setattr__(self, "role_policies", MappingProxyType(policies))
+        object.__setattr__(self, "target_root", state.target_root)
+        object.__setattr__(self, "roles", state.roles)
+        object.__setattr__(self, "service_account_name", state.service_account_name)
+        object.__setattr__(self, "service_sid", state.service_sid)
+        object.__setattr__(self, "administrator_sid", state.administrator_sid)
+        object.__setattr__(self, "owner_sid", state.owner_sid)
+        object.__setattr__(self, "root_policy", state.root_policy)
+        object.__setattr__(self, "role_policies", MappingProxyType(state.role_policies))
+        object.__setattr__(self, "production_binding", state.production_binding)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -213,6 +247,7 @@ class ProvisioningPlan:
             "target_root": str(self.target_root),
             "roles": list(self.roles),
             "planned_role_count": len(self.roles),
+            "service_account_name": self.service_account_name,
             "service_sid": self.service_sid,
             "administrator_sid": self.administrator_sid,
             "root_policy": self.root_policy.to_dict(),
@@ -527,9 +562,11 @@ def directory_model() -> dict[str, list[str]]:
     }
 
 
-def _recovery_aces(administrator_sid: str, *, flags: int) -> list[AceSpec]:
+def _recovery_aces(
+    administrator_sid: str, *, flags: int, system_sid: str = SYSTEM_SID
+) -> list[AceSpec]:
     return [
-        AceSpec(SYSTEM_SID, FILE_ALL_ACCESS, flags),
+        AceSpec(system_sid, FILE_ALL_ACCESS, flags),
         AceSpec(administrator_sid, FILE_ALL_ACCESS, flags),
     ]
 
@@ -540,11 +577,16 @@ def _role_security_policy(
     service_sid: str,
     administrator_sid: str,
     owner_sid: str,
+    system_sid: str = SYSTEM_SID,
 ) -> SecurityPolicy:
     """Derive a role's exact policy from the single ROLE_SPECS contract."""
 
     spec = ROLE_SPECS[role]
-    aces = _recovery_aces(administrator_sid, flags=OBJECT_AND_CONTAINER_INHERIT)
+    aces = _recovery_aces(
+        administrator_sid,
+        flags=OBJECT_AND_CONTAINER_INHERIT,
+        system_sid=system_sid,
+    )
     if spec.service_access_mask is not None:
         aces.append(AceSpec(service_sid, spec.service_access_mask))
     return SecurityPolicy(owner_sid, tuple(aces))
@@ -603,22 +645,141 @@ def _root_security_policy(
     service_sid: str,
     administrator_sid: str,
     owner_sid: str,
+    system_sid: str = SYSTEM_SID,
 ) -> SecurityPolicy:
     """Derive the target-root policy from the reviewed identity contract."""
 
-    aces = _recovery_aces(administrator_sid, flags=0)
+    aces = _recovery_aces(administrator_sid, flags=0, system_sid=system_sid)
     aces.append(AceSpec(service_sid, FILE_GENERIC_EXECUTE, 0))
     return SecurityPolicy(owner_sid, tuple(aces))
+
+
+class _ValidatedPlanState(NamedTuple):
+    target_root: Path
+    roles: tuple[str, ...]
+    service_account_name: str | None
+    service_sid: str
+    administrator_sid: str
+    owner_sid: str
+    system_sid: str
+    root_policy: SecurityPolicy
+    role_policies: dict[str, SecurityPolicy]
+    production_binding: bool
+
+
+def _same_windows_path(left: Path, right: str | Path) -> bool:
+    def comparison_value(value: Path | str) -> str:
+        raw = os.fspath(value)
+        if raw.startswith("\\\\?\\"):
+            raw = raw[4:]
+        return os.path.normcase(os.path.normpath(raw))
+
+    return comparison_value(left) == comparison_value(right)
+
+
+def _resolve_existing_target_root(target: Path) -> Path | None:
+    """Resolve an existing root through the OS; non-existing roots have no final identity."""
+
+    try:
+        return target.resolve(strict=True)
+    except FileNotFoundError:
+        return None
+    except (OSError, RuntimeError) as exc:
+        raise ProvisioningContractError(
+            f"target root final-path resolution failed: {exc}"
+        ) from exc
+
+
+def _normalized_final_target_root(resolved_target: Path) -> Path:
+    """Normalize an OS final path into the local-drive form used by the backend."""
+
+    raw = os.fspath(resolved_target)
+    if raw.startswith("\\\\?\\"):
+        raw = raw[4:]
+        if raw.casefold().startswith("unc\\"):
+            raw = "\\\\" + raw[4:]
+    normalized = Path(os.path.normpath(raw))
+    if not normalized.is_absolute() or not normalized.drive or str(normalized).startswith("\\\\"):
+        raise ProvisioningContractError(
+            "target root final-path identity must be an absolute local-drive path"
+        )
+    return normalized
+
+
+def _target_is_filesystem_reparse_point(target: Path) -> bool:
+    try:
+        attributes = os.lstat(target).st_file_attributes
+        return bool(attributes & WindowsSecurityBackend.FILE_ATTRIBUTE_REPARSE_POINT)
+    except FileNotFoundError:
+        return False
+    except AttributeError as exc:
+        raise ProvisioningContractError("Windows file-attribute authority is unavailable") from exc
+    except OSError as exc:
+        raise ProvisioningContractError(
+            f"target root reparse inspection failed: {exc}"
+        ) from exc
+
+
+def _classify_production_target(
+    target: Path,
+    production_binding: object,
+    *,
+    resolved_target: Path | None = None,
+) -> bool:
+    if type(production_binding) is not bool:
+        raise ProvisioningContractError("production binding flag must be a bool")
+    targets_production_root = _same_windows_path(
+        target, _CERTIFIED_PRODUCTION_BINDING.target_root
+    )
+    if resolved_target is not None:
+        targets_production_root = targets_production_root or _same_windows_path(
+            resolved_target, _CERTIFIED_PRODUCTION_BINDING.target_root
+        )
+    if production_binding != targets_production_root:
+        raise ProvisioningContractError(
+            "production binding must exactly match the certified production root"
+        )
+    return targets_production_root
+
+
+def _certified_root_policy() -> SecurityPolicy:
+    binding = _CERTIFIED_PRODUCTION_BINDING
+    return _root_security_policy(
+        service_sid=binding.service_sid,
+        administrator_sid=binding.administrator_sid,
+        owner_sid=binding.owner_sid,
+        system_sid=binding.system_sid,
+    )
+
+
+def _certified_role_policy(role: str) -> SecurityPolicy:
+    binding = _CERTIFIED_PRODUCTION_BINDING
+    return _role_security_policy(
+        role,
+        service_sid=binding.service_sid,
+        administrator_sid=binding.administrator_sid,
+        owner_sid=binding.owner_sid,
+        system_sid=binding.system_sid,
+    )
 
 
 def _validate_plan_state(
     plan: ProvisioningPlan,
     *,
     require_canonical_storage: bool = False,
-) -> tuple[Path, tuple[str, ...], str, SecurityPolicy, dict[str, SecurityPolicy]]:
+    require_final_target_resolution: bool = False,
+) -> _ValidatedPlanState:
     """Validate a plan solely against the canonical role-policy contract."""
 
     target = _canonical_target_root(plan.target_root)
+    effective_target = target
+    production_binding = _classify_production_target(target, plan.production_binding)
+    if not require_final_target_resolution and not production_binding:
+        production_binding = _classify_production_target(
+            target,
+            plan.production_binding,
+            resolved_target=_resolve_existing_target_root(target),
+        )
     if not isinstance(plan.role_policies, Mapping):
         raise ProvisioningContractError("role policies must be a mapping")
 
@@ -627,14 +788,36 @@ def _validate_plan_state(
     if set(policies) != set(roles):
         raise ProvisioningContractError("role policy set must match planned roles exactly")
 
+    if plan.service_account_name is not None and type(plan.service_account_name) is not str:
+        raise ProvisioningContractError("service account name must be a plain string")
     service_sid = _canonical_sid(plan.service_sid, "service SID")
     administrator_sid = _canonical_sid(plan.administrator_sid, "administrator SID")
     owner = administrator_sid if plan.owner_sid is None else _canonical_sid(plan.owner_sid, "owner SID")
-    expected_root_policy = _root_security_policy(
-        service_sid=service_sid,
-        administrator_sid=administrator_sid,
-        owner_sid=owner,
-    )
+    service_account_name = plan.service_account_name
+    system_sid = SYSTEM_SID
+    if production_binding:
+        binding = _CERTIFIED_PRODUCTION_BINDING
+        if service_account_name != binding.service_account_name:
+            raise ProvisioningContractError("service account name must match certified production identity")
+        if service_sid != binding.service_sid:
+            raise ProvisioningContractError("service SID must match certified production identity")
+        if administrator_sid != binding.administrator_sid:
+            raise ProvisioningContractError("administrator SID must match certified production identity")
+        if owner != binding.owner_sid:
+            raise ProvisioningContractError("owner SID must match certified production identity")
+        service_sid = binding.service_sid
+        administrator_sid = binding.administrator_sid
+        owner = binding.owner_sid
+        service_account_name = binding.service_account_name
+        system_sid = binding.system_sid
+        expected_root_policy = _certified_root_policy()
+    else:
+        expected_root_policy = _root_security_policy(
+            service_sid=service_sid,
+            administrator_sid=administrator_sid,
+            owner_sid=owner,
+            system_sid=system_sid,
+        )
     if _policy_value(plan.root_policy, "root policy") != _policy_value(
         expected_root_policy, "canonical root policy"
     ):
@@ -642,11 +825,16 @@ def _validate_plan_state(
 
     canonical_policies: dict[str, SecurityPolicy] = {}
     for role in roles:
-        expected_policy = _role_security_policy(
-            role,
-            service_sid=service_sid,
-            administrator_sid=administrator_sid,
-            owner_sid=owner,
+        expected_policy = (
+            _certified_role_policy(role)
+            if production_binding
+            else _role_security_policy(
+                role,
+                service_sid=service_sid,
+                administrator_sid=administrator_sid,
+                owner_sid=owner,
+                system_sid=system_sid,
+            )
         )
         if _policy_value(policies[role], f"role policy for '{role}'") != _policy_value(
             expected_policy, f"canonical role policy for '{role}'"
@@ -663,24 +851,72 @@ def _validate_plan_state(
             raise ProvisioningContractError(
                 "plan role policies must use read-only canonical storage"
             )
-    return target, roles, owner, expected_root_policy, canonical_policies
+    if require_final_target_resolution:
+        if not production_binding:
+            for path in _path_chain(target):
+                if _target_is_filesystem_reparse_point(path):
+                    raise _TargetReparseError(path)
+        resolved_target = _resolve_existing_target_root(target)
+        if resolved_target is None:
+            raise ProvisioningContractError(
+                "target root final-path identity is unavailable at provision boundary"
+            )
+        final_production_binding = _classify_production_target(
+            target,
+            plan.production_binding,
+            resolved_target=resolved_target,
+        )
+        if final_production_binding and not _same_windows_path(
+            resolved_target, _CERTIFIED_PRODUCTION_BINDING.target_root
+        ):
+            raise ProvisioningContractError(
+                "certified production root final-path identity must match exactly"
+            )
+        effective_target = _normalized_final_target_root(resolved_target)
+        production_binding = final_production_binding
+    return _ValidatedPlanState(
+        effective_target,
+        roles,
+        service_account_name,
+        service_sid,
+        administrator_sid,
+        owner,
+        system_sid,
+        expected_root_policy,
+        canonical_policies,
+        production_binding,
+    )
 
 
 def _effective_plan_at_mutation_boundary(plan: ProvisioningPlan) -> ProvisioningPlan:
     """Revalidate and snapshot the effective plan before namespace inspection."""
 
-    target, roles, owner, root_policy, policies = _validate_plan_state(
-        plan, require_canonical_storage=True
+    state = _validate_plan_state(
+        plan,
+        require_canonical_storage=True,
+        require_final_target_resolution=True,
     )
     return ProvisioningPlan(
-        target_root=target,
-        roles=roles,
+        target_root=state.target_root,
+        roles=state.roles,
+        service_sid=state.service_sid,
+        administrator_sid=state.administrator_sid,
+        root_policy=state.root_policy,
+        role_policies=state.role_policies,
+        owner_sid=state.owner_sid,
+        service_account_name=state.service_account_name,
+        production_binding=state.production_binding,
+    )
+
+
+def _deferred_role_policy(plan: ProvisioningPlan, role: str) -> SecurityPolicy:
+    if plan.production_binding:
+        return _certified_role_policy(role)
+    return _role_security_policy(
+        role,
         service_sid=plan.service_sid,
         administrator_sid=plan.administrator_sid,
-        root_policy=root_policy,
-        role_policies=policies,
-        owner_sid=owner,
-        production_binding=plan.production_binding,
+        owner_sid=plan.root_policy.owner_sid,
     )
 
 
@@ -691,23 +927,41 @@ def build_provisioning_plan(
     roles: Iterable[str] = REQUIRED_NOW,
     administrator_sid: str = ADMINISTRATORS_SID,
     owner_sid: str | None = None,
+    service_account_name: str | None = None,
     production_binding: bool = False,
 ) -> ProvisioningPlan:
     target = _canonical_target_root(target_root)
     planned_roles = _validate_roles(roles)
-    owner = owner_sid or administrator_sid
-    root_policy = _root_security_policy(
-        service_sid=service_sid,
-        administrator_sid=administrator_sid,
-        owner_sid=owner,
-    )
-    policies: dict[str, SecurityPolicy] = {}
-    for role in planned_roles:
-        policies[role] = _role_security_policy(
-            role,
+    is_production = _classify_production_target(target, production_binding)
+    owner = administrator_sid if owner_sid is None else owner_sid
+    if is_production:
+        binding = _CERTIFIED_PRODUCTION_BINDING
+        if service_account_name != binding.service_account_name:
+            raise ProvisioningContractError("service account name must match certified production identity")
+        if service_sid != binding.service_sid:
+            raise ProvisioningContractError("service SID must match certified production identity")
+        if administrator_sid != binding.administrator_sid:
+            raise ProvisioningContractError("administrator SID must match certified production identity")
+        if owner != binding.owner_sid:
+            raise ProvisioningContractError("owner SID must match certified production identity")
+        root_policy = _certified_root_policy()
+    else:
+        root_policy = _root_security_policy(
             service_sid=service_sid,
             administrator_sid=administrator_sid,
             owner_sid=owner,
+        )
+    policies: dict[str, SecurityPolicy] = {}
+    for role in planned_roles:
+        policies[role] = (
+            _certified_role_policy(role)
+            if is_production
+            else _role_security_policy(
+                role,
+                service_sid=service_sid,
+                administrator_sid=administrator_sid,
+                owner_sid=owner,
+            )
         )
     return ProvisioningPlan(
         target_root=target,
@@ -717,6 +971,7 @@ def build_provisioning_plan(
         root_policy=root_policy,
         role_policies=policies,
         owner_sid=owner,
+        service_account_name=service_account_name,
         production_binding=production_binding,
     )
 
@@ -834,12 +1089,7 @@ def _preflight(
                 continue
             if spec.classification == "REQUIRED_LATER":
                 deferred_present.append(name)
-                policy = _role_security_policy(
-                    name,
-                    service_sid=plan.service_sid,
-                    administrator_sid=plan.administrator_sid,
-                    owner_sid=plan.root_policy.owner_sid,
-                )
+                policy = _deferred_role_policy(plan, name)
                 reason, is_reparse = _existing_role_incompatibility(entry, policy, backend)
                 status = "DEFERRED_PRESENT_EXACT" if reason is None else "INCOMPATIBLE"
                 root_entries.append(
@@ -912,9 +1162,29 @@ def provision(
             planned_roles=[],
             security_verification_status="FAIL",
             root_namespace_status="NOT_RUN",
+            reparse_rejection=str(exc.target) if isinstance(exc, _TargetReparseError) else None,
             errors=[str(exc)],
             dry_run=dry_run,
         )
+
+    if not dry_run and effective_plan.production_binding:
+        try:
+            host_name = _production_host_name()
+        except OSError as exc:
+            host_name = ""
+            host_error = str(exc)
+        else:
+            host_error = ""
+        if host_name.casefold() != _CERTIFIED_PRODUCTION_BINDING.host_name.casefold():
+            return ProvisioningResult(
+                overall_status="FAILED",
+                target_root=str(effective_plan.target_root),
+                planned_roles=list(effective_plan.roles),
+                security_verification_status="FAIL",
+                root_namespace_status="NOT_RUN",
+                errors=[host_error or "production host must match certified production identity"],
+                dry_run=dry_run,
+            )
 
     security = backend or WindowsSecurityBackend()
     (
@@ -997,6 +1267,20 @@ def provision(
     return result
 
 
+def _production_host_name() -> str:
+    """Read the Windows host name without accepting caller-controlled authority."""
+
+    if os.name != "nt":
+        raise OSError("Windows host identity is required for production apply")
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    name = ctypes.create_unicode_buffer(256)
+    size = wintypes.DWORD(len(name))
+    if not kernel32.GetComputerNameW(name, ctypes.byref(size)):
+        error = ctypes.get_last_error()
+        raise OSError(error, f"GetComputerNameW: {ctypes.FormatError(error)}")
+    return name.value
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Dry-run or apply the reviewed HMS QR child-role provisioner."
@@ -1014,12 +1298,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    _validate_roles(args.roles)
+    binding = _CERTIFIED_PRODUCTION_BINDING
+    if args.service_account != binding.service_account_name:
+        raise ProvisioningContractError("service account name must match certified production identity")
     backend = WindowsSecurityBackend()
     service_sid = backend.resolve_account_sid(args.service_account)
+    if service_sid != binding.service_sid:
+        raise ProvisioningContractError("service SID must match certified production identity")
     plan = build_provisioning_plan(
         args.target_root,
         service_sid=service_sid,
         roles=args.roles,
+        service_account_name=binding.service_account_name,
         production_binding=True,
     )
     result = provision(plan, dry_run=not args.apply, backend=backend)
