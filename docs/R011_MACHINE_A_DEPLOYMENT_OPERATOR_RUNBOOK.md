@@ -73,3 +73,37 @@ password, token, URL có credential, DPAPI plaintext hay private key.
 
 `WP1B_MACHINE_A_READ_AUTHORIZED=NO` và `MACHINE_A_MUTATION_AUTHORIZED=NO` vẫn
 được giữ nguyên sau WP1A.
+
+## Provisioner thư mục sản xuất sau Recovery-A
+
+Module duy nhất được duy trì là `packages.deployment.provisioning`, chạy bằng:
+
+```text
+python -m packages.deployment.provisioning --target-root <ROOT> --service-account <ACCOUNT>
+```
+
+Mặc định lệnh chỉ dry-run và xuất một JSON có trạng thái tổng thể, role còn
+thiếu/đã đúng, collision, reparse, kiểm tra security, partial state và số
+mutation. Chỉ authority sản xuất riêng trong tương lai mới được thêm `--apply`.
+Stage implementation/offline qualification không được chạy vào
+`D:\HMS-QR-PROD`, không UAC và không mutation Machine A.
+
+Tranche đầu tối thiểu chỉ gồm:
+
+- `releases`: release immutable, service chỉ read/execute;
+- `runtime`: Python runtime cô lập, service chỉ read/execute;
+- `staging`: vùng stage do SYSTEM/Administrators quản lý, service không có ACE.
+
+`data`, `ingest`, `logs`, `backups`, `secrets`, `rollback` được hỗ trợ bởi cùng
+role catalog nhưng hoãn đến tranche có consumer tương ứng. Không tạo top-level
+`temp`; temp phải là workspace có phạm vi và lifecycle rõ ràng.
+
+Provisioner kiểm tra root đã tồn tại, không phải reparse, owner/DACL root khớp
+precondition được review. Nó không tự take ownership, không sửa DACL root và
+không xóa collision. Directory mới nhận protected DACL ngay trong
+`CreateDirectoryW`; SYSTEM và BUILTIN\Administrators giữ recovery access, còn
+service nhận quyền theo từng role. Nếu một role thành công rồi role sau lỗi,
+state hợp lệ đã tạo được giữ nguyên; sửa nguyên nhân rồi chạy lại để hội tụ.
+
+Chuỗi `WP2H-C-R1`/R1A/R1B/R1C/R1D/R1E/R1F và kiến trúc executor/finalizer theo
+micro-revision đã nghỉ hẳn. Không chạy hoặc dùng byte R1E làm future authority.

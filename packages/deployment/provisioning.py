@@ -1,0 +1,743 @@
+"""Idempotent Windows provisioning for approved Machine-A child roles.
+
+The command-line interface is dry-run by default.  A future, separately
+authorized production stage may opt into mutation with ``--apply``.  This
+module never creates the target root, changes its owner/DACL, manages accounts,
+or deletes an incompatible object.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ctypes
+from ctypes import wintypes
+from dataclasses import asdict, dataclass, field
+import json
+import os
+from pathlib import Path
+from typing import Final, Iterable
+
+
+SYSTEM_SID: Final = "S-1-5-18"
+ADMINISTRATORS_SID: Final = "S-1-5-32-544"
+BROAD_PRINCIPAL_SIDS: Final = frozenset(
+    {"S-1-1-0", "S-1-5-11", "S-1-5-32-545"}
+)
+
+FILE_ALL_ACCESS: Final = 0x001F01FF
+FILE_GENERIC_READ: Final = 0x00120089
+FILE_GENERIC_EXECUTE: Final = 0x001200A0
+FILE_READ_EXECUTE_CHILD: Final = 0x001200A9
+FILE_MODIFY: Final = 0x001301BF
+OBJECT_AND_CONTAINER_INHERIT: Final = 0x03
+
+REQUIRED_NOW: Final = ("releases", "runtime", "staging")
+REQUIRED_LATER: Final = (
+    "data",
+    "ingest",
+    "logs",
+    "backups",
+    "secrets",
+    "rollback",
+)
+NOT_REQUIRED: Final = ("temp",)
+
+
+class ProvisioningContractError(ValueError):
+    """The requested target, role, or security contract is unsafe."""
+
+
+class SecurityInspectionError(OSError):
+    """Windows could not prove the required filesystem security state."""
+
+
+@dataclass(frozen=True, order=True)
+class AceSpec:
+    sid: str
+    access_mask: int
+    flags: int = OBJECT_AND_CONTAINER_INHERIT
+    ace_type: int = 0  # ACCESS_ALLOWED_ACE_TYPE
+
+    def __post_init__(self) -> None:
+        if not self.sid.startswith("S-1-"):
+            raise ProvisioningContractError(f"invalid SID: {self.sid}")
+        if self.sid in BROAD_PRINCIPAL_SIDS:
+            raise ProvisioningContractError(
+                f"broad principal is forbidden in provisioning ACLs: {self.sid}"
+            )
+        if not 0 <= self.access_mask <= 0xFFFFFFFF:
+            raise ProvisioningContractError("access mask must fit an unsigned DWORD")
+        if self.flags not in {0, OBJECT_AND_CONTAINER_INHERIT}:
+            raise ProvisioningContractError("only exact or OI/CI ACEs are supported")
+        if self.ace_type != 0:
+            raise ProvisioningContractError("only explicit allow ACEs are supported")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "sid": self.sid,
+            "access_mask": f"0x{self.access_mask:08X}",
+            "flags": f"0x{self.flags:02X}",
+            "ace_type": "ALLOW",
+        }
+
+
+@dataclass(frozen=True)
+class SecurityPolicy:
+    owner_sid: str
+    aces: tuple[AceSpec, ...]
+    protected: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.owner_sid.startswith("S-1-"):
+            raise ProvisioningContractError(f"invalid owner SID: {self.owner_sid}")
+        if self.owner_sid in BROAD_PRINCIPAL_SIDS:
+            raise ProvisioningContractError("a broad principal cannot own a role")
+        if not self.protected:
+            raise ProvisioningContractError("provisioned DACLs must be protected")
+        if not self.aces:
+            raise ProvisioningContractError("an explicit recovery ACL is required")
+        identities = [ace.sid for ace in self.aces]
+        if len(identities) != len(set(identities)):
+            raise ProvisioningContractError("duplicate ACL principals are forbidden")
+
+    @property
+    def sddl(self) -> str:
+        flag_name = {0: "", OBJECT_AND_CONTAINER_INHERIT: "OICI"}
+        ace_text = "".join(
+            f"(A;{flag_name[ace.flags]};0x{ace.access_mask:08X};;;{ace.sid})"
+            for ace in self.aces
+        )
+        return f"O:{self.owner_sid}D:P{ace_text}"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "owner_sid": self.owner_sid,
+            "protected": self.protected,
+            "aces": [ace.to_dict() for ace in self.aces],
+        }
+
+
+@dataclass(frozen=True)
+class SecuritySnapshot:
+    owner_sid: str
+    protected: bool
+    aces: tuple[AceSpec, ...]
+
+    def matches(self, policy: SecurityPolicy) -> bool:
+        return (
+            self.owner_sid == policy.owner_sid
+            and self.protected == policy.protected
+            and sorted(self.aces) == sorted(policy.aces)
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "owner_sid": self.owner_sid,
+            "protected": self.protected,
+            "aces": [ace.to_dict() for ace in sorted(self.aces)],
+        }
+
+
+@dataclass(frozen=True)
+class RoleSpec:
+    name: str
+    classification: str
+    purpose: str
+    authority_root: str
+    service_access_mask: int | None
+
+
+ROLE_SPECS: Final = {
+    "releases": RoleSpec(
+        "releases", "REQUIRED_NOW", "immutable certified releases", "APP_INSTALL_ROOT", FILE_READ_EXECUTE_CHILD
+    ),
+    "runtime": RoleSpec(
+        "runtime", "REQUIRED_NOW", "isolated versioned Python runtime", "ISOLATED_PRODUCTION_PYTHON_RUNTIME", FILE_READ_EXECUTE_CHILD
+    ),
+    "staging": RoleSpec(
+        "staging", "REQUIRED_NOW", "hash-verified deployment staging", "DEPLOYMENT_STAGING_ROOT", None
+    ),
+    "data": RoleSpec(
+        "data", "REQUIRED_LATER", "persistent application state", "APP_DATA_ROOT", FILE_MODIFY
+    ),
+    "ingest": RoleSpec(
+        "ingest", "REQUIRED_LATER", "durable local-first file intake", "LOCAL_INGEST_ROOT", FILE_MODIFY
+    ),
+    "logs": RoleSpec(
+        "logs", "REQUIRED_LATER", "rotated sanitized operational logs", "APP_LOG_ROOT", FILE_MODIFY
+    ),
+    "backups": RoleSpec(
+        "backups", "REQUIRED_LATER", "operator-owned protected recovery artifacts", "PROTECTED_BACKUP_DESTINATION", None
+    ),
+    "secrets": RoleSpec(
+        "secrets", "REQUIRED_LATER", "DPAPI-protected service-private references", "SECRET_STORE", FILE_GENERIC_READ
+    ),
+    "rollback": RoleSpec(
+        "rollback", "REQUIRED_LATER", "retained known-good release", "ROLLBACK_RELEASE_ROOT", FILE_READ_EXECUTE_CHILD
+    ),
+    "temp": RoleSpec(
+        "temp", "NOT_REQUIRED", "scoped transient work, not a top-level persistent role", "SCOPED_TEMPORARY_WORKSPACE", FILE_MODIFY
+    ),
+}
+
+
+@dataclass(frozen=True)
+class ProvisioningPlan:
+    target_root: Path
+    roles: tuple[str, ...]
+    service_sid: str
+    administrator_sid: str
+    root_policy: SecurityPolicy
+    role_policies: dict[str, SecurityPolicy]
+    production_binding: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.target_root.is_absolute():
+            raise ProvisioningContractError("target root must be absolute")
+        _validate_roles(self.roles)
+        if set(self.role_policies) != set(self.roles):
+            raise ProvisioningContractError("role policy set must match planned roles exactly")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": "r011.provisioning-plan.v1",
+            "target_root": str(self.target_root),
+            "roles": list(self.roles),
+            "planned_role_count": len(self.roles),
+            "service_sid": self.service_sid,
+            "administrator_sid": self.administrator_sid,
+            "root_policy": self.root_policy.to_dict(),
+            "role_policies": {
+                role: self.role_policies[role].to_dict() for role in self.roles
+            },
+            "role_contracts": {
+                role: {
+                    "classification": ROLE_SPECS[role].classification,
+                    "purpose": ROLE_SPECS[role].purpose,
+                    "authority_root": ROLE_SPECS[role].authority_root,
+                }
+                for role in self.roles
+            },
+            "production_binding": self.production_binding,
+            "destructive_operation_count": 0,
+        }
+
+
+@dataclass
+class ProvisioningResult:
+    overall_status: str
+    target_root: str
+    planned_roles: list[str]
+    created_roles: list[str] = field(default_factory=list)
+    already_correct_roles: list[str] = field(default_factory=list)
+    failed_role: str | None = None
+    collision_information: list[dict[str, str]] = field(default_factory=list)
+    reparse_rejection: str | None = None
+    security_verification_status: str = "NOT_RUN"
+    partial_state_status: str = "NONE"
+    mutation_count: int = 0
+    security_changes_required: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    dry_run: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        result = asdict(self)
+        result["schema"] = "r011.provisioning-result.v1"
+        result["planned_role_count"] = len(self.planned_roles)
+        return result
+
+
+class _SECURITY_ATTRIBUTES(ctypes.Structure):
+    _fields_ = [
+        ("nLength", wintypes.DWORD),
+        ("lpSecurityDescriptor", wintypes.LPVOID),
+        ("bInheritHandle", wintypes.BOOL),
+    ]
+
+
+class _ACE_HEADER(ctypes.Structure):
+    _fields_ = [
+        ("AceType", wintypes.BYTE),
+        ("AceFlags", wintypes.BYTE),
+        ("AceSize", wintypes.WORD),
+    ]
+
+
+class _ACL_SIZE_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("AceCount", wintypes.DWORD),
+        ("AclBytesInUse", wintypes.DWORD),
+        ("AclBytesFree", wintypes.DWORD),
+    ]
+
+
+class WindowsSecurityBackend:
+    """Small Windows-native boundary for secure create and semantic readback."""
+
+    FILE_ATTRIBUTE_DIRECTORY = 0x10
+    FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+    INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF
+    SE_FILE_OBJECT = 1
+    OWNER_SECURITY_INFORMATION = 0x00000001
+    DACL_SECURITY_INFORMATION = 0x00000004
+    SE_DACL_PROTECTED = 0x1000
+    ACL_SIZE_INFORMATION_CLASS = 2
+
+    def __init__(self) -> None:
+        if os.name != "nt":
+            raise OSError("Windows filesystem security is required")
+        self.advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+        self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._configure_api()
+
+    def _configure_api(self) -> None:
+        self.advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.LPVOID),
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        self.advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+        self.kernel32.CreateDirectoryW.argtypes = [
+            wintypes.LPCWSTR,
+            ctypes.POINTER(_SECURITY_ATTRIBUTES),
+        ]
+        self.kernel32.CreateDirectoryW.restype = wintypes.BOOL
+        self.kernel32.GetFileAttributesW.argtypes = [wintypes.LPCWSTR]
+        self.kernel32.GetFileAttributesW.restype = wintypes.DWORD
+        self.advapi.GetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.LPVOID),
+            ctypes.POINTER(wintypes.LPVOID),
+            ctypes.POINTER(wintypes.LPVOID),
+            ctypes.POINTER(wintypes.LPVOID),
+            ctypes.POINTER(wintypes.LPVOID),
+        ]
+        self.advapi.GetNamedSecurityInfoW.restype = wintypes.DWORD
+        self.advapi.GetSecurityDescriptorControl.argtypes = [
+            wintypes.LPVOID,
+            ctypes.POINTER(wintypes.WORD),
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        self.advapi.GetSecurityDescriptorControl.restype = wintypes.BOOL
+        self.advapi.GetAclInformation.argtypes = [
+            wintypes.LPVOID,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+        ]
+        self.advapi.GetAclInformation.restype = wintypes.BOOL
+        self.advapi.GetAce.argtypes = [
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.LPVOID),
+        ]
+        self.advapi.GetAce.restype = wintypes.BOOL
+        self.advapi.ConvertSidToStringSidW.argtypes = [
+            wintypes.LPVOID,
+            ctypes.POINTER(wintypes.LPWSTR),
+        ]
+        self.advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
+        self.advapi.LookupAccountNameW.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.LPCWSTR,
+            wintypes.LPVOID,
+            ctypes.POINTER(wintypes.DWORD),
+            wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD),
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        self.advapi.LookupAccountNameW.restype = wintypes.BOOL
+        self.kernel32.LocalFree.argtypes = [wintypes.LPVOID]
+        self.kernel32.LocalFree.restype = wintypes.LPVOID
+
+    @staticmethod
+    def _raise_last_error(action: str) -> None:
+        error = ctypes.get_last_error()
+        raise SecurityInspectionError(error, f"{action}: {ctypes.FormatError(error)}")
+
+    def _sid_to_string(self, sid_pointer: int | wintypes.LPVOID) -> str:
+        output = wintypes.LPWSTR()
+        pointer = wintypes.LPVOID(sid_pointer) if isinstance(sid_pointer, int) else sid_pointer
+        if not self.advapi.ConvertSidToStringSidW(pointer, ctypes.byref(output)):
+            self._raise_last_error("ConvertSidToStringSidW")
+        try:
+            return output.value
+        finally:
+            self.kernel32.LocalFree(ctypes.cast(output, wintypes.LPVOID))
+
+    def resolve_account_sid(self, account: str) -> str:
+        sid_size = wintypes.DWORD(0)
+        domain_size = wintypes.DWORD(0)
+        sid_type = wintypes.DWORD(0)
+        self.advapi.LookupAccountNameW(
+            None,
+            account,
+            None,
+            ctypes.byref(sid_size),
+            None,
+            ctypes.byref(domain_size),
+            ctypes.byref(sid_type),
+        )
+        if sid_size.value == 0:
+            self._raise_last_error(f"LookupAccountNameW({account})")
+        sid = ctypes.create_string_buffer(sid_size.value)
+        domain = ctypes.create_unicode_buffer(max(domain_size.value, 1))
+        if not self.advapi.LookupAccountNameW(
+            None,
+            account,
+            sid,
+            ctypes.byref(sid_size),
+            domain,
+            ctypes.byref(domain_size),
+            ctypes.byref(sid_type),
+        ):
+            self._raise_last_error(f"LookupAccountNameW({account})")
+        return self._sid_to_string(ctypes.addressof(sid))
+
+    def attributes(self, path: Path) -> int:
+        attributes = self.kernel32.GetFileAttributesW(str(path))
+        if attributes == self.INVALID_FILE_ATTRIBUTES:
+            self._raise_last_error(f"GetFileAttributesW({path})")
+        return int(attributes)
+
+    def is_reparse_point(self, path: Path) -> bool:
+        return bool(self.attributes(path) & self.FILE_ATTRIBUTE_REPARSE_POINT)
+
+    def is_directory(self, path: Path) -> bool:
+        return bool(self.attributes(path) & self.FILE_ATTRIBUTE_DIRECTORY)
+
+    def create_secure_directory(self, path: Path, policy: SecurityPolicy) -> None:
+        descriptor = wintypes.LPVOID()
+        descriptor_size = wintypes.DWORD(0)
+        if not self.advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            policy.sddl,
+            1,
+            ctypes.byref(descriptor),
+            ctypes.byref(descriptor_size),
+        ):
+            self._raise_last_error("ConvertStringSecurityDescriptorToSecurityDescriptorW")
+        try:
+            attributes = _SECURITY_ATTRIBUTES(
+                ctypes.sizeof(_SECURITY_ATTRIBUTES), descriptor, False
+            )
+            if not self.kernel32.CreateDirectoryW(str(path), ctypes.byref(attributes)):
+                self._raise_last_error(f"CreateDirectoryW({path})")
+        finally:
+            self.kernel32.LocalFree(descriptor)
+
+    def inspect_security(self, path: Path) -> SecuritySnapshot:
+        owner = wintypes.LPVOID()
+        dacl = wintypes.LPVOID()
+        descriptor = wintypes.LPVOID()
+        status = self.advapi.GetNamedSecurityInfoW(
+            str(path),
+            self.SE_FILE_OBJECT,
+            self.OWNER_SECURITY_INFORMATION | self.DACL_SECURITY_INFORMATION,
+            ctypes.byref(owner),
+            None,
+            ctypes.byref(dacl),
+            None,
+            ctypes.byref(descriptor),
+        )
+        if status != 0:
+            raise SecurityInspectionError(
+                int(status), f"GetNamedSecurityInfoW({path}) failed with {status}"
+            )
+        try:
+            control = wintypes.WORD(0)
+            revision = wintypes.DWORD(0)
+            if not self.advapi.GetSecurityDescriptorControl(
+                descriptor, ctypes.byref(control), ctypes.byref(revision)
+            ):
+                self._raise_last_error("GetSecurityDescriptorControl")
+            if not dacl:
+                raise SecurityInspectionError("a null DACL is forbidden")
+            size = _ACL_SIZE_INFORMATION()
+            if not self.advapi.GetAclInformation(
+                dacl,
+                ctypes.byref(size),
+                ctypes.sizeof(size),
+                self.ACL_SIZE_INFORMATION_CLASS,
+            ):
+                self._raise_last_error("GetAclInformation")
+            aces: list[AceSpec] = []
+            for index in range(size.AceCount):
+                ace_pointer = wintypes.LPVOID()
+                if not self.advapi.GetAce(dacl, index, ctypes.byref(ace_pointer)):
+                    self._raise_last_error(f"GetAce({index})")
+                address = int(ace_pointer.value)
+                header = _ACE_HEADER.from_address(address)
+                mask = ctypes.c_uint32.from_address(address + 4).value
+                sid = self._sid_to_string(address + 8)
+                aces.append(AceSpec(sid, mask, int(header.AceFlags), int(header.AceType)))
+            return SecuritySnapshot(
+                owner_sid=self._sid_to_string(owner),
+                protected=bool(control.value & self.SE_DACL_PROTECTED),
+                aces=tuple(aces),
+            )
+        finally:
+            self.kernel32.LocalFree(descriptor)
+
+
+def _validate_roles(roles: Iterable[str]) -> tuple[str, ...]:
+    normalized = tuple(roles)
+    if not normalized:
+        raise ProvisioningContractError("at least one approved role is required")
+    if len(normalized) != len(set(normalized)):
+        raise ProvisioningContractError("duplicate roles are forbidden")
+    for role in normalized:
+        if role not in ROLE_SPECS:
+            raise ProvisioningContractError(f"unexpected role name: {role}")
+        if Path(role).name != role or any(token in role for token in ("/", "\\", "..", ":")):
+            raise ProvisioningContractError(f"role is not a direct child name: {role}")
+        if ROLE_SPECS[role].classification == "NOT_REQUIRED":
+            raise ProvisioningContractError(f"role is not approved for provisioning: {role}")
+    return normalized
+
+
+def directory_model() -> dict[str, list[str]]:
+    return {
+        "REQUIRED_NOW": list(REQUIRED_NOW),
+        "REQUIRED_LATER": list(REQUIRED_LATER),
+        "NOT_REQUIRED": list(NOT_REQUIRED),
+    }
+
+
+def _recovery_aces(administrator_sid: str, *, flags: int) -> list[AceSpec]:
+    return [
+        AceSpec(SYSTEM_SID, FILE_ALL_ACCESS, flags),
+        AceSpec(administrator_sid, FILE_ALL_ACCESS, flags),
+    ]
+
+
+def build_provisioning_plan(
+    target_root: str | Path,
+    *,
+    service_sid: str,
+    roles: Iterable[str] = REQUIRED_NOW,
+    administrator_sid: str = ADMINISTRATORS_SID,
+    owner_sid: str | None = None,
+    production_binding: bool = False,
+) -> ProvisioningPlan:
+    raw = Path(target_root)
+    if ".." in raw.parts:
+        raise ProvisioningContractError("target root traversal is forbidden")
+    target = Path(os.path.abspath(os.fspath(raw)))
+    if not target.is_absolute() or not target.drive or str(target).startswith("\\\\"):
+        raise ProvisioningContractError("target root must be an absolute local-drive path")
+    planned_roles = _validate_roles(roles)
+    owner = owner_sid or administrator_sid
+    root_aces = _recovery_aces(administrator_sid, flags=0)
+    root_aces.append(AceSpec(service_sid, FILE_GENERIC_EXECUTE, 0))
+    root_policy = SecurityPolicy(owner, tuple(root_aces))
+    policies: dict[str, SecurityPolicy] = {}
+    for role in planned_roles:
+        spec = ROLE_SPECS[role]
+        aces = _recovery_aces(administrator_sid, flags=OBJECT_AND_CONTAINER_INHERIT)
+        if spec.service_access_mask is not None:
+            aces.append(AceSpec(service_sid, spec.service_access_mask))
+        policies[role] = SecurityPolicy(owner, tuple(aces))
+    return ProvisioningPlan(
+        target,
+        planned_roles,
+        service_sid,
+        administrator_sid,
+        root_policy,
+        policies,
+        production_binding,
+    )
+
+
+def _path_exists(path: Path) -> bool:
+    return os.path.lexists(os.fspath(path))
+
+
+def _path_chain(target: Path) -> list[Path]:
+    current = Path(target.anchor)
+    chain = [current]
+    for part in target.parts[1:]:
+        current = current / part
+        chain.append(current)
+    return chain
+
+
+def _preflight(
+    plan: ProvisioningPlan, backend: WindowsSecurityBackend
+) -> tuple[list[str], list[str], list[dict[str, str]], str | None, list[str]]:
+    missing: list[str] = []
+    correct: list[str] = []
+    collisions: list[dict[str, str]] = []
+    errors: list[str] = []
+    reparse: str | None = None
+
+    try:
+        for path in _path_chain(plan.target_root):
+            if _path_exists(path) and backend.is_reparse_point(path):
+                reparse = str(path)
+                raise ProvisioningContractError(f"unsafe reparse path: {path}")
+        if not _path_exists(plan.target_root):
+            raise ProvisioningContractError("target root must already exist")
+        if not backend.is_directory(plan.target_root):
+            raise ProvisioningContractError("target root is not a directory")
+        root_snapshot = backend.inspect_security(plan.target_root)
+        if not root_snapshot.matches(plan.root_policy):
+            raise ProvisioningContractError(
+                "target root owner/DACL does not match the reviewed precondition"
+            )
+        for entry in plan.target_root.iterdir():
+            if entry.name not in ROLE_SPECS:
+                collisions.append(
+                    {"path": str(entry), "reason": "unexpected root entry"}
+                )
+        if collisions:
+            raise ProvisioningContractError("unexpected entries exist under target root")
+        for role in plan.roles:
+            path = plan.target_root / role
+            if not _path_exists(path):
+                missing.append(role)
+                continue
+            if backend.is_reparse_point(path):
+                reparse = str(path)
+                raise ProvisioningContractError(f"role path is a reparse point: {path}")
+            if not backend.is_directory(path):
+                collisions.append({"path": str(path), "reason": "not a directory"})
+                continue
+            snapshot = backend.inspect_security(path)
+            if not snapshot.matches(plan.role_policies[role]):
+                collisions.append(
+                    {"path": str(path), "reason": "security policy mismatch"}
+                )
+                continue
+            correct.append(role)
+        if collisions:
+            raise ProvisioningContractError("one or more role paths are incompatible")
+    except (OSError, ProvisioningContractError) as exc:
+        errors.append(str(exc))
+    return missing, correct, collisions, reparse, errors
+
+
+def provision(
+    plan: ProvisioningPlan,
+    *,
+    dry_run: bool = True,
+    backend: WindowsSecurityBackend | None = None,
+) -> ProvisioningResult:
+    """Inspect or converge approved roles without deleting or weakening state."""
+
+    security = backend or WindowsSecurityBackend()
+    missing, correct, collisions, reparse, errors = _preflight(plan, security)
+    result = ProvisioningResult(
+        overall_status="DRY_RUN" if dry_run else "PENDING",
+        target_root=str(plan.target_root),
+        planned_roles=list(plan.roles),
+        already_correct_roles=correct,
+        collision_information=collisions,
+        reparse_rejection=reparse,
+        security_verification_status="PASS" if not errors else "FAIL",
+        security_changes_required=list(missing),
+        errors=errors,
+        dry_run=dry_run,
+    )
+    if errors:
+        result.overall_status = "FAILED"
+        collision_roles = {
+            Path(item["path"]).name
+            for item in collisions
+            if Path(item["path"]).name in plan.roles
+        }
+        result.failed_role = next(
+            (role for role in plan.roles if role in collision_roles), None
+        )
+        return result
+    if dry_run:
+        return result
+    if not missing:
+        result.overall_status = "ALREADY_CORRECT"
+        result.security_verification_status = "PASS"
+        return result
+
+    for role in plan.roles:
+        if role not in missing:
+            continue
+        path = plan.target_root / role
+        try:
+            # CreateDirectoryW receives the protected DACL in SECURITY_ATTRIBUTES,
+            # so sensitive roles never persist with inherited broad permissions.
+            security.create_secure_directory(path, plan.role_policies[role])
+            result.mutation_count += 1
+            snapshot = security.inspect_security(path)
+            if not snapshot.matches(plan.role_policies[role]):
+                raise SecurityInspectionError(
+                    f"security verification failed immediately after creating {path}"
+                )
+            result.created_roles.append(role)
+        except (OSError, ProvisioningContractError) as exc:
+            result.overall_status = "PARTIAL_FAILURE"
+            result.failed_role = role
+            result.partial_state_status = "PRESERVED_CREATED_ROLES"
+            result.security_verification_status = "FAIL"
+            result.errors.append(str(exc))
+            return result
+
+    result.overall_status = "APPLIED"
+    result.partial_state_status = "NONE"
+    result.security_verification_status = "PASS"
+    result.security_changes_required = []
+    return result
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Dry-run or apply the reviewed HMS QR child-role provisioner."
+    )
+    parser.add_argument("--target-root", required=True)
+    parser.add_argument("--service-account", default=r"HMS-PC\HMSQRService")
+    parser.add_argument("--roles", nargs="+", default=list(REQUIRED_NOW))
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Mutate approved child roles; requires separate production authority.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    backend = WindowsSecurityBackend()
+    service_sid = backend.resolve_account_sid(args.service_account)
+    plan = build_provisioning_plan(
+        args.target_root,
+        service_sid=service_sid,
+        roles=args.roles,
+        production_binding=True,
+    )
+    result = provision(plan, dry_run=not args.apply, backend=backend)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True))
+    return 0 if result.overall_status not in {"FAILED", "PARTIAL_FAILURE"} else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+__all__ = [
+    "ADMINISTRATORS_SID",
+    "BROAD_PRINCIPAL_SIDS",
+    "NOT_REQUIRED",
+    "ProvisioningContractError",
+    "ProvisioningPlan",
+    "ProvisioningResult",
+    "REQUIRED_LATER",
+    "REQUIRED_NOW",
+    "ROLE_SPECS",
+    "SecurityPolicy",
+    "SecuritySnapshot",
+    "WindowsSecurityBackend",
+    "build_provisioning_plan",
+    "directory_model",
+    "main",
+    "provision",
+]
