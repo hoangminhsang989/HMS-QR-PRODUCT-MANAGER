@@ -15,7 +15,8 @@ from dataclasses import asdict, dataclass, field
 import json
 import os
 from pathlib import Path
-from typing import Final, Iterable
+from types import MappingProxyType
+from typing import Final, Iterable, Mapping, NamedTuple
 
 
 SYSTEM_SID: Final = "S-1-5-18"
@@ -138,8 +139,9 @@ class SecuritySnapshot:
         }
 
 
-@dataclass(frozen=True)
-class RoleSpec:
+class RoleSpec(NamedTuple):
+    """Immutable catalog record used as the sole role-policy authority."""
+
     name: str
     classification: str
     purpose: str
@@ -147,7 +149,7 @@ class RoleSpec:
     service_access_mask: int | None
 
 
-ROLE_SPECS: Final = {
+ROLE_SPECS: Final = MappingProxyType({
     "releases": RoleSpec(
         "releases", "REQUIRED_NOW", "immutable certified releases", "APP_INSTALL_ROOT", FILE_READ_EXECUTE_CHILD
     ),
@@ -178,7 +180,9 @@ ROLE_SPECS: Final = {
     "temp": RoleSpec(
         "temp", "NOT_REQUIRED", "scoped transient work, not a top-level persistent role", "SCOPED_TEMPORARY_WORKSPACE", FILE_MODIFY
     ),
-}
+})
+# Keep the public catalog readable while preventing callers from changing the
+# security classifications that are the authority for plan validation.
 
 
 @dataclass(frozen=True)
@@ -188,15 +192,20 @@ class ProvisioningPlan:
     service_sid: str
     administrator_sid: str
     root_policy: SecurityPolicy
-    role_policies: dict[str, SecurityPolicy]
+    role_policies: Mapping[str, SecurityPolicy]
     production_binding: bool = False
+    owner_sid: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
-        if not self.target_root.is_absolute():
-            raise ProvisioningContractError("target root must be absolute")
-        _validate_roles(self.roles)
-        if set(self.role_policies) != set(self.roles):
-            raise ProvisioningContractError("role policy set must match planned roles exactly")
+        target, roles, owner, root_policy, policies = _validate_plan_state(self)
+        # A frozen dataclass does not freeze caller-owned lists or dictionaries.
+        # Take ownership during construction, before the public instance escapes,
+        # and retain only policies freshly derived from ROLE_SPECS.
+        object.__setattr__(self, "target_root", target)
+        object.__setattr__(self, "roles", roles)
+        object.__setattr__(self, "owner_sid", owner)
+        object.__setattr__(self, "root_policy", root_policy)
+        object.__setattr__(self, "role_policies", MappingProxyType(policies))
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -493,6 +502,8 @@ def _validate_roles(roles: Iterable[str]) -> tuple[str, ...]:
     normalized = tuple(roles)
     if not normalized:
         raise ProvisioningContractError("at least one approved role is required")
+    if any(type(role) is not str for role in normalized):
+        raise ProvisioningContractError("roles must be plain strings")
     if len(normalized) != len(set(normalized)):
         raise ProvisioningContractError("duplicate roles are forbidden")
     for role in normalized:
@@ -539,6 +550,140 @@ def _role_security_policy(
     return SecurityPolicy(owner_sid, tuple(aces))
 
 
+def _canonical_target_root(target_root: str | Path) -> Path:
+    """Apply the builder's local-drive/no-UNC/no-traversal target contract."""
+
+    try:
+        raw = Path(target_root)
+    except (TypeError, ValueError) as exc:
+        raise ProvisioningContractError("target root must be a filesystem path") from exc
+    if ".." in raw.parts:
+        raise ProvisioningContractError("target root traversal is forbidden")
+    target = Path(os.path.abspath(os.fspath(raw)))
+    if not target.is_absolute() or not target.drive or str(target).startswith("\\\\"):
+        raise ProvisioningContractError("target root must be an absolute local-drive path")
+    return target
+
+
+def _canonical_sid(value: object, field: str) -> str:
+    if type(value) is not str or not value.startswith("S-1-"):
+        raise ProvisioningContractError(f"{field} must be a SID string")
+    if value in BROAD_PRINCIPAL_SIDS:
+        raise ProvisioningContractError(f"{field} must not be a broad principal")
+    return value
+
+
+def _policy_value(policy: object, field: str) -> tuple[str, bool, tuple[tuple[str, int, int, int], ...]]:
+    """Read exact immutable policy primitives without trusting user equality."""
+
+    if type(policy) is not SecurityPolicy:
+        raise ProvisioningContractError(f"{field} must be an exact SecurityPolicy")
+    owner = _canonical_sid(policy.owner_sid, f"{field} owner")
+    if type(policy.protected) is not bool:
+        raise ProvisioningContractError(f"{field} protected flag must be a bool")
+    if type(policy.aces) is not tuple:
+        raise ProvisioningContractError(f"{field} ACEs must use immutable tuple storage")
+    aces: list[tuple[str, int, int, int]] = []
+    for ace in policy.aces:
+        if type(ace) is not AceSpec:
+            raise ProvisioningContractError(f"{field} must contain exact AceSpec values")
+        sid = _canonical_sid(ace.sid, f"{field} ACE SID")
+        if type(ace.access_mask) is not int or not 0 <= ace.access_mask <= 0xFFFFFFFF:
+            raise ProvisioningContractError(f"{field} ACE access mask is invalid")
+        if type(ace.flags) is not int or ace.flags not in {0, OBJECT_AND_CONTAINER_INHERIT}:
+            raise ProvisioningContractError(f"{field} ACE flags are invalid")
+        if type(ace.ace_type) is not int or ace.ace_type != 0:
+            raise ProvisioningContractError(f"{field} ACE type is invalid")
+        aces.append((sid, ace.access_mask, ace.flags, ace.ace_type))
+    return owner, policy.protected, tuple(aces)
+
+
+def _root_security_policy(
+    *,
+    service_sid: str,
+    administrator_sid: str,
+    owner_sid: str,
+) -> SecurityPolicy:
+    """Derive the target-root policy from the reviewed identity contract."""
+
+    aces = _recovery_aces(administrator_sid, flags=0)
+    aces.append(AceSpec(service_sid, FILE_GENERIC_EXECUTE, 0))
+    return SecurityPolicy(owner_sid, tuple(aces))
+
+
+def _validate_plan_state(
+    plan: ProvisioningPlan,
+    *,
+    require_canonical_storage: bool = False,
+) -> tuple[Path, tuple[str, ...], str, SecurityPolicy, dict[str, SecurityPolicy]]:
+    """Validate a plan solely against the canonical role-policy contract."""
+
+    target = _canonical_target_root(plan.target_root)
+    if not isinstance(plan.role_policies, Mapping):
+        raise ProvisioningContractError("role policies must be a mapping")
+
+    roles = _validate_roles(plan.roles)
+    policies = dict(plan.role_policies)
+    if set(policies) != set(roles):
+        raise ProvisioningContractError("role policy set must match planned roles exactly")
+
+    service_sid = _canonical_sid(plan.service_sid, "service SID")
+    administrator_sid = _canonical_sid(plan.administrator_sid, "administrator SID")
+    owner = administrator_sid if plan.owner_sid is None else _canonical_sid(plan.owner_sid, "owner SID")
+    expected_root_policy = _root_security_policy(
+        service_sid=service_sid,
+        administrator_sid=administrator_sid,
+        owner_sid=owner,
+    )
+    if _policy_value(plan.root_policy, "root policy") != _policy_value(
+        expected_root_policy, "canonical root policy"
+    ):
+        raise ProvisioningContractError("root policy must match the canonical identity contract")
+
+    canonical_policies: dict[str, SecurityPolicy] = {}
+    for role in roles:
+        expected_policy = _role_security_policy(
+            role,
+            service_sid=service_sid,
+            administrator_sid=administrator_sid,
+            owner_sid=owner,
+        )
+        if _policy_value(policies[role], f"role policy for '{role}'") != _policy_value(
+            expected_policy, f"canonical role policy for '{role}'"
+        ):
+            raise ProvisioningContractError(
+                f"role policy for '{role}' must match ROLE_SPECS and the canonical identity contract"
+            )
+        canonical_policies[role] = expected_policy
+
+    if require_canonical_storage:
+        if not isinstance(plan.roles, tuple) or plan.roles != roles:
+            raise ProvisioningContractError("plan roles must use canonical immutable storage")
+        if not isinstance(plan.role_policies, MappingProxyType):
+            raise ProvisioningContractError(
+                "plan role policies must use read-only canonical storage"
+            )
+    return target, roles, owner, expected_root_policy, canonical_policies
+
+
+def _effective_plan_at_mutation_boundary(plan: ProvisioningPlan) -> ProvisioningPlan:
+    """Revalidate and snapshot the effective plan before namespace inspection."""
+
+    target, roles, owner, root_policy, policies = _validate_plan_state(
+        plan, require_canonical_storage=True
+    )
+    return ProvisioningPlan(
+        target_root=target,
+        roles=roles,
+        service_sid=plan.service_sid,
+        administrator_sid=plan.administrator_sid,
+        root_policy=root_policy,
+        role_policies=policies,
+        owner_sid=owner,
+        production_binding=plan.production_binding,
+    )
+
+
 def build_provisioning_plan(
     target_root: str | Path,
     *,
@@ -548,17 +693,14 @@ def build_provisioning_plan(
     owner_sid: str | None = None,
     production_binding: bool = False,
 ) -> ProvisioningPlan:
-    raw = Path(target_root)
-    if ".." in raw.parts:
-        raise ProvisioningContractError("target root traversal is forbidden")
-    target = Path(os.path.abspath(os.fspath(raw)))
-    if not target.is_absolute() or not target.drive or str(target).startswith("\\\\"):
-        raise ProvisioningContractError("target root must be an absolute local-drive path")
+    target = _canonical_target_root(target_root)
     planned_roles = _validate_roles(roles)
     owner = owner_sid or administrator_sid
-    root_aces = _recovery_aces(administrator_sid, flags=0)
-    root_aces.append(AceSpec(service_sid, FILE_GENERIC_EXECUTE, 0))
-    root_policy = SecurityPolicy(owner, tuple(root_aces))
+    root_policy = _root_security_policy(
+        service_sid=service_sid,
+        administrator_sid=administrator_sid,
+        owner_sid=owner,
+    )
     policies: dict[str, SecurityPolicy] = {}
     for role in planned_roles:
         policies[role] = _role_security_policy(
@@ -568,13 +710,14 @@ def build_provisioning_plan(
             owner_sid=owner,
         )
     return ProvisioningPlan(
-        target,
-        planned_roles,
-        service_sid,
-        administrator_sid,
-        root_policy,
-        policies,
-        production_binding,
+        target_root=target,
+        roles=planned_roles,
+        service_sid=service_sid,
+        administrator_sid=administrator_sid,
+        root_policy=root_policy,
+        role_policies=policies,
+        owner_sid=owner,
+        production_binding=production_binding,
     )
 
 
@@ -760,6 +903,19 @@ def provision(
 ) -> ProvisioningResult:
     """Inspect or converge approved roles without deleting or weakening state."""
 
+    try:
+        effective_plan = _effective_plan_at_mutation_boundary(plan)
+    except (AttributeError, ProvisioningContractError, TypeError) as exc:
+        return ProvisioningResult(
+            overall_status="FAILED",
+            target_root=str(getattr(plan, "target_root", "")),
+            planned_roles=[],
+            security_verification_status="FAIL",
+            root_namespace_status="NOT_RUN",
+            errors=[str(exc)],
+            dry_run=dry_run,
+        )
+
     security = backend or WindowsSecurityBackend()
     (
         missing,
@@ -773,11 +929,11 @@ def provision(
         not_allowed_present,
         unknown_entries,
         incompatible_entries,
-    ) = _preflight(plan, security)
+    ) = _preflight(effective_plan, security)
     result = ProvisioningResult(
         overall_status="DRY_RUN" if dry_run else "PENDING",
-        target_root=str(plan.target_root),
-        planned_roles=list(plan.roles),
+        target_root=str(effective_plan.target_root),
+        planned_roles=list(effective_plan.roles),
         already_correct_roles=correct,
         collision_information=collisions,
         reparse_rejection=reparse,
@@ -798,10 +954,10 @@ def provision(
         collision_roles = {
             Path(item["path"]).name
             for item in collisions
-            if Path(item["path"]).name in plan.roles
+            if Path(item["path"]).name in effective_plan.roles
         }
         result.failed_role = next(
-            (role for role in plan.roles if role in collision_roles), None
+            (role for role in effective_plan.roles if role in collision_roles), None
         )
         return result
     if dry_run:
@@ -811,17 +967,17 @@ def provision(
         result.security_verification_status = "PASS"
         return result
 
-    for role in plan.roles:
+    for role in effective_plan.roles:
         if role not in missing:
             continue
-        path = plan.target_root / role
+        path = effective_plan.target_root / role
         try:
             # CreateDirectoryW receives the protected DACL in SECURITY_ATTRIBUTES,
             # so sensitive roles never persist with inherited broad permissions.
-            security.create_secure_directory(path, plan.role_policies[role])
+            security.create_secure_directory(path, effective_plan.role_policies[role])
             result.mutation_count += 1
             snapshot = security.inspect_security(path)
-            if not snapshot.matches(plan.role_policies[role]):
+            if not snapshot.matches(effective_plan.role_policies[role]):
                 raise SecurityInspectionError(
                     f"security verification failed immediately after creating {path}"
                 )

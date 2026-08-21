@@ -2,21 +2,27 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 import subprocess
+from types import MappingProxyType
 
 import pytest
 
 import packages.deployment.provisioning as provisioning_module
 from packages.deployment.provisioning import (
+    AceSpec,
     BROAD_PRINCIPAL_SIDS,
     FILE_ALL_ACCESS,
+    FILE_GENERIC_READ,
     FILE_READ_EXECUTE_CHILD,
     NOT_REQUIRED,
     ProvisioningContractError,
+    ProvisioningPlan,
     REQUIRED_LATER,
     REQUIRED_NOW,
     ROLE_SPECS,
+    SecurityPolicy,
     WindowsSecurityBackend,
     build_provisioning_plan,
     directory_model,
@@ -51,6 +57,63 @@ def _plan(tmp_path: Path, security_context, *, roles=REQUIRED_NOW):
     return backend, plan
 
 
+def _caller_owned_plan(tmp_path: Path, security_context):
+    _, current_sid, service_sid = security_context
+    source = build_provisioning_plan(
+        tmp_path / "provisioning-root",
+        service_sid=service_sid,
+        administrator_sid=current_sid,
+        owner_sid=current_sid,
+    )
+    roles = list(source.roles)
+    policies = dict(source.role_policies)
+    plan = ProvisioningPlan(
+        target_root=source.target_root,
+        roles=roles,
+        service_sid=source.service_sid,
+        administrator_sid=source.administrator_sid,
+        root_policy=source.root_policy,
+        role_policies=policies,
+    )
+    return source, plan, roles, policies
+
+
+class _NoMutationBackend:
+    def __init__(self):
+        self.create_calls: list[object] = []
+
+    def create_secure_directory(self, *args, **kwargs):
+        self.create_calls.append((args, kwargs))
+        raise AssertionError("invalid plans must fail before CreateDirectoryW")
+
+    def __getattr__(self, name):
+        raise AssertionError(f"invalid plans must fail before backend.{name}")
+
+
+def _assert_boundary_rejection(plan: ProvisioningPlan):
+    backend = _NoMutationBackend()
+    result = provision(plan, dry_run=False, backend=backend)
+    assert result.overall_status == "FAILED"
+    assert result.mutation_count == 0
+    assert result.root_namespace_status == "NOT_RUN"
+    assert backend.create_calls == []
+    return result
+
+
+class _HostileSecurityPolicy(SecurityPolicy):
+    """A policy subclass that attempts to bypass normal dataclass equality."""
+
+    def __eq__(self, other):
+        return True
+
+
+def _hostile_policy(owner_sid: str) -> SecurityPolicy:
+    return _HostileSecurityPolicy(
+        owner_sid=owner_sid,
+        aces=(AceSpec("S-1-5-21-999-888-777-666", FILE_ALL_ACCESS),),
+    )
+
+
 def test_directory_model_is_minimum_product_first_set():
     assert directory_model() == {
         "REQUIRED_NOW": ["releases", "runtime", "staging"],
@@ -70,6 +133,314 @@ def test_directory_model_is_minimum_product_first_set():
         "ISOLATED_PRODUCTION_PYTHON_RUNTIME",
         "DEPLOYMENT_STAGING_ROOT",
     }
+
+
+def test_role_specs_is_read_only_and_deferred_classification_is_preserved(
+    tmp_path, security_context
+):
+    with pytest.raises(TypeError):
+        ROLE_SPECS["data"] = ROLE_SPECS["releases"]
+
+    assert ROLE_SPECS["data"].classification == "REQUIRED_LATER"
+    _, _, service_sid = security_context
+    for role in REQUIRED_LATER:
+        with pytest.raises(ProvisioningContractError, match="REQUIRED_LATER"):
+            build_provisioning_plan(tmp_path / role, service_sid=service_sid, roles=(role,))
+
+
+@pytest.mark.parametrize("role", tuple(ROLE_SPECS))
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("name", "forged-role"),
+        ("classification", "REQUIRED_NOW"),
+        ("purpose", "forged-purpose"),
+        ("authority_root", "FORGED_ROOT"),
+        ("service_access_mask", FILE_GENERIC_READ),
+    ],
+)
+def test_role_specs_records_reject_object_setattr_for_every_field(
+    role, field, replacement
+):
+    spec = ROLE_SPECS[role]
+    original = getattr(spec, field)
+
+    with pytest.raises(AttributeError):
+        object.__setattr__(spec, field, replacement)
+
+    assert getattr(spec, field) == original
+
+
+def test_role_spec_tampering_cannot_admit_deferred_roles_or_weaken_acl_boundary(
+    tmp_path, security_context
+):
+    data_spec = ROLE_SPECS["data"]
+    release_spec = ROLE_SPECS["releases"]
+    with pytest.raises(AttributeError):
+        object.__setattr__(data_spec, "classification", "REQUIRED_NOW")
+    with pytest.raises(AttributeError):
+        object.__setattr__(release_spec, "service_access_mask", FILE_GENERIC_READ)
+
+    _, _, service_sid = security_context
+    with pytest.raises(ProvisioningContractError, match="REQUIRED_LATER"):
+        build_provisioning_plan(tmp_path / "data-root", service_sid=service_sid, roles=("data",))
+
+    source, plan, roles, policies = _caller_owned_plan(tmp_path, security_context)
+    weakened_aces = (*source.role_policies["releases"].aces[:2], AceSpec(service_sid, FILE_GENERIC_READ))
+    policies["releases"] = SecurityPolicy(source.root_policy.owner_sid, weakened_aces)
+    with pytest.raises(ProvisioningContractError, match="canonical identity contract"):
+        ProvisioningPlan(
+            target_root=source.target_root,
+            roles=roles,
+            service_sid=source.service_sid,
+            administrator_sid=source.administrator_sid,
+            root_policy=source.root_policy,
+            role_policies=policies,
+            owner_sid=source.owner_sid,
+        )
+
+    object.__setattr__(plan, "role_policies", MappingProxyType(policies))
+    result = _assert_boundary_rejection(plan)
+    assert "canonical identity contract" in result.errors[0]
+
+    deferred_plan = build_provisioning_plan(
+        tmp_path / "deferred-boundary-root", service_sid=service_sid
+    )
+    deferred_policies = dict(deferred_plan.role_policies)
+    deferred_policies["data"] = deferred_plan.role_policies["releases"]
+    object.__setattr__(deferred_plan, "roles", deferred_plan.roles + ("data",))
+    object.__setattr__(deferred_plan, "role_policies", MappingProxyType(deferred_policies))
+    deferred_result = _assert_boundary_rejection(deferred_plan)
+    assert "REQUIRED_LATER" in deferred_result.errors[0]
+
+
+def test_plan_owns_immutable_roles_after_caller_list_mutation(tmp_path, security_context):
+    _, plan, roles, _ = _caller_owned_plan(tmp_path, security_context)
+
+    roles.append("data")
+
+    assert plan.roles == REQUIRED_NOW
+    assert "data" not in plan.roles
+
+
+def test_plan_owns_read_only_policies_after_caller_dict_mutation(
+    tmp_path, security_context
+):
+    source, plan, _, policies = _caller_owned_plan(tmp_path, security_context)
+
+    policies["releases"] = source.role_policies["staging"]
+    policies.pop("runtime")
+
+    assert isinstance(plan.role_policies, MappingProxyType)
+    assert plan.role_policies["releases"] == source.role_policies["releases"]
+    assert set(plan.role_policies) == set(REQUIRED_NOW)
+
+
+def test_plan_retains_only_new_canonical_nested_policy_values(
+    tmp_path, security_context
+):
+    source, plan, _, policies = _caller_owned_plan(tmp_path, security_context)
+    caller_root = source.root_policy
+    caller_policy = policies["releases"]
+
+    assert plan.root_policy is not caller_root
+    assert plan.role_policies["releases"] is not caller_policy
+    object.__setattr__(caller_root, "aces", ())
+    object.__setattr__(caller_policy, "aces", ())
+
+    assert len(plan.root_policy.aces) == 3
+    assert len(plan.role_policies["releases"].aces) == 3
+
+
+def test_normal_public_plan_container_mutation_is_rejected(tmp_path, security_context):
+    _, plan, _, _ = _caller_owned_plan(tmp_path, security_context)
+
+    with pytest.raises(AttributeError):
+        plan.roles.append("data")
+    with pytest.raises(TypeError):
+        plan.role_policies["data"] = plan.role_policies["releases"]
+    with pytest.raises(FrozenInstanceError):
+        plan.roles = ("releases",)
+
+
+def test_constructor_rejects_forged_or_unexpected_role_policy(
+    tmp_path, security_context
+):
+    source, _, roles, policies = _caller_owned_plan(tmp_path, security_context)
+    policies["releases"] = source.role_policies["staging"]
+
+    with pytest.raises(ProvisioningContractError, match="canonical identity contract"):
+        ProvisioningPlan(
+            target_root=source.target_root,
+            roles=roles,
+            service_sid=source.service_sid,
+            administrator_sid=source.administrator_sid,
+            root_policy=source.root_policy,
+            role_policies=policies,
+        )
+
+    policies = dict(source.role_policies)
+    policies["data"] = source.role_policies["releases"]
+    with pytest.raises(ProvisioningContractError, match="match planned roles exactly"):
+        ProvisioningPlan(
+            target_root=source.target_root,
+            roles=roles,
+            service_sid=source.service_sid,
+            administrator_sid=source.administrator_sid,
+            root_policy=source.root_policy,
+            role_policies=policies,
+        )
+
+
+def test_hostile_role_policy_subclass_is_rejected_by_constructor_and_boundary(
+    tmp_path, security_context
+):
+    source, plan, roles, policies = _caller_owned_plan(tmp_path, security_context)
+    hostile = _hostile_policy(source.root_policy.owner_sid)
+    policies["releases"] = hostile
+
+    with pytest.raises(ProvisioningContractError, match="exact SecurityPolicy"):
+        ProvisioningPlan(
+            target_root=source.target_root,
+            roles=roles,
+            service_sid=source.service_sid,
+            administrator_sid=source.administrator_sid,
+            root_policy=source.root_policy,
+            role_policies=policies,
+            owner_sid=source.owner_sid,
+        )
+
+    object.__setattr__(plan, "role_policies", MappingProxyType(policies))
+    result = _assert_boundary_rejection(plan)
+    assert "exact SecurityPolicy" in result.errors[0]
+
+
+def test_hostile_root_policy_subclass_is_rejected_by_constructor_and_boundary(
+    tmp_path, security_context
+):
+    source, plan, roles, policies = _caller_owned_plan(tmp_path, security_context)
+    hostile = _hostile_policy(source.root_policy.owner_sid)
+
+    with pytest.raises(ProvisioningContractError, match="exact SecurityPolicy"):
+        ProvisioningPlan(
+            target_root=source.target_root,
+            roles=roles,
+            service_sid=source.service_sid,
+            administrator_sid=source.administrator_sid,
+            root_policy=hostile,
+            role_policies=policies,
+            owner_sid=source.owner_sid,
+        )
+
+    object.__setattr__(plan, "root_policy", hostile)
+    result = _assert_boundary_rejection(plan)
+    assert "exact SecurityPolicy" in result.errors[0]
+
+
+def test_direct_plan_rejects_root_owner_not_bound_by_constructor_contract(
+    tmp_path, security_context
+):
+    source, _, roles, policies = _caller_owned_plan(tmp_path, security_context)
+    unbound_root = SecurityPolicy(
+        owner_sid="S-1-5-21-999-888-777-666",
+        aces=source.root_policy.aces,
+    )
+
+    with pytest.raises(ProvisioningContractError, match="canonical identity contract"):
+        ProvisioningPlan(
+            target_root=source.target_root,
+            roles=roles,
+            service_sid=source.service_sid,
+            administrator_sid=source.administrator_sid,
+            root_policy=unbound_root,
+            role_policies=policies,
+        )
+
+
+@pytest.mark.parametrize(
+    "target",
+    [Path(r"\\server\share\hms-qr"), Path(r"F:\\safe\\..\\escaped")],
+    ids=["unc", "traversal"],
+)
+def test_direct_plan_target_contract_rejects_constructor_and_boundary(
+    tmp_path, security_context, target
+):
+    source, plan, roles, policies = _caller_owned_plan(tmp_path, security_context)
+
+    with pytest.raises(ProvisioningContractError):
+        ProvisioningPlan(
+            target_root=target,
+            roles=roles,
+            service_sid=source.service_sid,
+            administrator_sid=source.administrator_sid,
+            root_policy=source.root_policy,
+            role_policies=policies,
+            owner_sid=source.owner_sid,
+        )
+
+    object.__setattr__(plan, "target_root", target)
+    result = _assert_boundary_rejection(plan)
+    assert "target root" in result.errors[0]
+
+
+@pytest.mark.parametrize("role", REQUIRED_LATER)
+def test_tampered_deferred_role_is_rejected_at_provision_boundary(
+    tmp_path, security_context, role
+):
+    _, plan, _, _ = _caller_owned_plan(tmp_path, security_context)
+    policies = dict(plan.role_policies)
+    policies[role] = plan.role_policies["releases"]
+    object.__setattr__(plan, "roles", plan.roles + (role,))
+    object.__setattr__(plan, "role_policies", MappingProxyType(policies))
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "REQUIRED_LATER" in result.errors[0]
+
+
+@pytest.mark.parametrize(
+    ("role", "classification"),
+    [("temp", "NOT_REQUIRED"), ("unknown-role", "UNKNOWN")],
+)
+def test_tampered_temp_or_unknown_role_is_rejected_at_provision_boundary(
+    tmp_path, security_context, role, classification
+):
+    _, plan, _, _ = _caller_owned_plan(tmp_path, security_context)
+    policies = dict(plan.role_policies)
+    policies[role] = plan.role_policies["releases"]
+    object.__setattr__(plan, "roles", plan.roles + (role,))
+    object.__setattr__(plan, "role_policies", MappingProxyType(policies))
+
+    result = _assert_boundary_rejection(plan)
+
+    assert classification in result.errors[0]
+
+
+def test_tampered_mixed_plan_rejects_before_any_requested_role_mutation(
+    tmp_path, security_context
+):
+    _, plan, _, _ = _caller_owned_plan(tmp_path, security_context)
+    policies = dict(plan.role_policies)
+    policies["data"] = plan.role_policies["releases"]
+    object.__setattr__(plan, "roles", ("releases", "data"))
+    object.__setattr__(plan, "role_policies", MappingProxyType(policies))
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "REQUIRED_LATER" in result.errors[0]
+
+
+def test_tampered_forged_policy_is_rejected_at_provision_boundary(
+    tmp_path, security_context
+):
+    _, plan, _, _ = _caller_owned_plan(tmp_path, security_context)
+    policies = dict(plan.role_policies)
+    policies["releases"] = policies["staging"]
+    object.__setattr__(plan, "role_policies", MappingProxyType(policies))
+
+    result = _assert_boundary_rejection(plan)
+
+    assert "canonical identity contract" in result.errors[0]
 
 
 def test_clean_first_run_and_second_run_idempotence(tmp_path, security_context):
