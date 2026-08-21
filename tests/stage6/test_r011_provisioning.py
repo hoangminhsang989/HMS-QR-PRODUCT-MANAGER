@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+import packages.deployment.provisioning as provisioning_module
 from packages.deployment.provisioning import (
     BROAD_PRINCIPAL_SIDS,
     FILE_ALL_ACCESS,
@@ -20,6 +21,7 @@ from packages.deployment.provisioning import (
     build_provisioning_plan,
     directory_model,
     provision,
+    _role_security_policy,
 )
 
 
@@ -182,14 +184,116 @@ def test_partial_failure_is_preserved_and_rerun_converges(tmp_path, security_con
         ("..",),
         ("nested/role",),
         (r"C:\absolute",),
-        ("unknown",),
-        ("temp",),
     ],
 )
-def test_invalid_or_unapproved_child_role_is_rejected(tmp_path, security_context, roles):
+def test_invalid_child_role_is_rejected(tmp_path, security_context, roles):
     _, _, service_sid = security_context
     with pytest.raises(ProvisioningContractError):
         build_provisioning_plan(tmp_path / "root", service_sid=service_sid, roles=roles)
+
+
+@pytest.mark.parametrize("role", REQUIRED_LATER)
+def test_deferred_public_role_request_is_rejected_with_classification(
+    tmp_path, security_context, role
+):
+    _, _, service_sid = security_context
+
+    with pytest.raises(ProvisioningContractError) as exc_info:
+        build_provisioning_plan(tmp_path / "root", service_sid=service_sid, roles=(role,))
+
+    assert str(exc_info.value) == (
+        f"role '{role}' has classification REQUIRED_LATER; only REQUIRED_NOW roles "
+        "may be requested in the current provisioning stage"
+    )
+
+
+@pytest.mark.parametrize(
+    ("roles", "role", "classification"),
+    [
+        (("releases", "data"), "data", "REQUIRED_LATER"),
+        (("runtime", "secrets"), "secrets", "REQUIRED_LATER"),
+        (("staging", "rollback"), "rollback", "REQUIRED_LATER"),
+        (("temp",), "temp", "NOT_REQUIRED"),
+        (("unknown-role",), "unknown-role", "UNKNOWN"),
+    ],
+)
+def test_non_current_public_role_request_fails_closed(
+    tmp_path, security_context, roles, role, classification
+):
+    _, _, service_sid = security_context
+
+    with pytest.raises(ProvisioningContractError) as exc_info:
+        build_provisioning_plan(tmp_path / "root", service_sid=service_sid, roles=roles)
+
+    assert str(exc_info.value) == (
+        f"role '{role}' has classification {classification}; only REQUIRED_NOW roles "
+        "may be requested in the current provisioning stage"
+    )
+
+
+@pytest.mark.parametrize("role", REQUIRED_LATER)
+def test_cli_deferred_public_role_request_is_rejected_before_provisioning(
+    tmp_path, security_context, monkeypatch, role
+):
+    _, _, service_sid = security_context
+    create_calls: list[object] = []
+
+    class NoMutationBackend:
+        def resolve_account_sid(self, account):
+            return service_sid
+
+        def create_secure_directory(self, *args, **kwargs):
+            create_calls.append((args, kwargs))
+            raise AssertionError("CLI must reject the role before any directory creation")
+
+    monkeypatch.setattr(provisioning_module, "WindowsSecurityBackend", NoMutationBackend)
+
+    with pytest.raises(ProvisioningContractError) as exc_info:
+        provisioning_module.main(
+            ["--target-root", str(tmp_path / "root"), "--roles", role, "--apply"]
+        )
+
+    assert str(exc_info.value) == (
+        f"role '{role}' has classification REQUIRED_LATER; only REQUIRED_NOW roles "
+        "may be requested in the current provisioning stage"
+    )
+    assert create_calls == []
+
+
+@pytest.mark.parametrize(
+    ("roles", "role", "classification"),
+    [
+        (("releases", "data"), "data", "REQUIRED_LATER"),
+        (("temp",), "temp", "NOT_REQUIRED"),
+        (("unknown-role",), "unknown-role", "UNKNOWN"),
+    ],
+)
+def test_cli_non_current_role_request_fails_closed_before_provisioning(
+    tmp_path, security_context, monkeypatch, roles, role, classification
+):
+    _, _, service_sid = security_context
+    create_calls: list[object] = []
+
+    class NoMutationBackend:
+        def resolve_account_sid(self, account):
+            return service_sid
+
+        def create_secure_directory(self, *args, **kwargs):
+            create_calls.append((args, kwargs))
+            raise AssertionError("CLI must reject the role before any directory creation")
+
+    monkeypatch.setattr(provisioning_module, "WindowsSecurityBackend", NoMutationBackend)
+
+    with pytest.raises(ProvisioningContractError) as exc_info:
+        provisioning_module.main(
+            ["--target-root", str(tmp_path / "root"), "--roles", *roles, "--apply"]
+        )
+
+    assert str(exc_info.value) == (
+        f"role '{role}' has classification {classification}; only REQUIRED_NOW roles "
+        "may be requested in the current provisioning stage"
+    )
+    assert create_calls == []
 
 
 def test_dry_run_reports_plan_and_performs_zero_mutation(tmp_path, security_context):
@@ -205,6 +309,213 @@ def test_dry_run_reports_plan_and_performs_zero_mutation(tmp_path, security_cont
     serialized = result.to_dict()
     assert serialized["planned_role_count"] == 3
     assert json.dumps(serialized, sort_keys=True)
+
+
+def test_namespace_preflight_reports_absent_deferred_roles(tmp_path, security_context):
+    backend, plan = _plan(tmp_path, security_context)
+
+    result = provision(plan, dry_run=True, backend=backend)
+
+    assert result.root_namespace_status == "PASS"
+    assert result.deferred_roles_present == []
+    assert result.deferred_roles_absent == list(REQUIRED_LATER)
+    assert {
+        (entry["classification"], entry["status"])
+        for entry in result.root_entries_inspected
+    } == {("REQUESTED_ROLE", "PLANNED_CREATE")}
+
+
+def test_namespace_enumeration_failure_does_not_claim_deferred_absence(
+    tmp_path, security_context, monkeypatch
+):
+    backend, plan = _plan(tmp_path, security_context)
+    original_iterdir = Path.iterdir
+
+    def fail_target_enumeration(path):
+        if path == plan.target_root:
+            raise PermissionError("simulated namespace enumeration denial")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", fail_target_enumeration)
+
+    result = provision(plan, dry_run=True, backend=backend)
+
+    assert result.overall_status == "FAILED"
+    assert result.root_namespace_status == "FAIL"
+    assert result.deferred_roles_absent == []
+    assert result.deferred_roles_present == []
+    assert result.root_entries_inspected == []
+    assert result.mutation_count == 0
+
+
+def test_exact_deferred_role_is_accepted_from_authoritative_role_policy(
+    tmp_path, security_context
+):
+    backend, plan = _plan(tmp_path, security_context)
+    deferred_policy = _role_security_policy(
+        "data",
+        service_sid=plan.service_sid,
+        administrator_sid=plan.administrator_sid,
+        owner_sid=plan.root_policy.owner_sid,
+    )
+    deferred = plan.target_root / "data"
+    backend.create_secure_directory(deferred, deferred_policy)
+
+    result = provision(plan, dry_run=True, backend=backend)
+
+    assert result.overall_status == "DRY_RUN"
+    assert result.root_namespace_status == "PASS"
+    assert result.deferred_roles_present == ["data"]
+    assert "data" not in result.deferred_roles_absent
+    assert {
+        "path": str(deferred),
+        "classification": "DEFERRED_ROLE",
+        "status": "DEFERRED_PRESENT_EXACT",
+    } in result.root_entries_inspected
+
+
+def test_deferred_file_collision_blocks_first_requested_mutation(tmp_path, security_context):
+    backend, plan = _plan(tmp_path, security_context)
+    deferred = plan.target_root / "data"
+    deferred.write_text("do not replace", encoding="utf-8")
+
+    result = provision(plan, dry_run=False, backend=backend)
+
+    assert result.overall_status == "FAILED"
+    assert result.root_namespace_status == "FAIL"
+    assert result.mutation_count == 0
+    assert not (plan.target_root / "releases").exists()
+    assert result.incompatible_root_entries == ["data"]
+    assert result.collision_information == [
+        {"path": str(deferred), "reason": "not a directory"}
+    ]
+    assert deferred.read_text(encoding="utf-8") == "do not replace"
+
+
+def test_deferred_junction_is_rejected_before_any_requested_mutation(
+    tmp_path, security_context
+):
+    backend, plan = _plan(tmp_path, security_context)
+    target = tmp_path / "deferred-target"
+    target.mkdir()
+    deferred = plan.target_root / "logs"
+    completed = subprocess.run(
+        ["cmd", "/d", "/c", "mklink", "/J", str(deferred), str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    try:
+        result = provision(plan, dry_run=False, backend=backend)
+        assert result.overall_status == "FAILED"
+        assert result.reparse_rejection == str(deferred)
+        assert result.mutation_count == 0
+        assert not (plan.target_root / "releases").exists()
+        assert result.incompatible_root_entries == ["logs"]
+    finally:
+        deferred.rmdir()
+
+
+def test_deferred_security_mismatch_fails_closed(tmp_path, security_context):
+    backend, plan = _plan(tmp_path, security_context)
+    deferred = plan.target_root / "data"
+    backend.create_secure_directory(deferred, plan.role_policies["releases"])
+
+    result = provision(plan, dry_run=True, backend=backend)
+
+    assert result.overall_status == "FAILED"
+    assert result.root_namespace_status == "FAIL"
+    assert result.mutation_count == 0
+    assert result.incompatible_root_entries == ["data"]
+    assert result.collision_information == [
+        {"path": str(deferred), "reason": "security policy mismatch"}
+    ]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        OSError("simulated requested-role inspection failure"),
+        ProvisioningContractError("simulated hostile ACL contract failure"),
+    ],
+    ids=["os-error", "acl-contract-error"],
+)
+def test_requested_inspection_failure_keeps_deferred_entry_classified(
+    tmp_path, security_context, failure
+):
+    backend, plan = _plan(tmp_path, security_context)
+    requested = plan.target_root / "releases"
+    backend.create_secure_directory(requested, plan.role_policies["releases"])
+    deferred_policy = _role_security_policy(
+        "data",
+        service_sid=plan.service_sid,
+        administrator_sid=plan.administrator_sid,
+        owner_sid=plan.root_policy.owner_sid,
+    )
+    deferred = plan.target_root / "data"
+    backend.create_secure_directory(deferred, deferred_policy)
+
+    class FailRequestedInspection(WindowsSecurityBackend):
+        def inspect_security(self, path):
+            if path == requested:
+                raise failure
+            return super().inspect_security(path)
+
+    result = provision(plan, dry_run=False, backend=FailRequestedInspection())
+
+    assert result.overall_status == "FAILED"
+    assert result.mutation_count == 0
+    assert result.incompatible_root_entries == ["releases"]
+    assert "data" in result.deferred_roles_present
+    assert "data" not in result.deferred_roles_absent
+    assert {
+        "path": str(deferred),
+        "classification": "DEFERRED_ROLE",
+        "status": "DEFERRED_PRESENT_EXACT",
+    } in result.root_entries_inspected
+
+
+@pytest.mark.parametrize(
+    ("name", "classification", "status", "reason"),
+    [
+        ("temp", "NOT_ALLOWED_ROLE", "NOT_ALLOWED_ROLE_PRESENT", "not allowed root role"),
+        ("unexpected", "UNKNOWN_ENTRY", "UNKNOWN_ENTRY_PRESENT", "unexpected root entry"),
+    ],
+)
+def test_unapproved_or_unknown_root_entry_fails_closed(
+    tmp_path, security_context, name, classification, status, reason
+):
+    backend, plan = _plan(tmp_path, security_context)
+    entry = plan.target_root / name
+    entry.mkdir()
+
+    result = provision(plan, dry_run=False, backend=backend)
+
+    assert result.overall_status == "FAILED"
+    assert result.root_namespace_status == "FAIL"
+    assert result.mutation_count == 0
+    assert not (plan.target_root / "releases").exists()
+    assert result.collision_information == [{"path": str(entry), "reason": reason}]
+    assert {
+        "path": str(entry),
+        "classification": classification,
+        "status": status,
+    } in result.root_entries_inspected
+
+
+def test_dry_run_and_apply_share_the_same_namespace_preflight(tmp_path, security_context):
+    backend, plan = _plan(tmp_path, security_context)
+    (plan.target_root / "temp").mkdir()
+
+    dry_run = provision(plan, dry_run=True, backend=backend)
+    apply = provision(plan, dry_run=False, backend=backend)
+
+    assert dry_run.overall_status == apply.overall_status == "FAILED"
+    assert dry_run.root_namespace_status == apply.root_namespace_status == "FAIL"
+    assert dry_run.root_entries_inspected == apply.root_entries_inspected
+    assert dry_run.collision_information == apply.collision_information
+    assert dry_run.mutation_count == apply.mutation_count == 0
 
 
 def test_unexpected_root_security_fails_closed(tmp_path, security_context):

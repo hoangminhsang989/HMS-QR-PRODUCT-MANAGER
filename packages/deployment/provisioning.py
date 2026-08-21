@@ -237,6 +237,13 @@ class ProvisioningResult:
     partial_state_status: str = "NONE"
     mutation_count: int = 0
     security_changes_required: list[str] = field(default_factory=list)
+    root_namespace_status: str = "NOT_RUN"
+    root_entries_inspected: list[dict[str, str]] = field(default_factory=list)
+    deferred_roles_present: list[str] = field(default_factory=list)
+    deferred_roles_absent: list[str] = field(default_factory=list)
+    not_allowed_roles_present: list[str] = field(default_factory=list)
+    unknown_root_entries: list[str] = field(default_factory=list)
+    incompatible_root_entries: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     dry_run: bool = False
 
@@ -489,12 +496,15 @@ def _validate_roles(roles: Iterable[str]) -> tuple[str, ...]:
     if len(normalized) != len(set(normalized)):
         raise ProvisioningContractError("duplicate roles are forbidden")
     for role in normalized:
-        if role not in ROLE_SPECS:
-            raise ProvisioningContractError(f"unexpected role name: {role}")
+        spec = ROLE_SPECS.get(role)
+        classification = spec.classification if spec is not None else "UNKNOWN"
+        if classification != "REQUIRED_NOW":
+            raise ProvisioningContractError(
+                f"role '{role}' has classification {classification}; only REQUIRED_NOW roles "
+                "may be requested in the current provisioning stage"
+            )
         if Path(role).name != role or any(token in role for token in ("/", "\\", "..", ":")):
             raise ProvisioningContractError(f"role is not a direct child name: {role}")
-        if ROLE_SPECS[role].classification == "NOT_REQUIRED":
-            raise ProvisioningContractError(f"role is not approved for provisioning: {role}")
     return normalized
 
 
@@ -511,6 +521,22 @@ def _recovery_aces(administrator_sid: str, *, flags: int) -> list[AceSpec]:
         AceSpec(SYSTEM_SID, FILE_ALL_ACCESS, flags),
         AceSpec(administrator_sid, FILE_ALL_ACCESS, flags),
     ]
+
+
+def _role_security_policy(
+    role: str,
+    *,
+    service_sid: str,
+    administrator_sid: str,
+    owner_sid: str,
+) -> SecurityPolicy:
+    """Derive a role's exact policy from the single ROLE_SPECS contract."""
+
+    spec = ROLE_SPECS[role]
+    aces = _recovery_aces(administrator_sid, flags=OBJECT_AND_CONTAINER_INHERIT)
+    if spec.service_access_mask is not None:
+        aces.append(AceSpec(service_sid, spec.service_access_mask))
+    return SecurityPolicy(owner_sid, tuple(aces))
 
 
 def build_provisioning_plan(
@@ -535,11 +561,12 @@ def build_provisioning_plan(
     root_policy = SecurityPolicy(owner, tuple(root_aces))
     policies: dict[str, SecurityPolicy] = {}
     for role in planned_roles:
-        spec = ROLE_SPECS[role]
-        aces = _recovery_aces(administrator_sid, flags=OBJECT_AND_CONTAINER_INHERIT)
-        if spec.service_access_mask is not None:
-            aces.append(AceSpec(service_sid, spec.service_access_mask))
-        policies[role] = SecurityPolicy(owner, tuple(aces))
+        policies[role] = _role_security_policy(
+            role,
+            service_sid=service_sid,
+            administrator_sid=administrator_sid,
+            owner_sid=owner,
+        )
     return ProvisioningPlan(
         target,
         planned_roles,
@@ -564,14 +591,51 @@ def _path_chain(target: Path) -> list[Path]:
     return chain
 
 
+def _existing_role_incompatibility(
+    path: Path, policy: SecurityPolicy, backend: WindowsSecurityBackend
+) -> tuple[str | None, bool]:
+    """Return an incompatibility reason and whether the entry is a reparse point."""
+
+    try:
+        if backend.is_reparse_point(path):
+            return "reparse point", True
+        if not backend.is_directory(path):
+            return "not a directory", False
+        snapshot = backend.inspect_security(path)
+        if not snapshot.matches(policy):
+            return "security policy mismatch", False
+        return None, False
+    except (OSError, ProvisioningContractError) as exc:
+        # Preserve full inventory coverage if one child cannot be inspected.
+        return f"security inspection failed: {exc}", False
+
+
 def _preflight(
     plan: ProvisioningPlan, backend: WindowsSecurityBackend
-) -> tuple[list[str], list[str], list[dict[str, str]], str | None, list[str]]:
+) -> tuple[
+    list[str],
+    list[str],
+    list[dict[str, str]],
+    str | None,
+    list[str],
+    list[dict[str, str]],
+    list[str],
+    list[str],
+    list[str],
+    list[str],
+    list[str],
+]:
     missing: list[str] = []
     correct: list[str] = []
     collisions: list[dict[str, str]] = []
     errors: list[str] = []
     reparse: str | None = None
+    root_entries: list[dict[str, str]] = []
+    deferred_present: list[str] = []
+    deferred_absent: list[str] = []
+    not_allowed_present: list[str] = []
+    unknown_entries: list[str] = []
+    incompatible_entries: list[str] = []
 
     try:
         for path in _path_chain(plan.target_root):
@@ -587,36 +651,105 @@ def _preflight(
             raise ProvisioningContractError(
                 "target root owner/DACL does not match the reviewed precondition"
             )
-        for entry in plan.target_root.iterdir():
-            if entry.name not in ROLE_SPECS:
+        entries = {entry.name: entry for entry in plan.target_root.iterdir()}
+        deferred_absent = [role for role in REQUIRED_LATER if role not in entries]
+        for name, entry in entries.items():
+            spec = ROLE_SPECS.get(name)
+            if spec is None:
+                root_entries.append(
+                    {
+                        "path": str(entry),
+                        "classification": "UNKNOWN_ENTRY",
+                        "status": "UNKNOWN_ENTRY_PRESENT",
+                    }
+                )
+                unknown_entries.append(name)
+                incompatible_entries.append(name)
                 collisions.append(
                     {"path": str(entry), "reason": "unexpected root entry"}
                 )
-        if collisions:
-            raise ProvisioningContractError("unexpected entries exist under target root")
-        for role in plan.roles:
-            path = plan.target_root / role
-            if not _path_exists(path):
-                missing.append(role)
                 continue
-            if backend.is_reparse_point(path):
-                reparse = str(path)
-                raise ProvisioningContractError(f"role path is a reparse point: {path}")
-            if not backend.is_directory(path):
-                collisions.append({"path": str(path), "reason": "not a directory"})
-                continue
-            snapshot = backend.inspect_security(path)
-            if not snapshot.matches(plan.role_policies[role]):
-                collisions.append(
-                    {"path": str(path), "reason": "security policy mismatch"}
+            if name in plan.roles:
+                reason, is_reparse = _existing_role_incompatibility(
+                    entry, plan.role_policies[name], backend
                 )
+                status = "ALREADY_CORRECT" if reason is None else "INCOMPATIBLE"
+                root_entries.append(
+                    {
+                        "path": str(entry),
+                        "classification": "REQUESTED_ROLE",
+                        "status": status,
+                    }
+                )
+                if reason is None:
+                    correct.append(name)
+                else:
+                    if is_reparse:
+                        reparse = str(entry)
+                    collisions.append({"path": str(entry), "reason": reason})
+                    incompatible_entries.append(name)
                 continue
-            correct.append(role)
+            if spec.classification == "REQUIRED_LATER":
+                deferred_present.append(name)
+                policy = _role_security_policy(
+                    name,
+                    service_sid=plan.service_sid,
+                    administrator_sid=plan.administrator_sid,
+                    owner_sid=plan.root_policy.owner_sid,
+                )
+                reason, is_reparse = _existing_role_incompatibility(entry, policy, backend)
+                status = "DEFERRED_PRESENT_EXACT" if reason is None else "INCOMPATIBLE"
+                root_entries.append(
+                    {
+                        "path": str(entry),
+                        "classification": "DEFERRED_ROLE",
+                        "status": status,
+                    }
+                )
+                if reason is not None:
+                    if is_reparse:
+                        reparse = str(entry)
+                    collisions.append({"path": str(entry), "reason": reason})
+                    incompatible_entries.append(name)
+                continue
+            # A catalog name alone is never authority to retain an unplanned root entry.
+            root_entries.append(
+                {
+                    "path": str(entry),
+                    "classification": "NOT_ALLOWED_ROLE",
+                    "status": "NOT_ALLOWED_ROLE_PRESENT",
+                }
+            )
+            not_allowed_present.append(name)
+            incompatible_entries.append(name)
+            collisions.append({"path": str(entry), "reason": "not allowed root role"})
         if collisions:
-            raise ProvisioningContractError("one or more role paths are incompatible")
+            raise ProvisioningContractError("root namespace contains incompatible entries")
+        for role in plan.roles:
+            if role not in entries:
+                missing.append(role)
+                root_entries.append(
+                    {
+                        "path": str(plan.target_root / role),
+                        "classification": "REQUESTED_ROLE",
+                        "status": "PLANNED_CREATE",
+                    }
+                )
     except (OSError, ProvisioningContractError) as exc:
         errors.append(str(exc))
-    return missing, correct, collisions, reparse, errors
+    return (
+        missing,
+        correct,
+        collisions,
+        reparse,
+        errors,
+        root_entries,
+        deferred_present,
+        deferred_absent,
+        not_allowed_present,
+        unknown_entries,
+        incompatible_entries,
+    )
 
 
 def provision(
@@ -628,7 +761,19 @@ def provision(
     """Inspect or converge approved roles without deleting or weakening state."""
 
     security = backend or WindowsSecurityBackend()
-    missing, correct, collisions, reparse, errors = _preflight(plan, security)
+    (
+        missing,
+        correct,
+        collisions,
+        reparse,
+        errors,
+        root_entries,
+        deferred_present,
+        deferred_absent,
+        not_allowed_present,
+        unknown_entries,
+        incompatible_entries,
+    ) = _preflight(plan, security)
     result = ProvisioningResult(
         overall_status="DRY_RUN" if dry_run else "PENDING",
         target_root=str(plan.target_root),
@@ -638,6 +783,13 @@ def provision(
         reparse_rejection=reparse,
         security_verification_status="PASS" if not errors else "FAIL",
         security_changes_required=list(missing),
+        root_namespace_status="PASS" if not errors else "FAIL",
+        root_entries_inspected=root_entries,
+        deferred_roles_present=deferred_present,
+        deferred_roles_absent=deferred_absent,
+        not_allowed_roles_present=not_allowed_present,
+        unknown_root_entries=unknown_entries,
+        incompatible_root_entries=incompatible_entries,
         errors=errors,
         dry_run=dry_run,
     )
