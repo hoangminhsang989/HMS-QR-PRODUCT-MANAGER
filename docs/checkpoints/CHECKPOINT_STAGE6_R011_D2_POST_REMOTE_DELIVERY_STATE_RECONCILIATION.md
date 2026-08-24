@@ -105,6 +105,15 @@ CURRENT_CANONICAL_HEAD=READ_AT_EXECUTION_TIME
 D2_ANCHOR_IS_ANCESTOR_OF_CURRENT_CANONICAL_HEAD=YES
 CURRENT_HEAD_APPROVED_FOR_GATE_C=YES
 D2_CODE_OWNED_BLOBS_AT_CURRENT_HEAD_MATCH_DELIVERED_ANCHOR=YES
+PROTECTED_D2_BLOB_COUNT=4
+PROTECTED_D2_BLOB_READBACK_REQUIRED=4_OF_4
+D2_BLOB_1_MATCH=MANDATORY
+D2_BLOB_2_MATCH=MANDATORY
+D2_BLOB_3_MATCH=MANDATORY
+D2_TEST_BLOB_MATCH=MANDATORY
+OMISSION_ALLOWED=NO
+ANY_MISSING_BLOB=BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT
+ANY_MISMATCH=BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT
 GATE_EXECUTED=NO
 GATE_AUTHORIZED_BY_THIS_CHECKPOINT=NO
 ```
@@ -140,9 +149,13 @@ relabel is permitted.
   `9a499a48573f57b8cca0a63cb5b3043c7d940c42c160debfae87251db61a7e53`, and
   `scripts/r011_d2_stage0.ps1` must equal
   `766cd212793056aab413d1f425a1adb696d39001e5ef0863685c37ee82b98c27`.
-  The D2 test blob must equal
+  The mandatory D2 test blob must equal
   `edb053532691a0bf5948f6aedba365397e00ef4b792f67cda501f1850803f406`
-  when included in the gate evidence.
+  and must be present in every Gate C identity evidence set.
+- Gate C identity closure requires `PASS_4_OF_4`. A readback count other than
+  `4`, any missing protected path, any SHA-256 mismatch, or any omitted blob
+  must return `BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT`; warning or partial
+  identity closure is forbidden.
 - D2 closure index SHA-256 must equal `107e7fc...`.
 - Code-owned identities must match: Stage-0 `766cd212...`, payload `9a499a48...`,
   runtime archive `df901e84...`, and bundle `2e8d699c...`.

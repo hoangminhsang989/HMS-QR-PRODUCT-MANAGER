@@ -42,6 +42,15 @@ CURRENT_CANONICAL_HEAD=READ_AT_EXECUTION_TIME
 D2_ANCHOR_IS_ANCESTOR_OF_CURRENT_CANONICAL_HEAD=YES
 CURRENT_HEAD_APPROVED_FOR_GATE_C=YES
 D2_CODE_OWNED_BLOBS_AT_CURRENT_HEAD_MATCH_DELIVERED_ANCHOR=YES
+PROTECTED_D2_BLOB_COUNT=4
+PROTECTED_D2_BLOB_READBACK_REQUIRED=4_OF_4
+D2_BLOB_1_MATCH=MANDATORY
+D2_BLOB_2_MATCH=MANDATORY
+D2_BLOB_3_MATCH=MANDATORY
+D2_TEST_BLOB_MATCH=MANDATORY
+OMISSION_ALLOWED=NO
+ANY_MISSING_BLOB=BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT
+ANY_MISMATCH=BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT
 ```
 
 Prerequisite tối thiểu: đọc exact canonical `main` commit/tree tại thời điểm
@@ -63,8 +72,11 @@ tests/stage6/test_r011_d2_os_trusted_one_shot.py=edb053532691a0bf5948f6aedba3653
 ```
 
 Hash phải được tính trực tiếp từ committed Git blobs, không từ working tree.
-Descendant status đơn lẻ không đủ; bất kỳ protected blob drift nào phải trả
-`GATE_C=BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT`. Recovery-A snapshot và
+Test blob là protected identity bắt buộc; operator không được skip và evidence
+không được omit. Nếu readback count khác `4`, protected path bị thiếu, SHA-256
+mismatch, hoặc bất kỳ blob nào bị bỏ khỏi evidence, Gate C phải trả
+`GATE_C=BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT`, không downgrade thành
+warning. Descendant status đơn lẻ không đủ. Recovery-A snapshot và
 cumulative mutation count `4`, host/root/service-account name và SID phải đúng
 frozen authority; collector phải secret-free và dùng evidence root mới bên
 ngoài repo. Không remoting, production write hoặc authentication automation.

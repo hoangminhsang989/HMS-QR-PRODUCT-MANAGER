@@ -30,6 +30,29 @@ the fresh Gate C authority explicitly approves that exact descendant, and read
 the protected D2 Git blobs from that commit. Descendant status alone is not
 approval and does not authorize implementation drift.
 
+Gate C identity closure uses one mandatory four-blob contract:
+
+```text
+PROTECTED_D2_BLOB_COUNT=4
+PROTECTED_D2_BLOB_READBACK_REQUIRED=4_OF_4
+D2_BLOB_1_MATCH=MANDATORY
+D2_BLOB_2_MATCH=MANDATORY
+D2_BLOB_3_MATCH=MANDATORY
+D2_TEST_BLOB_MATCH=MANDATORY
+OMISSION_ALLOWED=NO
+ANY_MISSING_BLOB=BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT
+ANY_MISMATCH=BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT
+```
+
+The four protected committed paths and SHA-256 identities are:
+
+```text
+packages/deployment/os_trusted_one_shot.py=7e8ec5125723981fef84b520a3698ba91871d857b260b7e894d267555312a50f
+scripts/r011_d2_protected_payload.ps1=9a499a48573f57b8cca0a63cb5b3043c7d940c42c160debfae87251db61a7e53
+scripts/r011_d2_stage0.ps1=766cd212793056aab413d1f425a1adb696d39001e5ef0863685c37ee82b98c27
+tests/stage6/test_r011_d2_os_trusted_one_shot.py=edb053532691a0bf5948f6aedba365397e00ef4b792f67cda501f1850803f406
+```
+
 Delivered D2 gates are `82/82` targeted, `32/32` trust-and-terminal, `1/1`
 D2.31 exact, and `2/2` immutable provisioner compatibility. All previous D2
 blockers are closed, no new independent trust boundary was discovered, no code
@@ -46,7 +69,8 @@ R011_GATE_C_MACHINE_A_READ_ONLY_CURRENT_STATE_INVENTORY_AND_D2_PREFLIGHT
 Gate C refreshes and reconciles current Machine A facts before any D2
 production execution or further mutation. Its source-side preflight requires an
 approved canonical descendant of the D2 anchor plus exact committed-byte
-readback of the three protected D2 implementation blobs. It requires local
+readback of all four protected D2 blobs, including the mandatory test blob. It
+requires local
 execution on Machine A under a standard token, no remoting, no network
 dependency, no UAC, metadata-only production-root reads, and zero production
 mutation. Gate C has not been executed and is not authorized by this
