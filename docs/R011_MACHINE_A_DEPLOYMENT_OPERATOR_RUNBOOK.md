@@ -1,23 +1,64 @@
-# R011 triển khai HMS QR trên Machine A (bản nháp WP1A)
+# R011 triển khai HMS QR trên Machine A — trạng thái sau D2
 
-Tài liệu này là hướng dẫn chuẩn bị, không phải giấy phép thao tác sản xuất.
-WP1A chỉ tạo artifact, schema, kế hoạch và bộ kiểm thử trên máy phát triển.
-Không kết nối Machine A, không cài PostgreSQL, không đăng ký Windows Service,
-không sửa firewall/registry/tài khoản/DPAPI/TLS và không ghi NAS.
+Tài liệu này là hướng dẫn vận hành có ranh giới authority, không phải giấy phép
+thao tác sản xuất. WP1A và R011 D2 đã được delivery tới canonical/remote `main`
+ở commit `b492719343405ee7fdb224f2e1001ef96ded4ebb`, tree
+`6036d8d51cd04c1e928f4a94ee37e39bdf5560b2`. Gate kế tiếp chỉ được chọn, chưa
+được chạy. Không kết nối Machine A, không chạy production, không cài
+PostgreSQL, không đăng ký Windows Service, không sửa firewall/registry/tài
+khoản/DPAPI/TLS và không ghi NAS theo authority reconciliation hiện tại.
 
-## Quy trình được ủy quyền ở WP1A
+## Chuỗi source-side đã delivered
 
 1. Xác nhận Git HEAD/tree đúng baseline và worktree sạch.
 2. Dựng release immutable bên ngoài repository; kiểm tra manifest, Git identity,
    SHA-256, kích thước và Alembic head.
-3. Đọc inventory trong WP1B bằng collector read-only sau khi có ủy quyền riêng.
+3. Đọc inventory bằng collector read-only chỉ sau khi có authority Gate C riêng.
    Collector ghi rõ `UNKNOWN`, `ACCESS_DENIED`, `NOT_PRESENT` và không thu thập
    secret, password, connection string hoặc private key.
 4. Reconcile deployment plan với inventory; preflight phải fail-closed.
 5. Chạy dry-run để xem mutation manifest. Dry-run luôn có executed=false và
    machine mutation count bằng 0.
 
-## Hướng dẫn inventory read-only cho WP1B (chưa được ủy quyền)
+Các mục trên mô tả capability và thứ tự; chúng không tự cấp quyền thực thi.
+R011 D2 đã đóng Gate A (canonical Git identity) và Gate B (exact deployment
+artifact/tooling identity). Không được dùng trạng thái delivered đó để suy diễn
+quyền Machine A.
+
+## Gate C kế tiếp đã chọn (chưa được ủy quyền)
+
+```text
+GATE_NAME=R011_GATE_C_MACHINE_A_READ_ONLY_CURRENT_STATE_INVENTORY_AND_D2_PREFLIGHT
+PURPOSE=Refresh and reconcile current Machine A facts and the four preserved foundation mutations before any D2 production execution or further mutation.
+READ_ONLY_OR_MUTATING=READ_ONLY
+MACHINE_A_REQUIRED=YES
+NETWORK_REQUIRED=NO
+UAC_REQUIRED=NO
+PRODUCTION_ROOT_READ_REQUIRED=YES_METADATA_ONLY
+PRODUCTION_ROOT_MUTATION_REQUIRED=NO
+```
+
+Prerequisite tối thiểu: canonical/origin `main` đúng `b492719...`, tree
+`6036d8d...`; closure index SHA-256 đúng `107e7fc...`; Stage-0, payload,
+runtime và bundle đúng code-owned identity; Recovery-A snapshot và cumulative
+mutation count `4`; host/root/service-account name và SID đúng frozen authority;
+collector secret-free; evidence root mới bên ngoài repo. Không remoting, không
+production write và không tự động hóa authentication.
+
+Gate chỉ PASS khi collector chạy local trên Machine A dưới standard token; Git,
+artifact và tooling identity khớp; OS/host/volume/time/listener/service/
+PostgreSQL/runtime/firewall/root/account metadata được ghi trung thực; root
+final-path/reparse metadata và account name/SID/state khớp; bốn historical
+mutations được reconcile; không che giấu state bất ngờ; `ACCESS_DENIED`,
+`UNKNOWN`, `NOT_PRESENT`, `UNSUPPORTED` vẫn phân biệt; field bắt buộc unresolved
+hoặc contradictory phải block readiness; UAC và mutation đều bằng `0`; output
+được sanitize và hash-index.
+
+Gate fail-closed khi identity drift, child/ACL/account/service/state bất ngờ,
+field bắt buộc unavailable hoặc contradictory, secret exposure, write/UAC/
+remoting attempt, hoặc evidence mismatch. Gate này chưa được thực thi.
+
+## Hướng dẫn inventory read-only cho Gate C
 
 Collector đọc thông tin OS/phần cứng/volume, adapter và listener, firewall,
 service, dấu hiệu PostgreSQL/Python/HMS, timezone/time service, trạng thái bảo
@@ -71,8 +112,8 @@ pre/post-state, planned/executed mutations, service/database/network state,
 verification, rollback events và verdict. Dùng sanitizer dùng chung; không ghi
 password, token, URL có credential, DPAPI plaintext hay private key.
 
-`WP1B_MACHINE_A_READ_AUTHORIZED=NO` và `MACHINE_A_MUTATION_AUTHORIZED=NO` vẫn
-được giữ nguyên sau WP1A.
+`GATE_C_MACHINE_A_READ_AUTHORIZED=NO` và `MACHINE_A_MUTATION_AUTHORIZED=NO` vẫn
+được giữ nguyên cho đến khi có fresh authority riêng.
 
 ## Provisioner thư mục sản xuất sau Recovery-A
 

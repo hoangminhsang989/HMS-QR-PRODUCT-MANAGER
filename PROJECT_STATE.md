@@ -1,47 +1,66 @@
 # HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
-Current WP: R011-WP1A local integration
-Current Revision: R011-WP1A-I1
+Current WP: R011 Gate C selected; fresh execution authority required
+Current Revision: R011-D2 post-remote-delivery state reconciliation
 Current Branch: main
-Current Verdict: LOCAL_INTEGRATED_REMOTE_DELIVERY_PENDING
+Current Verdict: R011_D2_REMOTE_DELIVERY_COMPLETE_GATE_C_FROZEN_NOT_EXECUTED
 
-R011-WP1A is locally integrated by exact fast-forward from canonical
-`94c33180a31597c9386554a36a9f203659789a29` to the independently approved final
-candidate `09454caed3d29d98c3d9669c0512c80483bc0b62`, tree
-`c7e3845eb7defa8f851b52384336e09258ca0acd`. The approved certified artifact
-identity is `1629e9ebfdd91f21ea7eada6912d311dc23aac49fcc1664a64373ba5aed4b58d`.
-R1B independently proved all 86 payload files against Git blobs, cross-EOL
-reproducibility, path and secret safety, tamper failure, focused `44`,
-qualifying critical `51`, and full `187` tests with zero failures and zero
-skips. I1 re-proved the exact integrated bytes, artifact binding, collector
-static safety, path/config imports, and the focused `44` tests.
+R011 D2 remediation, two fresh independent committed-byte reviews, canonical
+fast-forward integration, post-integration runtime-fixture reconciliation,
+targeted verification, closure review, normal remote push, and remote readback
+are complete. Canonical local and remote `main` are
+`b492719343405ee7fdb224f2e1001ef96ded4ebb`, tree
+`6036d8d51cd04c1e928f4a94ee37e39bdf5560b2`. The immutable D2 closure evidence
+index SHA-256 is
+`107e7fc886b3f143de59dbd34c4bb2d10b2962e6f629f3a22cf45a501a825bd8`.
 
-WP1A supplies source-side deployment modules, immutable artifact and verifier,
-read-only inventory collector, plan/preflight/dry-run/lifecycle models, evidence
-sanitizer, tests, and Vietnamese-first operator runbook. No Machine A inventory,
-read, or mutation occurred. WP1B read remains unauthorized until WP1A is
-remotely delivered; Machine A mutation remains separately unauthorized. See
-`docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A_LOCAL_INTEGRATION.md`.
+Delivered D2 gates are `82/82` targeted, `32/32` trust-and-terminal, `1/1`
+D2.31 exact, and `2/2` immutable provisioner compatibility. All previous D2
+blockers are closed, no new independent trust boundary was discovered, no code
+regression was confirmed, and no R011 D2 blocker remains open.
 
-Historical R011B status: the independently approved R011 roadmap was fast-forward
-integrated locally into `main` at `4ff89c934`; its later remote-delivery/state
-chain established the current `94c33180` WP1A baseline. The roadmap remained
-docs/state only until this WP1A candidate. `MACHINE_A_MUTATION_AUTHORIZED=NO`
-remains in force.
-No Machine A mutation, production PostgreSQL install, Windows service/user/
-registry/firewall change, real NAS, Cloudflare, public exposure, source
-implementation, test/dependency/migration change, or push occurred.
+R011-WP1A source preparation and D2 trusted one-shot delivery close roadmap
+mutation gates A (canonical Git identity) and B (exact artifact/tooling byte
+identity). The single next Machine A gate is frozen as:
 
-R011B pre-integration baseline: local/origin `main` HEAD
-`3c77a29341ecb36ae2aa90c84413206b0c7adbd1`, tree
-`c45e571cc78e3fd474da19c611e99c390757c78f`. Integrated roadmap HEAD is
-`4ff89c9343aac23343068e8cd3e2dfdfef4ad700`, tree
-`21011b9165a1c225ac1785721301b33b90c12d4c`. The five production gaps remain
-open and unchanged. The earlier R1A1 review route was superseded by the R1A2
-runtime-path remediation authority.
+```text
+R011_GATE_C_MACHINE_A_READ_ONLY_CURRENT_STATE_INVENTORY_AND_D2_PREFLIGHT
+```
 
-Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4 PASS; Stage 5 PASS and remotely delivered; Stage 6 R008, R009, R010, and the R011 roadmap are remotely delivered. R011-WP1A is independently approved and locally integrated; remote delivery remains pending and no push occurred under I1.
+Gate C refreshes and reconciles current Machine A facts before any D2
+production execution or further mutation. It requires local execution on
+Machine A under a standard token, no remoting, no network dependency, no UAC,
+metadata-only production-root reads, and zero production mutation. Gate C has
+not been executed and is not authorized by this reconciliation; a fresh,
+gate-specific authority is mandatory.
+
+Recovery-A evidence records four historical, safe foundation mutations on
+Machine A: creation of the hardened empty `D:\HMS-QR-PROD` root, creation of
+disabled account `HMS-PC\HMSQRService`, assignment of the root owner to
+`BUILTIN\Administrators`, and application of the protected explicit root DACL.
+The evidence-bound snapshot reports root child count `0`, service SID
+`S-1-5-21-170807328-2858633000-3406472961-1009`, no local-group membership,
+and no installed-service reference. Those are historical Recovery-A facts, not
+fresh live verification. They must be preserved and reconciled by Gate C.
+
+```text
+MACHINE_A_EXECUTION_NOT_YET_AUTHORIZED
+PRODUCTION_MUTATION_NOT_YET_AUTHORIZED
+MACHINE_A_ACCESS_DURING_THIS_RECONCILIATION=0
+PRODUCTION_ROOT_ACCESS_DURING_THIS_RECONCILIATION=0
+REAL_UAC_INVOCATION_DURING_THIS_RECONCILIATION=0
+```
+
+Historical R011 and R011 D2 FAIL/BLOCKED checkpoints remain immutable
+point-in-time evidence. They are not relabelled or overwritten by this current
+state summary. See
+`docs/checkpoints/CHECKPOINT_STAGE6_R011_D2_POST_REMOTE_DELIVERY_STATE_RECONCILIATION.md`.
+
+Stage progress: Stage 0 PASS; Stage 1 PASS; Stage 2 PASS; Stage 3 PASS; Stage 4
+PASS; Stage 5 PASS and remotely delivered; Stage 6 R008, R009, R010, the R011
+roadmap, R011-WP1A, and R011 D2 are remotely delivered. Machine A production
+qualification and deployment remain open external gates.
 
 Design system: canonical light industrial tokens in `apps/design_tokens.py`. Penpot is the intended canonical visual design authority and UICanvas is the intended local rapid-prototype canvas. Open Design 0.19.0 remains optional historical tooling only; its paid AMR generation run is retired and is not retried.
 Desktop redesign: shared PySide6 token theme applied to Product Master and Tracking.
@@ -50,19 +69,6 @@ focus states, and 44px touch-safe controls.
 Visual evidence: Penpot exports plus external desktop captures at 1280x720 and
 1920x1080; mobile runtime was checked at 360/390/414/768 with no horizontal
 overflow and no browser console errors.
-Regression results: R011-WP1A-R1B focused returned `44 passed`; qualifying
-critical returned `51 passed, 1 inherited warning`; and the native-exit-safe,
-Qt-last full regression returned `187 passed, 1 inherited warning` with zero
-failures, zero skips, exit 0, and empty stderr. I1 bounded post-integration
-verification returned `44 passed` and independently reverified the approved
-artifact manifest, integrated Git identity, config/path imports, and collector
-AST safety. The warning is the inherited Starlette/httpx deprecation.
-
-Latest completed work: R011-WP1A-I1 fast-forwarded local `main` from the exact
-remote baseline `94c33180a31597c9386554a36a9f203659789a29` to approved WP1A
-`09454caed3d29d98c3d9669c0512c80483bc0b62`. No candidate/source/test/runtime
-byte was changed during integration. No Machine A action, production action,
-merge commit, or push occurred.
 
 Known gaps:
 
@@ -74,13 +80,13 @@ MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Production PostgreSQL integration is closed by R010; Machine A production
-deployment remains a separate open gap. WP1A is local-only integrated and has
-not been pushed. The next exact action is
-`STAGE6_R011_WP1A_REMOTE_DELIVERY`; WP1B Machine A read remains unauthorized.
+Production PostgreSQL integration is closed by R010. Machine A production
+deployment remains a separate open gap. The next exact action requires fresh
+authority for
+`R011_GATE_C_MACHINE_A_READ_ONLY_CURRENT_STATE_INVENTORY_AND_D2_PREFLIGHT`.
 
-Latest authority: Stage 6 R011-WP1A-I1 local integration of final independently approved WP1A (external task attachment)
-Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R011_WP1A_LOCAL_INTEGRATION.md
+Latest authority: R011 D2 post-remote-delivery project-state/roadmap reconciliation and next Machine A gate selection (external task attachment)
+Latest checkpoint: docs/checkpoints/CHECKPOINT_STAGE6_R011_D2_POST_REMOTE_DELIVERY_STATE_RECONCILIATION.md
 Test workspace: F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST
 
 R007B4 toolchain migration evidence:
