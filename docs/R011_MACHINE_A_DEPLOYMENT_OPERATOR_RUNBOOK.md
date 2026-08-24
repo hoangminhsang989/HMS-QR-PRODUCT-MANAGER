@@ -1,10 +1,12 @@
 # R011 triển khai HMS QR trên Machine A — trạng thái sau D2
 
 Tài liệu này là hướng dẫn vận hành có ranh giới authority, không phải giấy phép
-thao tác sản xuất. WP1A và R011 D2 đã được delivery tới canonical/remote `main`
-ở commit `b492719343405ee7fdb224f2e1001ef96ded4ebb`, tree
-`6036d8d51cd04c1e928f4a94ee37e39bdf5560b2`. Gate kế tiếp chỉ được chọn, chưa
-được chạy. Không kết nối Machine A, không chạy production, không cài
+thao tác sản xuất. WP1A và R011 D2 có immutable implementation anchor tại
+commit `b492719343405ee7fdb224f2e1001ef96ded4ebb`, tree
+`6036d8d51cd04c1e928f4a94ee37e39bdf5560b2`, đã được review và remote delivery.
+Canonical `main` có thể tiến tới approved descendant; anchor không phải yêu cầu
+HEAD bất biến. Gate kế tiếp chỉ được chọn, chưa được chạy. Không kết nối Machine
+A, không chạy production, không cài
 PostgreSQL, không đăng ký Windows Service, không sửa firewall/registry/tài
 khoản/DPAPI/TLS và không ghi NAS theo authority reconciliation hiện tại.
 
@@ -36,17 +38,41 @@ NETWORK_REQUIRED=NO
 UAC_REQUIRED=NO
 PRODUCTION_ROOT_READ_REQUIRED=YES_METADATA_ONLY
 PRODUCTION_ROOT_MUTATION_REQUIRED=NO
+CURRENT_CANONICAL_HEAD=READ_AT_EXECUTION_TIME
+D2_ANCHOR_IS_ANCESTOR_OF_CURRENT_CANONICAL_HEAD=YES
+CURRENT_HEAD_APPROVED_FOR_GATE_C=YES
+D2_CODE_OWNED_BLOBS_AT_CURRENT_HEAD_MATCH_DELIVERED_ANCHOR=YES
 ```
 
-Prerequisite tối thiểu: canonical/origin `main` đúng `b492719...`, tree
-`6036d8d...`; closure index SHA-256 đúng `107e7fc...`; Stage-0, payload,
-runtime và bundle đúng code-owned identity; Recovery-A snapshot và cumulative
-mutation count `4`; host/root/service-account name và SID đúng frozen authority;
-collector secret-free; evidence root mới bên ngoài repo. Không remoting, không
-production write và không tự động hóa authentication.
+Prerequisite tối thiểu: đọc exact canonical `main` commit/tree tại thời điểm
+thực thi; fresh Gate C authority phải approve chính xác identity đó. Lệnh sau
+phải exit `0`:
 
-Gate chỉ PASS khi collector chạy local trên Machine A dưới standard token; Git,
-artifact và tooling identity khớp; OS/host/volume/time/listener/service/
+```text
+git merge-base --is-ancestor b492719343405ee7fdb224f2e1001ef96ded4ebb <CURRENT_CANONICAL_HEAD>
+```
+
+Closure index SHA-256 phải đúng `107e7fc...`. Các committed blobs tại current
+approved descendant phải đúng:
+
+```text
+packages/deployment/os_trusted_one_shot.py=7e8ec5125723981fef84b520a3698ba91871d857b260b7e894d267555312a50f
+scripts/r011_d2_protected_payload.ps1=9a499a48573f57b8cca0a63cb5b3043c7d940c42c160debfae87251db61a7e53
+scripts/r011_d2_stage0.ps1=766cd212793056aab413d1f425a1adb696d39001e5ef0863685c37ee82b98c27
+tests/stage6/test_r011_d2_os_trusted_one_shot.py=edb053532691a0bf5948f6aedba365397e00ef4b792f67cda501f1850803f406
+```
+
+Hash phải được tính trực tiếp từ committed Git blobs, không từ working tree.
+Descendant status đơn lẻ không đủ; bất kỳ protected blob drift nào phải trả
+`GATE_C=BLOCKED_D2_IMPLEMENTATION_IDENTITY_DRIFT`. Recovery-A snapshot và
+cumulative mutation count `4`, host/root/service-account name và SID phải đúng
+frozen authority; collector phải secret-free và dùng evidence root mới bên
+ngoài repo. Không remoting, production write hoặc authentication automation.
+
+Gate chỉ PASS khi current canonical commit/tree được fresh authority approve,
+D2 anchor ancestry và protected committed blobs đều khớp, rồi collector chạy
+local trên Machine A dưới standard token; Git, artifact và tooling identity
+khớp; OS/host/volume/time/listener/service/
 PostgreSQL/runtime/firewall/root/account metadata được ghi trung thực; root
 final-path/reparse metadata và account name/SID/state khớp; bốn historical
 mutations được reconcile; không che giấu state bất ngờ; `ACCESS_DENIED`,
@@ -54,9 +80,10 @@ mutations được reconcile; không che giấu state bất ngờ; `ACCESS_DENIE
 hoặc contradictory phải block readiness; UAC và mutation đều bằng `0`; output
 được sanitize và hash-index.
 
-Gate fail-closed khi identity drift, child/ACL/account/service/state bất ngờ,
-field bắt buộc unavailable hoặc contradictory, secret exposure, write/UAC/
-remoting attempt, hoặc evidence mismatch. Gate này chưa được thực thi.
+Gate fail-closed khi current descendant chưa được approve, ancestry nonzero,
+protected D2 blob drift, identity drift khác, child/ACL/account/service/state
+bất ngờ, field bắt buộc unavailable hoặc contradictory, secret exposure,
+write/UAC/remoting attempt, hoặc evidence mismatch. Gate này chưa được thực thi.
 
 ## Hướng dẫn inventory read-only cho Gate C
 

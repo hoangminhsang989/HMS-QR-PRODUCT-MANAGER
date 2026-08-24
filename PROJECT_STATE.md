@@ -9,11 +9,26 @@ Current Verdict: R011_D2_REMOTE_DELIVERY_COMPLETE_GATE_C_FROZEN_NOT_EXECUTED
 R011 D2 remediation, two fresh independent committed-byte reviews, canonical
 fast-forward integration, post-integration runtime-fixture reconciliation,
 targeted verification, closure review, normal remote push, and remote readback
-are complete. Canonical local and remote `main` are
+are complete. The immutable delivered implementation anchor is commit
 `b492719343405ee7fdb224f2e1001ef96ded4ebb`, tree
 `6036d8d51cd04c1e928f4a94ee37e39bdf5560b2`. The immutable D2 closure evidence
 index SHA-256 is
 `107e7fc886b3f143de59dbd34c4bb2d10b2962e6f629f3a22cf45a501a825bd8`.
+
+```text
+D2_IMPLEMENTATION_ANCHOR=b492719343405ee7fdb224f2e1001ef96ded4ebb
+D2_IMPLEMENTATION_ANCHOR_TREE=6036d8d51cd04c1e928f4a94ee37e39bdf5560b2
+D2_IMPLEMENTATION_STATUS=REMOTE_DELIVERED_AND_VERIFIED
+CURRENT_CANONICAL_HEAD=READ_FROM_APPROVED_MAIN_AT_GATE_EXECUTION
+CURRENT_CANONICAL_TREE=READ_FROM_APPROVED_MAIN_AT_GATE_EXECUTION
+CURRENT_CANONICAL_REQUIREMENT=APPROVED_DESCENDANT_OF_D2_IMPLEMENTATION_ANCHOR
+```
+
+Canonical `main` is intentionally evolving. Gate C must read its exact commit
+and tree at execution time, prove that the D2 anchor is its ancestor, prove that
+the fresh Gate C authority explicitly approves that exact descendant, and read
+the protected D2 Git blobs from that commit. Descendant status alone is not
+approval and does not authorize implementation drift.
 
 Delivered D2 gates are `82/82` targeted, `32/32` trust-and-terminal, `1/1`
 D2.31 exact, and `2/2` immutable provisioner compatibility. All previous D2
@@ -29,11 +44,14 @@ R011_GATE_C_MACHINE_A_READ_ONLY_CURRENT_STATE_INVENTORY_AND_D2_PREFLIGHT
 ```
 
 Gate C refreshes and reconciles current Machine A facts before any D2
-production execution or further mutation. It requires local execution on
-Machine A under a standard token, no remoting, no network dependency, no UAC,
-metadata-only production-root reads, and zero production mutation. Gate C has
-not been executed and is not authorized by this reconciliation; a fresh,
-gate-specific authority is mandatory.
+production execution or further mutation. Its source-side preflight requires an
+approved canonical descendant of the D2 anchor plus exact committed-byte
+readback of the three protected D2 implementation blobs. It requires local
+execution on Machine A under a standard token, no remoting, no network
+dependency, no UAC, metadata-only production-root reads, and zero production
+mutation. Gate C has not been executed and is not authorized by this
+reconciliation; a fresh, gate-specific authority naming the execution-time
+canonical commit and tree is mandatory.
 
 Recovery-A evidence records four historical, safe foundation mutations on
 Machine A: creation of the hardened empty `D:\HMS-QR-PROD` root, creation of
