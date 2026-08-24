@@ -37,7 +37,9 @@ function Create-AttemptClaim([string]$attemptRoot) {
     try { $stream = [IO.File]::Open([IO.Path]::Combine($attemptRoot, 'attempt.claim'), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $stream.Dispose() }
     catch [IO.IOException] { throw 'Attempt claim already exists' }
 }
-if ([DateTime]::UtcNow -gt [DateTime]::Parse($authority.expires_utc).ToUniversalTime()) { throw 'D2 authority expired before staging' }
+$authorityCreated = [DateTime]::Parse($authority.created_utc).ToUniversalTime()
+$authorityExpires = [DateTime]::Parse($authority.expires_utc).ToUniversalTime()
+if ([DateTime]::UtcNow -lt $authorityCreated -or [DateTime]::UtcNow -gt $authorityExpires) { throw 'D2 authority is not active before staging' }
 if ([Environment]::MachineName -ine $authority.machine_name) { throw 'Machine identity does not match frozen authority' }
 $target = [IO.Path]::GetFullPath([string]$authority.target_root)
 if ($target -ine [string]$authority.target_root -or -not [IO.Directory]::Exists($target)) { throw 'Production target prestate is not exact' }
