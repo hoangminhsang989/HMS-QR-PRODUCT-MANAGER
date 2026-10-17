@@ -463,3 +463,11 @@ Latest checkpoint: `docs/checkpoints/CHECKPOINT_STAGE6_R009B.md`
 Next exact action: `STAGE6_R009C_REMOTE_DELIVERY_AND_R009_CLOSURE`. Do not push,
 write real NAS, perform production restore, claim exact Excel fidelity, or
 begin R010 without that separate authority.
+
+# 2026-10-17 Feature tranche committed on feature/server-tool-popups (b73650a)
+## State
+- Branch `feature/server-tool-popups` (from main at `bbeaefe`) now carries the complete feature tranche as commit `b73650a`: 112 files, +17,778/-258. Working tree clean.
+- Scope: Server Tool four-popup redesign + autostart reconciliation; Desktop/Server LAN discovery, DPAPI credential memory, role-aware UI, Stage 2/file API clients, Excel formula engine/factory adapter, QR CV scanner; domain partial-row relaxation + format_quantity; migrations 0006_outsourced_company and 0007_server_accounts; offline installer layout, Dockerfile, render.yaml.
+- Verification at commit time: full regression 635 passed, 28 skipped (isolated PostgreSQL runtimes not configured), 0 failed across all 48 test files; Server Tool suite 82 passed; migration head == ORM (probe zero diff).
+- Housekeeping in the same commit: `.gitignore` excludes `.opencode/` (local agent working directory with node_modules).
+- NOT done (requires explicit LO direction): push to remote, merge/fast-forward into main, PR. The canonical R011 D2 verdict and Gate C freeze above are unchanged by this commit.
