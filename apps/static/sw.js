@@ -1,12 +1,11 @@
-const CACHE_NAME = 'hms-qr-v1';
+const CACHE_NAME = 'hms-qr-v2';
 const STATIC_ASSETS = [
   '/static/manifest.json',
   '/static/icon-192.png',
   '/static/icon-512.png',
   '/static/favicon.png',
-  'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js'
+  '/static/jsqr.min.js'
 ];
-
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -30,7 +29,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   // Serve static assets from cache first
-  if (url.pathname.startsWith('/static/') || url.hostname.includes('jsdelivr')) {
+  if (url.pathname.startsWith('/static/')) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
         return cached || fetch(event.request);

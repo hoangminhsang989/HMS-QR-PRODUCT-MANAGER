@@ -39,7 +39,7 @@ def test_product_api_client_serializes_product_workflow(monkeypatch):
         seen.append((request, timeout))
         return _Response(__import__("json").dumps({"items": [product], "total": 1, "page": 1, "page_size": 200}).encode())
 
-    monkeypatch.setattr("packages.application.product_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("packages.application.product_api_client.lan_urlopen", fake_urlopen)
     page = ProductApiClient("http://server:8000").list_products(
         page_size=200, status="NEW", delivery_start=date(2026, 9, 1), delivery_end=date(2026, 10, 1),
     )
@@ -52,7 +52,7 @@ def test_product_api_client_serializes_product_workflow(monkeypatch):
 
 def test_product_api_client_reports_connection_failures(monkeypatch):
     monkeypatch.setattr(
-        "packages.application.product_api_client.urlopen",
+        "packages.application.product_api_client.lan_urlopen",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(URLError("offline")),
     )
     with pytest.raises(ProductApiError, match="Không thể kết nối"):
@@ -74,7 +74,7 @@ def test_product_api_client_sends_loaded_version_when_updating(monkeypatch):
         seen.append(request)
         return _Response(__import__("json").dumps(product).encode())
 
-    monkeypatch.setattr("packages.application.product_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("packages.application.product_api_client.lan_urlopen", fake_urlopen)
     client = ProductApiClient("http://server:8000")
     client.get_product(product["internal_id"])
     client.update_product(product["internal_id"], actor="desktop-user", status="IN_PROGRESS")
@@ -88,7 +88,7 @@ def test_product_api_client_login_uses_admin_auth_endpoint(monkeypatch):
         seen.append(request)
         return _Response(b'{"access_token":"signed-token","role":"EDITOR","username":"lan-user"}')
 
-    monkeypatch.setattr("packages.application.product_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("packages.application.product_api_client.lan_urlopen", fake_urlopen)
     client = ProductApiClient("http://server:8000")
     assert client.login("lan-user", "") ["access_token"] == "signed-token"
     assert seen[0].full_url == "http://server:8000/admin-api/api/v1/auth/login"
@@ -102,7 +102,7 @@ def test_product_api_client_requires_database_readiness_before_desktop_login(mon
         seen.append(request)
         return _Response(b'{"state":"READY"}')
 
-    monkeypatch.setattr("packages.application.product_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("packages.application.product_api_client.lan_urlopen", fake_urlopen)
     client = ProductApiClient("http://server:8000")
     client.verify_server_readiness()
     assert seen[0].full_url == "http://server:8000/health/readiness/database"
@@ -110,7 +110,7 @@ def test_product_api_client_requires_database_readiness_before_desktop_login(mon
 
 def test_product_api_client_readiness_hides_connection_detail(monkeypatch):
     monkeypatch.setattr(
-        "packages.application.product_api_client.urlopen",
+        "packages.application.product_api_client.lan_urlopen",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(URLError("internal host detail")),
     )
     with pytest.raises(ProductApiError, match="Server trung tâm chưa sẵn sàng") as error:
@@ -125,7 +125,7 @@ def test_file_api_client_sends_bearer_token_and_uploads_bytes(monkeypatch):
         seen.append((request, timeout))
         return _Response(b'{"items": []}')
 
-    monkeypatch.setattr("packages.application.file_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("packages.application.file_api_client.lan_urlopen", fake_urlopen)
     client = FileApiClient("http://server:8000", access_token="signed-token")
     assert client.list_images("00000000-0000-0000-0000-000000000001") == []
     assert seen[0][0].full_url == "http://server:8000/files/api/v1/products/00000000-0000-0000-0000-000000000001/images"
@@ -142,7 +142,7 @@ def test_tracking_api_client_uses_bearer_token_for_central_list(monkeypatch):
         seen.append(request)
         return _Response(b'{"items": []}')
 
-    monkeypatch.setattr("packages.application.tracking_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("packages.application.tracking_api_client.lan_urlopen", fake_urlopen)
     assert TrackingApiClient("http://server:8000", access_token="signed-token").list_tracking(status="NEW") == []
     assert seen[0].full_url == "http://server:8000/tracking/api/v1/tracking-items?status=NEW"
     assert seen[0].get_header("Authorization") == "Bearer signed-token"

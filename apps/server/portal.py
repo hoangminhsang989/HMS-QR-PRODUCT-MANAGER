@@ -8,11 +8,15 @@ import os
 from pathlib import Path
 import re
 import socket
+import tempfile
 import urllib.parse
 from fastapi.responses import HTMLResponse
 import qrcode
 
+from apps.server.tls import lan_url_scheme
+
 from apps.design_tokens import WEB_CSS_VARS
+from config.paths import PathConfigurationError, require_test_root
 from packages.qr.payload import QrPayload
 from packages.qr.service import QRService
 
@@ -31,12 +35,15 @@ def _resolve_db_path() -> Path:
         p = Path(test_root) / "db" / "stage1_r002_dev.sqlite"
         if p.is_file():
             return p
-    # Hard fallback for dev machine
-    return Path(r"F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST\db\stage1_r002_dev.sqlite")
+    # Structural fallback through the shared path configuration (no host literals)
+    try:
+        return require_test_root() / "db" / "stage1_r002_dev.sqlite"
+    except PathConfigurationError:
+        return Path("stage1_r002_dev.sqlite")
 
 
 def get_public_tunnel_url() -> str | None:
-    log_path = Path(r"C:\Users\HMS-PCC\AppData\Local\Temp\opencode\cloudflared.log")
+    log_path = Path(tempfile.gettempdir()) / "cloudflared.log"
     if log_path.is_file():
         try:
             content = log_path.read_text(encoding="utf-8", errors="ignore")
@@ -1482,7 +1489,7 @@ def render_portal_html() -> str:
     public_qr = make_qr_data_uri(public_mobile_url) if public_url else ""
 
     local_ip = get_local_ip()
-    wifi_mobile_url = f"http://{local_ip}:8000/tracking/mobile"
+    wifi_mobile_url = f"{lan_url_scheme()}://{local_ip}:8000/tracking/mobile"
     wifi_qr = make_qr_data_uri(wifi_mobile_url)
 
     stats = get_stats()

@@ -9,13 +9,21 @@ import socket
 import threading
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen
+
+from packages.application.lan_transport import lan_urlopen
 
 
 DISCOVERY_PORT = 8011
 DISCOVERY_REQUEST = "HMS_QR_DISCOVER_V1"
 DISCOVERY_RESPONSE = "HMS_QR_SERVER_V1"
 READINESS_PATH = "/health/readiness/database"
+TLS_CERTIFICATE_ENV = "HMS_QR_TLS_CERT"
+
+
+def lan_scheme() -> str:
+    """Return the scheme a TLS-enabled Server advertises; http when TLS is off."""
+
+    return "https" if os.environ.get(TLS_CERTIFICATE_ENV) else "http"
 
 
 def desktop_server_url_path() -> Path:
@@ -30,7 +38,7 @@ def normalize_server_url(value: str) -> str:
     return value
 
 
-def server_is_ready(server_url: str, *, opener=urlopen) -> bool:
+def server_is_ready(server_url: str, *, opener=lan_urlopen) -> bool:
     try:
         with opener(f"{normalize_server_url(server_url)}{READINESS_PATH}", timeout=1.5) as response:
             return 200 <= getattr(response, "status", 200) < 300
@@ -52,7 +60,7 @@ def save_server_url(server_url: str, path: Path | None = None) -> None:
     target.write_text(json.dumps({"server_url": normalize_server_url(server_url)}), encoding="utf-8")
 
 
-def discover_server_url(*, timeout: float = 1.5, socket_factory=socket.socket, opener=urlopen) -> str | None:
+def discover_server_url(*, timeout: float = 1.5, socket_factory=socket.socket, opener=lan_urlopen) -> str | None:
     nonce = secrets.token_urlsafe(16)
     request = json.dumps({"type": DISCOVERY_REQUEST, "nonce": nonce}).encode("utf-8")
     client = socket_factory(socket.AF_INET, socket.SOCK_DGRAM)
@@ -95,9 +103,10 @@ def resolve_server_url(*, configured_url: str = "", saved_path: Path | None = No
 
 
 class DiscoveryResponder:
-    def __init__(self, *, port: int = DISCOVERY_PORT, socket_factory=socket.socket) -> None:
+    def __init__(self, *, port: int = DISCOVERY_PORT, socket_factory=socket.socket, scheme: str | None = None) -> None:
         self.port = port
         self.socket_factory = socket_factory
+        self.scheme = scheme or lan_scheme()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._socket: socket.socket | None = None
@@ -136,7 +145,7 @@ class DiscoveryResponder:
                     host = probe.getsockname()[0]
                 finally:
                     probe.close()
-                response = json.dumps({"type": DISCOVERY_RESPONSE, "nonce": request["nonce"], "server_url": f"http://{host}:8010"}).encode("utf-8")
+                response = json.dumps({"type": DISCOVERY_RESPONSE, "nonce": request["nonce"], "server_url": f"{self.scheme}://{host}:8010"}).encode("utf-8")
                 self._socket.sendto(response, address)
             except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 continue

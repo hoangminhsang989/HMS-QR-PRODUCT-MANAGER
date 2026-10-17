@@ -6,7 +6,9 @@ import json
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from packages.application.lan_transport import lan_urlopen
 from uuid import UUID
 
 
@@ -37,7 +39,7 @@ class TrackingApiClient:
             headers["Content-Type"] = "application/json"
             body = json.dumps(payload, default=str).encode("utf-8")
         try:
-            with urlopen(Request(url, data=body, headers=headers, method=method), timeout=self.timeout) as response:
+            with lan_urlopen(Request(url, data=body, headers=headers, method=method), timeout=self.timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             try:

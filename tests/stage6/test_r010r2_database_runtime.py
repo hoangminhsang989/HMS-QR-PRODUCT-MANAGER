@@ -93,6 +93,20 @@ def test_staging_and_prod_database_configuration_fail_closed(monkeypatch):
                 validate_database_url(environment, invalid)
 
 
+def test_staging_and_prod_accept_standalone_absolute_sqlite(tmp_path):
+    absolute = f"sqlite:///{(tmp_path / 'standalone.sqlite').as_posix()}"
+    for environment in (Environment.STAGING, Environment.PROD):
+        assert validate_database_url(environment, absolute) == absolute
+    for invalid in (
+        "sqlite:///relative.sqlite",
+        "sqlite:///:memory:",
+        "sqlite://",
+        "mysql://host/database",
+    ):
+        with pytest.raises(DatabaseConfigurationError):
+            validate_database_url(Environment.PROD, invalid)
+
+
 def test_environment_failure_never_silently_downgrades_to_dev(monkeypatch):
     monkeypatch.setenv(ENVIRONMENT_ENV, Environment.PROD.value)
     monkeypatch.delenv(DATABASE_URL_ENV, raising=False)

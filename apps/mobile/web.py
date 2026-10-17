@@ -13,7 +13,7 @@ MOBILE_HTML = """<!doctype html>
   <meta name='theme-color' content='#0d1520'>
   <meta name='apple-mobile-web-app-capable' content='yes'>
   <meta name='apple-mobile-web-app-status-bar-style' content='black-translucent'>
-  <script src='https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js'></script>
+<script src='/static/jsqr.min.js'></script>
   <style>
     :root {
       --bg: #0d1520;

@@ -40,7 +40,7 @@ def _is_placeholder(value: str) -> bool:
 
 
 def validate_database_url(environment: Environment, value: str) -> str:
-    """Enforce SQLite for DEV and psycopg/PostgreSQL for STAGING/PROD."""
+    """DEV requires SQLite; STAGING/PROD accept complete PostgreSQL or standalone absolute SQLite."""
 
     raw = str(value or "").strip()
     if environment is Environment.DEV:
@@ -57,6 +57,13 @@ def validate_database_url(environment: Environment, value: str) -> str:
         raise DatabaseConfigurationError(
             f"{environment.value.upper()} database URL is malformed."
         ) from None
+    if parsed.get_backend_name() == "sqlite":
+        database = parsed.database or ""
+        if not database or database == ":memory:" or not Path(database).is_absolute():
+            raise DatabaseConfigurationError(
+                f"{environment.value.upper()} standalone SQLite requires an absolute file path."
+            )
+        return raw
     if parsed.get_backend_name() != "postgresql" or parsed.drivername != "postgresql+psycopg":
         raise DatabaseConfigurationError(
             f"{environment.value.upper()} requires the tracked PostgreSQL psycopg driver."

@@ -6,7 +6,9 @@ import json
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from packages.application.lan_transport import lan_urlopen
 from uuid import UUID
 
 
@@ -39,7 +41,7 @@ class FileApiClient:
         elif content is not None:
             headers["Content-Type"] = "application/octet-stream"
         try:
-            with urlopen(Request(url, data=body, headers=headers, method=method), timeout=self.timeout) as response:
+            with lan_urlopen(Request(url, data=body, headers=headers, method=method), timeout=self.timeout) as response:
                 data = response.read()
                 content_type = response.headers.get_content_type() if getattr(response, "headers", None) else "application/json"
                 return data if "application/json" not in content_type else json.loads(data.decode("utf-8"))

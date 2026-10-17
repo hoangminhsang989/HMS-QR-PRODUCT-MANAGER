@@ -8,7 +8,9 @@ import json
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from packages.application.lan_transport import lan_urlopen
 from uuid import UUID
 
 from packages.domain.product import Product, ProductStatus
@@ -94,7 +96,7 @@ class ProductApiClient:
             body = json.dumps(payload, default=self._json_value).encode("utf-8")
         request = Request(url, data=body, headers=headers, method=method)
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with lan_urlopen(request, timeout=self.timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             try:

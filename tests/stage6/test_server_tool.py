@@ -9,7 +9,7 @@ import pytest
 from PySide6.QtWidgets import QMessageBox
 
 import apps.server.tool as server_tool
-from apps.server.tool import AUTO_START_TASK_NAME, MAX_ACTIVITY_LOG_LINES, POSTGRESQL_DATA_ROOT, POSTGRESQL_INSTALLER_SHA256, active_lan_network_status, backup_freshness, backup_integrity_details, backup_integrity_inventory, backup_inventory, backup_sqlite, check_sqlite_backup, create_production_secrets, current_user_autostart_command, current_user_autostart_exists, disk_space_status, external_hms_server_pid_command, firewall_private_status, generate_admin_password, lan_listener_status, lan_readiness_assessment, lan_readiness_checklist, latest_postgresql_backup, latest_sqlite_backup, load_server_secret, load_tool_settings, locations_are_saved, operational_readiness_report, postgresql_backup_inventory, postgresql_backup_path, postgresql_restore_command, postgresql_unattended_command, postgresql_unattended_options, production_paths, production_postgresql_is_installed, production_setup_requirements, repair_private_lan_command, restore_sqlite_database, run_postgresql_offline_installer, save_autostart_preference, save_server_secret, save_tool_settings, set_current_user_autostart, verified_postgresql_offline_installer
+from apps.server.tool import AUTO_START_TASK_NAME, MAX_ACTIVITY_LOG_LINES, POSTGRESQL_DATA_ROOT, POSTGRESQL_INSTALLER_SHA256, active_lan_network_status, backup_freshness, backup_integrity_details, backup_integrity_inventory, backup_inventory, backup_sqlite, check_sqlite_backup, create_production_secrets, current_user_autostart_command, current_user_autostart_exists, disk_space_status, external_hms_server_pid_command, firewall_private_status, generate_admin_password, lan_listener_status, lan_readiness_assessment, lan_readiness_checklist, latest_postgresql_backup, latest_sqlite_backup, load_server_secret, load_tool_settings, locations_are_saved, operational_readiness_report, postgresql_backup_inventory, postgresql_backup_path, postgresql_restore_command, postgresql_unattended_command, postgresql_unattended_options, production_database_file, production_database_mode, production_database_url, production_paths, production_postgresql_is_installed, production_setup_requirements, repair_private_lan_command, restore_sqlite_database, run_postgresql_offline_installer, save_autostart_preference, save_server_secret, save_tool_settings, set_current_user_autostart, verified_postgresql_offline_installer
 
 
 def test_direct_module_launch_requests_admin_and_does_not_start_window_when_not_elevated(monkeypatch):
@@ -212,7 +212,7 @@ def test_provisioning_skips_postgresql_restart_when_already_local_only():
     assert not any(call.args[0][0] == "powershell" for call in run.call_args_list)
 
 
-def test_production_setup_requires_bundled_python_wheels_and_verified_postgresql(tmp_path):
+def test_production_setup_requires_bundled_python_and_wheels_only(tmp_path):
     source = tmp_path / "release"
     (source / "installer" / "python").mkdir(parents=True)
     (source / "installer" / "wheels").mkdir()
@@ -222,7 +222,26 @@ def test_production_setup_requires_bundled_python_wheels_and_verified_postgresql
 
     assert "Python offline installer" in missing
     assert "Python offline wheels" in missing
-    assert "PostgreSQL 17 offline installer đã xác minh" in missing
+    assert missing == ["Python offline installer", "Python offline wheels"]
+
+
+def test_production_database_url_defaults_to_standalone_sqlite(tmp_path):
+    secrets = tmp_path / "server-tool-secrets.json"
+
+    assert production_database_mode(secrets) == "standalone"
+    assert production_database_file(tmp_path) == tmp_path / "database" / "hms_qr.sqlite"
+    url = production_database_url(tmp_path, secrets)
+    assert url == f"sqlite:///{(tmp_path / 'database' / 'hms_qr.sqlite').as_posix()}"
+
+
+def test_production_database_url_uses_postgresql_only_when_mode_selected(tmp_path):
+    secrets = tmp_path / "server-tool-secrets.json"
+    save_server_secret("database_mode", "postgresql", secrets)
+    save_server_secret("database_password", "app-secret", secrets)
+
+    assert production_database_mode(secrets) == "postgresql"
+    url = production_database_url(tmp_path, secrets)
+    assert url.startswith("postgresql+psycopg://hms_qr_app:app-secret@127.0.0.1:5432/hms_qr")
 
 
 def test_postgresql_backup_helpers_use_distinct_custom_dump_files(tmp_path):
@@ -522,14 +541,15 @@ def test_dpapi_script_loads_windows_security_assembly():
 
 def test_production_secret_creation_is_idempotent_and_never_writes_plaintext(tmp_path):
     secrets_path = tmp_path / "server-tool-secrets.json"
-    protected = iter(("postgres-blob", "database-blob", "auth-blob", "admin-blob"))
+    protected = iter(("mode-blob", "postgres-blob", "database-blob", "auth-blob", "admin-blob"))
     with patch("apps.server.tool._dpapi", side_effect=lambda value, **_kwargs: next(protected)):
         create_production_secrets(secrets_path)
     first = secrets_path.read_text(encoding="utf-8")
     with patch("apps.server.tool._dpapi") as dpapi:
         create_production_secrets(secrets_path)
     assert dpapi.call_count == 0
-    assert set(__import__("json").loads(first)) == {"postgres_password", "database_password", "auth_secret", "admin_password"}
+    assert set(__import__("json").loads(first)) == {"database_mode", "postgres_password", "database_password", "auth_secret", "admin_password"}
+    assert "standalone" not in first
 
 
 def test_server_tool_classifies_tcp_listener_for_lan_readiness():

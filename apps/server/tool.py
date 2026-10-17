@@ -25,6 +25,14 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QAbstractItemView, QProgressBar, QScrollArea, QCheckBox,
 )
 
+from apps.server.tls import (
+    certificate_environment,
+    ensure_lan_certificate,
+    lan_url_scheme,
+    production_tls_paths,
+    tls_is_enabled,
+)
+
 
 SERVER_URL = "http://127.0.0.1:8010"
 LAN_PORT = 8010
@@ -161,6 +169,7 @@ def create_production_secrets(path: Path = SECRETS_PATH) -> None:
     except (OSError, json.JSONDecodeError):
         stored = {}
     required = {
+        "database_mode": "standalone",
         "postgres_password": secrets.token_urlsafe(32),
         "database_password": secrets.token_urlsafe(32),
         "auth_secret": secrets.token_urlsafe(48),
@@ -183,8 +192,41 @@ def production_paths(root: Path = DEFAULT_DATA_ROOT) -> dict[str, Path]:
         "storage": root / "storage",
         "backups": root / "backups",
         "logs": root / "logs",
+        "database": root / "database",
+        "tls": root / "tls",
         "postgresql": root / "postgresql",
     }
+
+
+PRODUCTION_DATABASE_FILE_NAME = "hms_qr.sqlite"
+
+
+def production_database_mode(secrets_path: Path = SECRETS_PATH) -> str:
+    """Return 'standalone' (SQLite, default) or 'postgresql' for this machine."""
+
+    try:
+        mode = load_server_secret("database_mode", secrets_path)
+    except ValueError:
+        return "standalone"
+    return "postgresql" if mode == "postgresql" else "standalone"
+
+
+def production_database_file(root: Path = DEFAULT_DATA_ROOT) -> Path:
+    """Return the standalone SQLite database file for this machine."""
+
+    return production_paths(root)["database"] / PRODUCTION_DATABASE_FILE_NAME
+
+
+def production_database_url(root: Path = DEFAULT_DATA_ROOT, secrets_path: Path = SECRETS_PATH) -> str:
+    """Build the production database URL; standalone SQLite needs no external server."""
+
+    if production_database_mode(secrets_path) == "postgresql":
+        database_password = load_server_secret("database_password", secrets_path)
+        return (
+            f"postgresql+psycopg://{PRODUCTION_DATABASE_USER}:{database_password}"
+            f"@127.0.0.1:{POSTGRESQL_PORT}/{PRODUCTION_DATABASE}"
+        )
+    return f"sqlite:///{production_database_file(root).as_posix()}"
 
 
 def postgresql_unattended_options(*, data_root: Path, superpassword: str) -> str:
@@ -236,18 +278,17 @@ def run_postgresql_offline_installer(installer: Path, option_file: Path, options
 
 def production_server_environment(root: Path = DEFAULT_DATA_ROOT, secrets_path: Path = SECRETS_PATH) -> dict[str, str]:
     """Load only DPAPI-protected secrets into the child Server process environment."""
-    database_password = load_server_secret("database_password", secrets_path)
-    return {
+    environment = {
         "HMS_QR_ENV": "prod",
-        "HMS_QR_DATABASE_URL": (
-            f"postgresql+psycopg://{PRODUCTION_DATABASE_USER}:{database_password}"
-            f"@127.0.0.1:{POSTGRESQL_PORT}/{PRODUCTION_DATABASE}"
-        ),
+        "HMS_QR_DATABASE_URL": production_database_url(root, secrets_path),
         "HMS_QR_STORAGE_ROOT": str(production_paths(root)["storage"]),
         "HMS_QR_AUTH_SECRET": load_server_secret("auth_secret", secrets_path),
         "HMS_QR_BOOTSTRAP_ADMIN_USERNAME": "admin",
         "HMS_QR_BOOTSTRAP_ADMIN_PASSWORD": load_server_secret("admin_password", secrets_path),
     }
+    if tls_is_enabled(root):
+        environment.update(certificate_environment(production_tls_paths(root)))
+    return environment
 
 
 def production_setup_requirements(source_root: Path | None = None) -> list[str]:
@@ -258,10 +299,6 @@ def production_setup_requirements(source_root: Path | None = None) -> list[str]:
         missing.append("Python offline installer")
     if not list((source / "installer" / "wheels").glob("*.whl")):
         missing.append("Python offline wheels")
-    try:
-        verified_postgresql_offline_installer(source / "installer" / "postgresql" / POSTGRESQL_INSTALLER_NAME)
-    except ValueError:
-        missing.append("PostgreSQL 17 offline installer đã xác minh")
     return missing
 
 
@@ -738,6 +775,8 @@ class ServerToolWindow(QMainWindow):
         self.repair_lan_button.setObjectName("primaryButton")
         self.install_postgresql_button = QPushButton("CÀI POSTGRESQL 17")
         self.install_postgresql_button.setObjectName("outlineButton")
+        self.enable_tls_button = QPushButton("BẬT HTTPS CAMERA")
+        self.enable_tls_button.setObjectName("outlineButton")
         self.setup_production_button = QPushButton("THIẾT LẬP SERVER 1 CLICK")
         self.setup_production_button.setObjectName("primaryButton")
         self.setup_progress = QProgressBar()
@@ -767,7 +806,7 @@ class ServerToolWindow(QMainWindow):
         lan_grid.addWidget(self.lan_address, 0, 1)
         lan_grid.addWidget(self.firewall_button, 1, 0, 1, 2)
         lan_grid.addWidget(self.repair_lan_button, 2, 0, 1, 2)
-        lan_grid.addWidget(self.install_postgresql_button, 3, 0, 1, 2)
+        lan_grid.addWidget(self.install_postgresql_button, 3, 0); lan_grid.addWidget(self.enable_tls_button, 3, 1)
         lan_grid.addWidget(self.setup_production_button, 4, 0, 1, 2)
         lan_grid.addWidget(self.setup_progress, 5, 0, 1, 2)
         lan_grid.addWidget(self.check_firewall_button, 6, 0)
@@ -1041,7 +1080,7 @@ class ServerToolWindow(QMainWindow):
         self.account_status_filter.currentTextChanged.connect(self.apply_account_filters)
         self.firewall_button.clicked.connect(self.open_firewall)
         self.repair_lan_button.clicked.connect(self.repair_private_lan)
-        self.install_postgresql_button.clicked.connect(self.install_postgresql)
+        self.install_postgresql_button.clicked.connect(self.install_postgresql); self.enable_tls_button.clicked.connect(self.enable_lan_tls)
         self.setup_production_button.clicked.connect(self.setup_production_server)
         self.apply_ip_button.clicked.connect(self.apply_static_ip)
         choose_data.clicked.connect(lambda: self.choose_directory(self.data_root))
@@ -1117,7 +1156,7 @@ class ServerToolWindow(QMainWindow):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
                 probe.connect(("8.8.8.8", 80))
-                return f"http://{probe.getsockname()[0]}:{LAN_PORT}"
+                return f"{lan_url_scheme()}://{probe.getsockname()[0]}:{LAN_PORT}"
         except OSError:
             return "Không xác định được IP LAN"
 
@@ -1212,6 +1251,13 @@ class ServerToolWindow(QMainWindow):
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Không thể lưu", str(exc))
 
+    def _current_database_file(self) -> Path:
+        """Return the database this Tool manages: standalone production SQLite or DEV SQLite."""
+        production = production_database_file()
+        if production.is_file():
+            return production
+        return Path(self._settings["data_root"]) / "hms_qr_test.sqlite"
+
     def backup_database(self) -> None:
         try:
             pg_dump = POSTGRESQL_INSTALL_ROOT / "bin" / "pg_dump.exe"
@@ -1236,7 +1282,7 @@ class ServerToolWindow(QMainWindow):
                 self.append_activity(f"SAO LƯU POSTGRESQL: Đã tạo và kiểm tra {target.name}")
                 QMessageBox.information(self, "Sao lưu đã xác minh", f"Đã tạo PostgreSQL backup: {target.name}")
                 return
-            database = Path(self._settings["data_root"]) / "hms_qr_test.sqlite"
+            database = self._current_database_file()
             target = backup_sqlite(database, Path(self._settings["backup_root"]))
             verification = check_sqlite_backup(target)
             self.overview_backup.setText(target.name)
@@ -1273,7 +1319,7 @@ class ServerToolWindow(QMainWindow):
         if owned_server_running:
             self.stop_server()
         try:
-            database = Path(self._settings["data_root"]) / "hms_qr_test.sqlite"
+            database = self._current_database_file()
             safety_backup = restore_sqlite_database(database, backup, backup_root)
             self.append_activity(f"KHÔI PHỤC SQLITE: Đã dùng {backup.name}\nSAFETY BACKUP: {safety_backup.name if safety_backup else 'Không có database trước đó'}")
             QMessageBox.information(self, "Khôi phục hoàn tất", "Database đã được thay thế từ backup đã xác minh.")
@@ -1524,7 +1570,7 @@ class ServerToolWindow(QMainWindow):
             return
         message = (
             "Tool sẽ đổi adapter đang có default gateway sang profile Private và bật/cập nhật Firewall "
-            f"TCP {LAN_PORT}, UDP 8011. Không thay đổi IP, DNS, PostgreSQL hoặc dữ liệu Server. Tiếp tục?"
+            f"TCP {LAN_PORT}, UDP 8011. Khong thay doi IP, DNS, database hoac du lieu Server. Tiep tuc?"
         )
         if QMessageBox.question(self, "Tự sửa kết nối LAN", message) != QMessageBox.StandardButton.Yes:
             return
@@ -1567,44 +1613,51 @@ class ServerToolWindow(QMainWindow):
         if QMessageBox.question(
             self,
             "Thiết lập Server 1 Click",
-            "Tool sẽ tạo data local tại D:\\HMS-QR-PROD, cài/cấu hình PostgreSQL local-only, tạo Server database, "
+            "Tool sẽ tạo data local tại D:\\HMS-QR-PROD, dùng database SQLite nhúng sẵn (không cần cài thêm phần mềm), "
             "mở Firewall Private TCP 8010 và sinh tài khoản admin. Không có mật khẩu nào được ghi vào log. Tiếp tục?",
         ) != QMessageBox.StandardButton.Yes:
             return
         self.setup_production_button.setEnabled(False)
         try:
-            self._set_setup_progress(1, "1/7 Kiểm tra gói cài đặt offline...")
+            self._set_setup_progress(1, "1/6 Kiểm tra gói cài đặt offline...")
             missing = production_setup_requirements()
             if missing:
                 raise ValueError("Release offline chưa đầy đủ: " + ", ".join(missing) + ".")
-            installer = verified_postgresql_offline_installer()
             paths = production_paths()
-            self._set_setup_progress(2, "2/7 Tạo thư mục local...")
+            self._set_setup_progress(2, "2/6 Tạo thư mục local...")
             for folder in paths.values():
                 _validated_root(str(folder))
-            self._set_setup_progress(2, "2/7 Bảo vệ bí mật Server bằng Windows DPAPI...")
+            self._set_setup_progress(2, "2/6 Bảo vệ bí mật Server bằng Windows DPAPI...")
             create_production_secrets()
-            psql = POSTGRESQL_INSTALL_ROOT / "bin" / "psql.exe"
-            if not psql.is_file():
-                self._set_setup_progress(3, "3/7 Đang cài PostgreSQL 17 offline...")
-                option_file = paths["root"] / "postgresql-install-options.conf"
-                result = run_postgresql_offline_installer(
-                    installer,
-                    option_file,
-                    postgresql_unattended_options(
-                        data_root=paths["postgresql"],
-                        superpassword=load_server_secret("postgres_password"),
-                    ),
-                )
-                if result.returncode:
-                    raise RuntimeError("Cài PostgreSQL offline không hoàn tất.")
+            if production_database_mode() == "postgresql":
+                installer = verified_postgresql_offline_installer()
+                psql = POSTGRESQL_INSTALL_ROOT / "bin" / "psql.exe"
+                if not psql.is_file():
+                    self._set_setup_progress(3, "3/7 Đang cài PostgreSQL 17 offline...")
+                    option_file = paths["root"] / "postgresql-install-options.conf"
+                    result = run_postgresql_offline_installer(
+                        installer,
+                        option_file,
+                        postgresql_unattended_options(
+                            data_root=paths["postgresql"],
+                            superpassword=load_server_secret("postgres_password"),
+                        ),
+                    )
+                    if result.returncode:
+                        raise RuntimeError("Cài PostgreSQL offline không hoàn tất.")
+                else:
+                    self._set_setup_progress(3, "3/7 PostgreSQL 17 đã sẵn sàng.")
+                self._set_setup_progress(4, "4/7 Tạo database PostgreSQL local-only...")
+                self._provision_production_database(psql)
             else:
-                self._set_setup_progress(3, "3/7 PostgreSQL 17 đã sẵn sàng.")
-            self._set_setup_progress(4, "4/7 Tạo database PostgreSQL local-only...")
-            self._provision_production_database(psql)
+                self._set_setup_progress(3, "3/7 Database SQLite nhúng sẵn sàng...")
+                self._set_setup_progress(4, "4/7 Khởi tạo database SQLite local...")
+                self._create_standalone_database(paths["database"])
             self._set_setup_progress(5, "5/7 Cập nhật database schema...")
             self._run_production_migrations()
-            self._set_setup_progress(6, "6/7 Mở Firewall Private TCP 8010...")
+            self._set_setup_progress(6, "6/7 Tạo chứng chỉ TLS cho camera điện thoại...")
+            ensure_lan_certificate(paths["root"], lan_addresses=self._lan_ip_addresses())
+            self._set_setup_progress(7, "7/7 Mở Firewall Private TCP 8010...")
             self._open_production_firewall()
             self.data_root.setText(str(paths["storage"]))
             self.backup_root.setText(str(paths["backups"]))
@@ -1622,6 +1675,48 @@ class ServerToolWindow(QMainWindow):
             QMessageBox.warning(self, "Thiết lập chưa hoàn tất", f"Thiết lập dừng ở bước {self.setup_progress.value()}/7 ({type(exc).__name__}). Không có mật khẩu nào được hiển thị; xem Nhật ký hoạt động để xử lý tiếp.")
         finally:
             self.setup_production_button.setEnabled(True)
+
+    def _lan_ip_addresses(self) -> list[str]:
+        """Collect this machine's IPv4 addresses for the certificate SAN list."""
+
+        addresses: list[str] = []
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                probe.connect(("8.8.8.8", 80))
+                addresses.append(probe.getsockname()[0])
+        except OSError:
+            pass
+        for candidate in (socket.gethostbyname_ex(socket.gethostname())[2] if socket.gethostname() else []):
+            if candidate not in addresses:
+                addresses.append(candidate)
+        return [address for address in addresses if ipaddress.ip_address(address).is_private]
+
+    def enable_lan_tls(self) -> None:
+        """Generate the local certificate pair so phone cameras work over the LAN."""
+
+        try:
+            paths = ensure_lan_certificate(DEFAULT_DATA_ROOT, lan_addresses=self._lan_ip_addresses())
+        except Exception as exc:
+            QMessageBox.warning(self, "Chưa bật được HTTPS", f"{type(exc).__name__}: {exc}")
+            return
+        self.append_activity(f"HTTPS CAMERA: Đã tạo chứng chỉ tự ký {paths['certificate'].name}.")
+        QMessageBox.information(
+            self,
+            "Đã bật HTTPS cho camera",
+            "Chứng chỉ tự ký đã được tạo. Khởi động lại Server để áp dụng.\n\n"
+            "Trên điện thoại, mở địa chỉ https:// và chọn ĐĂNG KÝ / TIN TƯỞNG khi trình duyệt cảnh báo chứng chỉ tự ký (chỉ một lần).",
+        )
+        if self._server_process and self._server_process.state() != QProcess.ProcessState.NotRunning:
+            self.stop_server()
+            self.start_server()
+
+    @staticmethod
+    def _create_standalone_database(database_root: Path) -> None:
+        """Create the embedded SQLite database file; no external database server is installed."""
+        database_root.mkdir(parents=True, exist_ok=True)
+        database = database_root / PRODUCTION_DATABASE_FILE_NAME
+        if not database.is_file():
+            database.touch()
 
     def _set_setup_progress(self, value: int, text: str) -> None:
         self.setup_progress.setValue(value)
@@ -1733,7 +1828,11 @@ class ServerToolWindow(QMainWindow):
             return
         process = QProcess(self)
         process.setProgram("py")
-        process.setArguments(["-3.14", "-m", "uvicorn", "apps.server.app:app", "--host", "0.0.0.0", "--port", str(LAN_PORT)])
+        arguments = ["-3.14", "-m", "uvicorn", "apps.server.app:app", "--host", "0.0.0.0", "--port", str(LAN_PORT)]
+        if tls_is_enabled():
+            paths = production_tls_paths()
+            arguments += ["--ssl-certfile", str(paths["certificate"]), "--ssl-keyfile", str(paths["key"])]
+        process.setArguments(arguments)
         process.setWorkingDirectory(str(__import__("pathlib").Path(__file__).resolve().parents[2]))
         process.setProcessEnvironment(self._server_environment())
         process.readyReadStandardError.connect(self._show_server_log)

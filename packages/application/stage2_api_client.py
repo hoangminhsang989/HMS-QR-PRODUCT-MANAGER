@@ -6,7 +6,9 @@ import json
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from packages.application.lan_transport import lan_urlopen
 
 
 class Stage2ApiError(RuntimeError):
@@ -31,7 +33,7 @@ class Stage2ApiClient:
         if body is not None:
             headers["Content-Type"] = "application/json"
         try:
-            with urlopen(Request(url, data=body, headers=headers, method=method), timeout=self.timeout) as response:
+            with lan_urlopen(Request(url, data=body, headers=headers, method=method), timeout=self.timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             try:
@@ -67,7 +69,7 @@ class Stage2ApiClient:
         url = f"{self.base_url}/api/v1/products?page_size=200"
         request = Request(url, headers={"Accept": "application/json", "Authorization": f"Bearer {self.access_token}"})
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with lan_urlopen(request, timeout=self.timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError) as exc:
             raise Stage2ApiError("Không thể tải Product Master từ server trung tâm.") from exc

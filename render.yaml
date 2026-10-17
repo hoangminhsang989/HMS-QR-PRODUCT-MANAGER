@@ -3,11 +3,18 @@ services:
     name: hms-qr-product-manager
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn apps.server.app:app --host 0.0.0.0 --port $PORT
+    startCommand: alembic upgrade head && uvicorn apps.server.app:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: HMS_QR_TEST_ROOT
-        value: /tmp/hms-runtime
       - key: HMS_QR_ENV
-        value: dev
+        value: prod
+      # PROD requires the tracked psycopg driver; Render's database URL uses the
+      # plain postgresql:// scheme, so set this in the dashboard as
+      # postgresql+psycopg://<user>:<password>@<host>:5432/<database>
+      # (or derive it from the managed database connection string).
+      - key: HMS_QR_DATABASE_URL
+        sync: false
       - key: PYTHONDONTWRITEBYTECODE
         value: "1"
+databases:
+  - name: hms-qr-db
+    plan: basic-256mb

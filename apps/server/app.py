@@ -431,6 +431,7 @@ stage2_api = build_stage2_api(app_config=SERVER_APP_CONFIG, database_runtime=SER
 app.mount("/stage2", stage2_api)
 
 from apps.server.portal import get_live_events, get_public_tunnel_url, get_local_ip, portal_page
+from apps.server.tls import lan_url_scheme
 from fastapi.responses import RedirectResponse
 
 @app.get("/", response_class=HTMLResponse)
@@ -455,7 +456,7 @@ def tunnel_status():
     url = get_public_tunnel_url()
     local_ip = get_local_ip()
     mobile_url = f"{url}/tracking/mobile" if url else None
-    lan_url = f"http://{local_ip}:8000/tracking/mobile"
+    lan_url = f"{lan_url_scheme()}://{local_ip}:8000/tracking/mobile"
     return {
         "tunnel_url": url,
         "mobile_url": mobile_url,

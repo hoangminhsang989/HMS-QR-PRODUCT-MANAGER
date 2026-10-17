@@ -28,6 +28,25 @@ class DatabaseUnavailableError(RuntimeError):
     """Secret-free production startup failure."""
 
 
+SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
+
+
+def _apply_sqlite_lan_pragmas(engine: Engine) -> None:
+    """Enable WAL so LAN readers never block behind the single writer."""
+
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute(f"PRAGMA busy_timeout={int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)}")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cursor.close()
+
+
 def redacted_database_url(value: str) -> str:
     """Return a diagnostic URL without credentials or raw secret text."""
 
@@ -74,12 +93,16 @@ class DatabaseRuntime:
 
 def create_database_runtime(config: AppConfig) -> DatabaseRuntime:
     url = validate_database_url(config.environment, config.database_url)
-    if config.environment is Environment.DEV:
+    if make_url(url).get_backend_name() == "sqlite":
         engine = create_engine(
             url,
             future=True,
-            connect_args={"check_same_thread": False},
+            connect_args={
+                "check_same_thread": False,
+                "timeout": SQLITE_BUSY_TIMEOUT_SECONDS,
+            },
         )
+        _apply_sqlite_lan_pragmas(engine)
     else:
         engine = create_engine(
             url,
