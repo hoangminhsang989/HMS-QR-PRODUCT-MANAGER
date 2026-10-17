@@ -209,9 +209,10 @@ def test_prod_config_and_imports_do_not_resolve_or_inherit_test_root(monkeypatch
         "HMS_QR_DATABASE_URL",
         "postgresql+psycopg://runtime-user:fixture-password@db.invalid/hms_qr",
     )
+    monkeypatch.setenv("HMS_QR_STORAGE_ROOT", "C:/hms-qr-production-storage")
     monkeypatch.delenv(GENERATED_ASSET_ROOT_ENV, raising=False)
     config = load_config(Environment.PROD)
-    assert config.storage_root is None
+    assert config.storage_root == "C:\\hms-qr-production-storage"
     assert str(test_root).casefold() not in repr(config).casefold()
     code = (
         "import config.paths, config.environments, packages.generated_assets; "
@@ -221,6 +222,7 @@ def test_prod_config_and_imports_do_not_resolve_or_inherit_test_root(monkeypatch
     environment.update(
         {
             "HMS_QR_ENV": "prod",
+            "HMS_QR_STORAGE_ROOT": "C:/hms-qr-production-storage",
             "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONPATH": str(ROOT),
         }

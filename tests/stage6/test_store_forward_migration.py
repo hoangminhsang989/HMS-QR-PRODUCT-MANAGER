@@ -37,7 +37,7 @@ def _run(database, operation, revision):
 def test_0005_revision_boundary_downgrade_and_reupgrade(tmp_path):
     database = tmp_path / "r009-boundary.sqlite"
     config = _config(database)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0005_store_forward"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0007_server_accounts"]
     _run(database, "upgrade", "0004_managed_files")
     assert R009_TABLES.isdisjoint(_tables(database))
     _run(database, "upgrade", "head")

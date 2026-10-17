@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 
 from packages.domain.tracking import TrackingError, TrackingStatus, utc_now
+from packages.domain.product import format_quantity
 from packages.domain.workflow import TrackingWorkflowEvent, WorkflowEventType
 from packages.persistence.tracking_models import (
     MachiningTypeORM,
@@ -118,7 +119,7 @@ class WorkflowRepository:
             totals = self._totals(active)
             return {
                 "current_status": item.status,
-                "target_quantity": str(item.quantity),
+                "target_quantity": format_quantity(item.quantity),
                 "checked_quantity": str(totals[WorkflowEventType.QC_CHECKED]),
                 "shortage_quantity": str(totals[WorkflowEventType.SHORTAGE_REPORTED]),
                 "ng_quantity": str(totals[WorkflowEventType.QC_NG_RETURNED_TO_MACHINING]),
@@ -140,7 +141,7 @@ class WorkflowRepository:
         workflow = [self._history_event(event) for event in self.events(item_id)]
         process = [{
             "source": "MACHINING", "internal_id": str(event.internal_id),
-            "event_type": event.kind.value, "quantity": str(event.quantity),
+            "event_type": event.kind.value, "quantity": format_quantity(event.quantity),
             "notes": event.notes, "actor_user_id": str(event.actor_user_id),
             "actor_display_name_snapshot": event.actor_display_name_snapshot,
             "server_timestamp": event.server_timestamp.isoformat(),
@@ -228,7 +229,7 @@ class WorkflowRepository:
         return {
             "source": "WORKFLOW", "internal_id": str(event.internal_id),
             "event_type": event.event_type.value,
-            "quantity": str(event.quantity) if event.quantity is not None else None,
+            "quantity": format_quantity(event.quantity) if event.quantity is not None else None,
             "notes": event.notes, "actor_user_id": str(event.actor_user_id),
             "actor_display_name_snapshot": event.actor_display_name_snapshot,
             "server_timestamp": event.server_timestamp.isoformat(),

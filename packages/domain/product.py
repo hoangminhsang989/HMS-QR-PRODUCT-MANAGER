@@ -54,6 +54,16 @@ def optional_text(value: object | None, field: str, max_length: int = 2000) -> s
     return result or None
 
 
+def product_name(value: object, max_length: int = 255) -> str:
+    """Normalize a product name while allowing blank names for NO-coded products."""
+    if not isinstance(value, str):
+        raise ProductValidationError("part_name", "Giá trị phải là văn bản.")
+    result = value.strip()
+    if len(result) > max_length:
+        raise ProductValidationError("part_name", f"Tối đa {max_length} ký tự.")
+    return result
+
+
 def positive_quantity(value: object) -> Decimal:
     try:
         quantity = Decimal(str(value))
@@ -62,6 +72,22 @@ def positive_quantity(value: object) -> Decimal:
     if not quantity.is_finite() or quantity <= 0:
         raise ProductValidationError("quantity", "Số lượng phải lớn hơn 0.")
     return quantity
+
+
+def nonnegative_quantity(value: object) -> Decimal:
+    try:
+        quantity = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ProductValidationError("quantity", "Số lượng phải là số.") from exc
+    if not quantity.is_finite() or quantity < 0:
+        raise ProductValidationError("quantity", "Số lượng không được nhỏ hơn 0.")
+    return quantity
+
+
+def format_quantity(value: object) -> str:
+    """Format Decimal quantities for people without storage-scale zeroes."""
+    rendered = format(Decimal(str(value)), "f")
+    return rendered.rstrip("0").rstrip(".") if "." in rendered else rendered
 
 
 def parse_status(value: ProductStatus | str) -> ProductStatus:
@@ -104,14 +130,15 @@ class Product:
     updated_at: datetime
     created_by: str
     updated_by: str
+    outsourced_company: str | None = None
 
     @classmethod
     def create(cls, *, product_code: str, company: str, part_name: str,
                quantity: object, unit: str, actor: str, material: str | None = None,
-               requester: str | None = None, surface_treatment: str | None = None,
-               outsourced: bool = False, size: str | None = None,
-               notes: str | None = None, delivery_schedule: date | str | None = None,
-               status: ProductStatus | str = ProductStatus.NEW,
+                requester: str | None = None, surface_treatment: str | None = None,
+                outsourced: bool = False, size: str | None = None,
+                notes: str | None = None, delivery_schedule: date | str | None = None,
+                status: ProductStatus | str = ProductStatus.NEW, outsourced_company: str | None = None,
                internal_id: UUID | None = None, now: datetime | None = None) -> "Product":
         timestamp = now or utc_now()
         if timestamp.tzinfo is None or timestamp.utcoffset() is None:
@@ -119,30 +146,33 @@ class Product:
         timestamp = timestamp.astimezone(timezone.utc)
         return cls(
             internal_id or uuid4(), required_text(product_code, "product_code", 64).upper(),
-            required_text(company, "company"), required_text(part_name, "part_name"),
-            positive_quantity(quantity), required_text(unit, "unit", 32),
+            optional_text(company, "company", 255) or "", product_name(part_name),
+            nonnegative_quantity(quantity), required_text(unit, "unit", 32),
             optional_text(material, "material", 255), optional_text(requester, "requester", 255),
             optional_text(surface_treatment, "surface_treatment", 255), bool(outsourced),
             optional_text(size, "size", 255), optional_text(notes, "notes"),
             parse_delivery_date(delivery_schedule), parse_status(status), timestamp, timestamp,
             required_text(actor, "actor", 128), required_text(actor, "actor", 128),
+            optional_text(outsourced_company, "outsourced_company", 255),
         )
 
     def update(self, *, actor: str, now: datetime | None = None, **changes: object) -> "Product":
-        allowed = {"company", "part_name", "quantity", "unit", "material", "requester",
-                   "surface_treatment", "outsourced", "size", "notes", "delivery_schedule", "status"}
+        allowed = {"product_code", "company", "part_name", "quantity", "unit", "material", "requester",
+                    "surface_treatment", "outsourced", "outsourced_company", "size", "notes", "delivery_schedule", "status"}
         unknown = set(changes) - allowed
         if unknown:
             raise ProductValidationError("payload", "Không thể sửa: " + ", ".join(sorted(unknown)))
         values = {
-            "company": required_text(changes.get("company", self.company), "company"),
-            "part_name": required_text(changes.get("part_name", self.part_name), "part_name"),
-            "quantity": positive_quantity(changes.get("quantity", self.quantity)),
+            "product_code": required_text(changes.get("product_code", self.product_code), "product_code", 64).upper(),
+            "company": optional_text(changes.get("company", self.company), "company", 255) or "",
+            "part_name": product_name(changes.get("part_name", self.part_name)),
+            "quantity": nonnegative_quantity(changes.get("quantity", self.quantity)),
             "unit": required_text(changes.get("unit", self.unit), "unit", 32),
             "material": optional_text(changes.get("material", self.material), "material", 255),
             "requester": optional_text(changes.get("requester", self.requester), "requester", 255),
             "surface_treatment": optional_text(changes.get("surface_treatment", self.surface_treatment), "surface_treatment", 255),
             "outsourced": bool(changes.get("outsourced", self.outsourced)),
+            "outsourced_company": optional_text(changes.get("outsourced_company", self.outsourced_company), "outsourced_company", 255),
             "size": optional_text(changes.get("size", self.size), "size", 255),
             "notes": optional_text(changes.get("notes", self.notes), "notes"),
             "delivery_schedule": parse_delivery_date(changes.get("delivery_schedule", self.delivery_schedule)),
@@ -153,4 +183,4 @@ class Product:
         return replace(self, **values)
 
 
-__all__ = ["Product", "ProductStatus", "ProductValidationError", "parse_status", "utc_now"]
+__all__ = ["Product", "ProductStatus", "ProductValidationError", "format_quantity", "parse_status", "utc_now"]

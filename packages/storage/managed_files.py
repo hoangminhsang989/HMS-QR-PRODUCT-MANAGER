@@ -142,12 +142,14 @@ class ManagedFileService:
 
     def read(self, file_id: UUID) -> bytes:
         managed = self.repository.get(file_id)
+        # Desktop can read the verified local copy even when archive transfer was
+        # not configured for an older imported file.
+        local = self.verify(file_id)
+        if local.valid:
+            return self.storage.read(managed.storage_key)
         if self.archive_coordinator is not None:
             return self.archive_coordinator.read_available(managed)
-        result = self.verify(file_id)
-        if not result.valid:
-            raise FileNotFoundError("Managed file has no valid available copy.")
-        return self.storage.read(managed.storage_key)
+        raise FileNotFoundError("Managed file has no valid available copy.")
 
     def _publish(
         self,

@@ -19,6 +19,16 @@ python -m apps.desktop
 uvicorn apps.server.app:app --reload
 ```
 
+## Central Server Deployment
+
+For PostgreSQL-backed LAN deployment, follow
+[`docs/POSTGRESQL_LAN_DEPLOYMENT.md`](docs/POSTGRESQL_LAN_DEPLOYMENT.md).
+Desktop clients never receive a database URL or storage path. Start
+`CHAY_DESKTOP.bat` on Machine 2: Desktop first uses a verified saved endpoint,
+then Private-LAN discovery, and provides Server selection plus native login if
+the launcher does not supply `HMS_QR_SERVER_URL`, `HMS_QR_USERNAME`, and
+`HMS_QR_PASSWORD`.
+
 Stage 2 adds the Customer → PO → PO Line → Delivery Schedule / Production Run
 vertical slice with SQLAlchemy/Alembic architecture, generic order export, and
 compact desktop navigation tabs. QR issuance, mobile scan, QC, NAS writes, and

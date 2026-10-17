@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase): pass
@@ -15,7 +15,26 @@ class ProductORM(Base):
     part_name: Mapped[str] = mapped_column(String(255), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     unit: Mapped[str] = mapped_column(String(32), nullable=False)
-    material: Mapped[str|None] = mapped_column(String(255)); requester: Mapped[str|None] = mapped_column(String(255)); surface_treatment: Mapped[str|None] = mapped_column(String(255)); outsourced: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False); size: Mapped[str|None] = mapped_column(String(255)); notes: Mapped[str|None] = mapped_column(Text); delivery_schedule: Mapped[date|None] = mapped_column(Date); status: Mapped[str] = mapped_column(String(32), nullable=False, default="NEW"); created_at: Mapped[datetime|None] = mapped_column(DateTime(timezone=True)); updated_at: Mapped[datetime|None] = mapped_column(DateTime(timezone=True)); created_by: Mapped[str|None] = mapped_column(String(128)); updated_by: Mapped[str|None] = mapped_column(String(128))
+    material: Mapped[str|None] = mapped_column(String(255)); requester: Mapped[str|None] = mapped_column(String(255)); surface_treatment: Mapped[str|None] = mapped_column(String(255)); outsourced: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False); outsourced_company: Mapped[str|None] = mapped_column(String(255)); size: Mapped[str|None] = mapped_column(String(255)); notes: Mapped[str|None] = mapped_column(Text); delivery_schedule: Mapped[date|None] = mapped_column(Date); status: Mapped[str] = mapped_column(String(32), nullable=False, default="NEW"); created_at: Mapped[datetime|None] = mapped_column(DateTime(timezone=True)); updated_at: Mapped[datetime|None] = mapped_column(DateTime(timezone=True)); created_by: Mapped[str|None] = mapped_column(String(128)); updated_by: Mapped[str|None] = mapped_column(String(128))
+    __table_args__ = (Index("ix_products_delivery_product_code", "delivery_schedule", "product_code"),)
+
+
+class UserAccountORM(Base):
+    __tablename__ = "user_accounts"
+    internal_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ServerSettingORM(Base):
+    __tablename__ = "server_settings"
+    setting_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    setting_value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 class CustomerORM(Base):
     __tablename__ = "customers"

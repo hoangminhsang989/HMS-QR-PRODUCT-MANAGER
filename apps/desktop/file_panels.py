@@ -8,13 +8,14 @@ from uuid import UUID, uuid4
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
     QHeaderView,
     QVBoxLayout, QWidget,
 )
 
 from packages.domain.store_forward import StorageConfiguration
+from packages.application.file_api_client import FileApiError
 
 
 ARCHIVE_LABELS = {
@@ -32,11 +33,12 @@ ARCHIVE_LABELS = {
 
 
 class ProductFilesPanel(QWidget):
-    def __init__(self, managed_service=None, transfer_service=None, actor: str = "desktop-user") -> None:
+    def __init__(self, managed_service=None, transfer_service=None, actor: str = "desktop-user", *, editable: bool = True) -> None:
         super().__init__()
         self.managed_service = managed_service
         self.transfer_service = transfer_service
         self.actor = actor
+        self.editable = editable
         self.product_id: UUID | None = None
         self.images = _file_table(["Tên ảnh", "Chính", "Chú thích", "Lưu trữ"])
         self.attachments = _file_table(["Tên tệp", "Loại", "Dung lượng", "Người tải", "Lưu trữ"])
@@ -63,6 +65,8 @@ class ProductFilesPanel(QWidget):
         self.images.itemSelectionChanged.connect(self._update_retry_action)
         self.attachments.itemSelectionChanged.connect(self._update_retry_action)
         self.retry_button.setEnabled(False)
+        for button in (self.add_image_button, self.primary_button, self.add_attachment_button, self.archive_button, self.retry_button):
+            button.setEnabled(editable)
         actions = QHBoxLayout()
         for button in (
             self.add_image_button, self.primary_button, self.add_attachment_button,
@@ -95,30 +99,28 @@ class ProductFilesPanel(QWidget):
         if self.product_id is None or self.managed_service is None:
             self.state_label.setText("Chọn một sản phẩm để xem ảnh và tệp đính kèm.")
             return
-        images = self.managed_service.repository.list_images(self.product_id)
-        attachments = self.managed_service.repository.list_attachments(self.product_id)
+        if not hasattr(self.managed_service, "list_images"):
+            self._refresh_local_service()
+            return
+        images = self.managed_service.list_images(self.product_id)
         for item in images:
-            state = self._state(item.managed_file.file_id)
-            _append_row(self.images, item.managed_file.file_id, (
-                item.managed_file.original_filename,
-                "●" if item.relation.is_primary else "",
-                item.relation.caption or "",
-                state,
+            _append_row(self.images, UUID(item["file_id"]), (
+                item["original_filename"], "●" if item["is_primary"] else "", item.get("caption") or "",
+                ARCHIVE_LABELS.get(item["archive_status"], item["archive_status"]),
             ))
         for item in attachments:
-            state = self._state(item.managed_file.file_id)
-            _append_row(self.attachments, item.managed_file.file_id, (
-                item.managed_file.original_filename,
-                item.relation.attachment_category or "OTHER",
-                _human_bytes(item.managed_file.size_bytes),
-                item.managed_file.created_by,
-                state,
+            _append_row(self.attachments, UUID(item["file_id"]), (
+                item["original_filename"], item["category"], _human_bytes(int(item["size_bytes"])), item["uploaded_by"],
+                ARCHIVE_LABELS.get(item["archive_status"], item["archive_status"]),
             ))
         self.state_label.setText(
             f"{len(images)} ảnh · {len(attachments)} tệp · Tệp mới được lưu an toàn trên Server trước."
         )
 
     def _update_retry_action(self) -> None:
+        if not self.editable:
+            self.retry_button.setEnabled(False)
+            return
         file_id = _selected_id(self.images) or _selected_id(self.attachments)
         eligible = False
         if file_id and self.transfer_service:
@@ -133,47 +135,43 @@ class ProductFilesPanel(QWidget):
     def add_image(self) -> None:
         path = self._choose_open("Chọn ảnh sản phẩm", "Images (*.png *.jpg *.jpeg *.gif *.webp)")
         if path and self.product_id:
-            self._run(lambda: self.managed_service.upload_product_image(
-                product_id=self.product_id, original_filename=path.name,
-                declared_mime=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
-                content=path.read_bytes(), actor=self.actor,
-                make_primary=self.images.rowCount() == 0,
-            ))
+            if hasattr(self.managed_service, "upload_image"):
+                operation = lambda: self.managed_service.upload_image(self.product_id, path.name, mimetypes.guess_type(path.name)[0] or "application/octet-stream", path.read_bytes(), make_primary=self.images.rowCount() == 0)
+            else:
+                operation = lambda: self.managed_service.upload_product_image(product_id=self.product_id, original_filename=path.name, declared_mime=mimetypes.guess_type(path.name)[0] or "application/octet-stream", content=path.read_bytes(), actor=self.actor, make_primary=self.images.rowCount() == 0)
+            self._run(operation, "Đang tải ảnh lên Server...")
 
     def add_attachment(self) -> None:
         path = self._choose_open("Chọn tệp đính kèm", "Managed files (*.*)")
         if path and self.product_id:
-            self._run(lambda: self.managed_service.upload_attachment(
-                product_id=self.product_id, original_filename=path.name,
-                declared_mime=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
-                content=path.read_bytes(), actor=self.actor, attachment_category="OTHER",
-            ))
+            if hasattr(self.managed_service, "upload_attachment") and not hasattr(self.managed_service, "repository"):
+                operation = lambda: self.managed_service.upload_attachment(self.product_id, path.name, mimetypes.guess_type(path.name)[0] or "application/octet-stream", path.read_bytes())
+            else:
+                operation = lambda: self.managed_service.upload_attachment(product_id=self.product_id, original_filename=path.name, declared_mime=mimetypes.guess_type(path.name)[0] or "application/octet-stream", content=path.read_bytes(), actor=self.actor, attachment_category="OTHER")
+            self._run(operation, "Đang tải tệp lên Server...")
 
     def set_primary(self) -> None:
         file_id = _selected_id(self.images)
         if file_id and self.product_id:
-            self._run(lambda: self.managed_service.set_primary_image(
-                product_id=self.product_id, file_id=file_id
-            ))
+            self._run(lambda: self.managed_service.set_primary(self.product_id, file_id) if hasattr(self.managed_service, "set_primary") else self.managed_service.set_primary_image(product_id=self.product_id, file_id=file_id), "Đang đặt ảnh chính...")
 
     def download_selected(self) -> None:
         file_id = _selected_id(self.images) or _selected_id(self.attachments)
         if not file_id:
             return
-        managed = self.managed_service.repository.get(file_id)
-        target, _ = QFileDialog.getSaveFileName(self, "Lưu bản tải xuống", managed.original_filename)
+        target, _ = QFileDialog.getSaveFileName(self, "Lưu bản tải xuống")
         if target:
-            self._run(lambda: Path(target).write_bytes(self.managed_service.read(file_id)))
+            self._run(lambda: Path(target).write_bytes(self.managed_service.download(file_id) if hasattr(self.managed_service, "download") else self.managed_service.read(file_id)), "Đang tải tệp từ Server...")
 
     def archive_selected(self) -> None:
         file_id = _selected_id(self.images) or _selected_id(self.attachments)
         if file_id:
-            self._run(lambda: self.managed_service.archive(file_id=file_id, actor=self.actor))
+            self._run(lambda: self.managed_service.archive(file_id) if not hasattr(self.managed_service, "repository") else self.managed_service.archive(file_id=file_id, actor=self.actor), "Đang lưu trữ tệp...")
 
     def retry_selected(self) -> None:
         file_id = _selected_id(self.images) or _selected_id(self.attachments)
         if file_id and self.transfer_service:
-            self._run(lambda: self.transfer_service.retry_now(file_id))
+            self._run(lambda: self.transfer_service.retry_now(file_id), "Đang yêu cầu đồng bộ lại...")
 
     def _state(self, file_id: UUID) -> str:
         if not self.transfer_service:
@@ -184,16 +182,43 @@ class ProductFilesPanel(QWidget):
         except LookupError:
             return "ĐÃ LƯU TRÊN SERVER"
 
+    def _refresh_local_service(self) -> None:
+        """Keep injected local services usable in legacy widget tests only."""
+        images = self.managed_service.repository.list_images(self.product_id)
+        attachments = self.managed_service.repository.list_attachments(self.product_id)
+        for item in images:
+            _append_row(self.images, item.managed_file.file_id, (item.managed_file.original_filename, "●" if item.relation.is_primary else "", item.relation.caption or "", self._state(item.managed_file.file_id)))
+        for item in attachments:
+            _append_row(self.attachments, item.managed_file.file_id, (item.managed_file.original_filename, item.relation.attachment_category or "OTHER", _human_bytes(item.managed_file.size_bytes), item.managed_file.created_by, self._state(item.managed_file.file_id)))
+        self.state_label.setText(f"{len(images)} ảnh · {len(attachments)} tệp · Tệp mới được lưu an toàn trên Server trước.")
+
     def _choose_open(self, title: str, file_filter: str) -> Path | None:
         selected, _ = QFileDialog.getOpenFileName(self, title, "", file_filter)
         return Path(selected) if selected else None
 
-    def _run(self, operation) -> None:
+    def _run(self, operation, activity: str) -> None:
+        actions = (
+            self.add_image_button, self.primary_button, self.add_attachment_button,
+            self.view_button, self.archive_button, self.retry_button,
+        )
+        self.state_label.setText(activity)
+        for button in actions:
+            button.setEnabled(False)
+        QApplication.processEvents()
         try:
             operation()
             self.refresh()
-        except Exception as exc:
+            self.state_label.setText("Hoàn tất. Danh sách ảnh và tệp đã được làm mới.")
+        except FileApiError as exc:
+            self.state_label.setText("Thao tác chưa hoàn tất. Có thể thử lại sau.")
             QMessageBox.warning(self, "Không thể thực hiện", str(exc))
+        except Exception:
+            self.state_label.setText("Thao tác chưa hoàn tất. Kiểm tra kết nối Server và thử lại.")
+            QMessageBox.warning(self, "Không thể thực hiện", "Không thể hoàn tất thao tác tệp. Kiểm tra kết nối Server và thử lại.")
+        finally:
+            for button in actions:
+                button.setEnabled(self.editable)
+            self._update_retry_action()
 
 
 class AdminStoragePanel(QWidget):

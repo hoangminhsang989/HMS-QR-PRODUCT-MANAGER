@@ -14,14 +14,15 @@ from packages.domain.product import Product, ProductStatus
 class ProductPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     product_code: str | None = Field(default=None, max_length=64)
-    company: str = Field(min_length=1, max_length=255)
-    part_name: str = Field(min_length=1, max_length=255)
-    quantity: Decimal = Field(gt=0)
+    company: str = Field(default="", max_length=255)
+    part_name: str = Field(max_length=255)
+    quantity: Decimal = Field(ge=0)
     unit: str = Field(min_length=1, max_length=32)
     material: str | None = Field(default=None, max_length=255)
     requester: str | None = Field(default=None, max_length=255)
     surface_treatment: str | None = Field(default=None, max_length=255)
     outsourced: bool = False
+    outsourced_company: str | None = Field(default=None, max_length=255)
     size: str | None = Field(default=None, max_length=255)
     notes: str | None = None
     delivery_schedule: date | None = None
@@ -30,18 +31,21 @@ class ProductPayload(BaseModel):
 
 class ProductPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    company: str | None = Field(default=None, min_length=1, max_length=255)
-    part_name: str | None = Field(default=None, min_length=1, max_length=255)
-    quantity: Decimal | None = Field(default=None, gt=0)
+    product_code: str | None = Field(default=None, max_length=64)
+    company: str | None = Field(default=None, max_length=255)
+    part_name: str | None = Field(default=None, max_length=255)
+    quantity: Decimal | None = Field(default=None, ge=0)
     unit: str | None = Field(default=None, min_length=1, max_length=32)
     material: str | None = Field(default=None, max_length=255)
     requester: str | None = Field(default=None, max_length=255)
     surface_treatment: str | None = Field(default=None, max_length=255)
     outsourced: bool | None = None
+    outsourced_company: str | None = Field(default=None, max_length=255)
     size: str | None = Field(default=None, max_length=255)
     notes: str | None = None
     delivery_schedule: date | None = None
     status: ProductStatus | None = None
+    expected_updated_at: datetime | None = None
 
 
 class ProductResponse(BaseModel):
@@ -56,6 +60,7 @@ class ProductResponse(BaseModel):
     requester: str | None
     surface_treatment: str | None
     outsourced: bool
+    outsourced_company: str | None
     size: str | None
     notes: str | None
     delivery_schedule: date | None

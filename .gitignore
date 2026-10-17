@@ -22,3 +22,6 @@ dist/
 .vscode/
 Thumbs.db
 Desktop.ini
+
+# Local agent working state (task boards, logs, node_modules)
+.opencode/

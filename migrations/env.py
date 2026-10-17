@@ -1,10 +1,15 @@
 from __future__ import annotations
+import os
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from packages.persistence.sqlalchemy_models import Base
 from packages.persistence import tracking_models as _tracking_models  # noqa: F401
 
 config=context.config
+# Server deployment keeps the connection string outside source and alembic.ini.
+database_url = os.environ.get("HMS_QR_DATABASE_URL", "").strip()
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
 target_metadata=Base.metadata
 
 def run_migrations_offline():

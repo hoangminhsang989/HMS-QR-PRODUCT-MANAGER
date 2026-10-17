@@ -21,6 +21,7 @@ from packages.persistence.database import DatabaseRuntime, create_database_runti
 from packages.storage.managed_files import ManagedFileService
 from packages.storage.service import FilesystemStorage, StorageUnavailable, UnconfiguredStorage
 from packages.storage.store_forward import LocalCapacityError, StoreForwardService
+from packages.application.server_auth import AuthenticationError, ServerAuthService, UserRole
 
 
 AdminAuthorizer = Callable[[Request], bool]
@@ -47,6 +48,7 @@ def build_files_api(
     *,
     app_config: AppConfig,
     admin_authorizer: AdminAuthorizer | None = None,
+    auth_service: ServerAuthService | None = None,
     start_worker: bool = False,
     database_runtime: DatabaseRuntime | None = None,
 ) -> FastAPI:
@@ -71,7 +73,25 @@ def build_files_api(
         lifespan=lifespan,
     )
 
-    def actor(x_actor: Annotated[str | None, Header()] = None) -> str:
+    def principal(authorization: Annotated[str | None, Header()] = None) -> dict[str, str] | None:
+        if auth_service is None:
+            return None
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(401, {"code": "AUTHENTICATION_REQUIRED", "message": "Cần đăng nhập."})
+        try:
+            return auth_service.authenticate(authorization.removeprefix("Bearer ").strip())
+        except AuthenticationError as exc:
+            raise HTTPException(401, {"code": "AUTHENTICATION_INVALID", "message": str(exc)}) from None
+
+    def viewer_access(current: dict[str, str] | None = Depends(principal)) -> None:
+        return None
+
+    def actor(current: dict[str, str] | None = Depends(principal),
+              x_actor: Annotated[str | None, Header()] = None) -> str:
+        if current is not None:
+            if current["role"] not in {UserRole.ADMIN.value, UserRole.EDITOR.value}:
+                raise HTTPException(403, {"code": "FILE_WRITE_FORBIDDEN", "message": "Tài khoản chỉ có quyền xem tệp."})
+            return current["username"]
         value = (x_actor or "development-user").strip()
         if not value:
             raise HTTPException(400, "Actor is required")
@@ -79,8 +99,13 @@ def build_files_api(
 
     def storage_admin(
         request: Request,
+        current: dict[str, str] | None = Depends(principal),
         x_storage_admin: Annotated[str | None, Header()] = None,
     ) -> None:
+        if current is not None:
+            if current["role"] != UserRole.ADMIN.value:
+                raise HTTPException(403, {"code": "STORAGE_ADMIN_FORBIDDEN", "message": "Không có quyền quản trị lưu trữ."})
+            return
         if app_config.environment is Environment.DEV:
             if (x_storage_admin or "").strip().lower() not in {"1", "true", "yes"}:
                 raise HTTPException(
@@ -134,6 +159,30 @@ def build_files_api(
     async def value_error(_, exc):
         return _json_error(422, "INVALID_REQUEST", str(exc))
 
+    @api.get("/health/readiness/files")
+    def file_readiness():
+        try:
+            health = transfer_service.health()
+        except (LookupError, StorageUnavailable):
+            return _json_error(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "FILE_TRANSFER_UNAVAILABLE",
+                "File transfer storage is not configured or the local ingest storage is unavailable.",
+            )
+        local = health["local"]
+        archive = health["archive"]
+        if not local["writable"]:
+            return _json_error(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "FILE_TRANSFER_UNAVAILABLE",
+                "Local file ingest storage is unavailable.",
+            )
+        return {
+            "state": "READY" if archive["writable"] else "DEGRADED",
+            "local": local["state"],
+            "archive": archive["state"],
+        }
+
     @api.post("/api/v1/products/{product_id}/images", status_code=status.HTTP_201_CREATED)
     def upload_image(
         product_id: UUID,
@@ -154,7 +203,7 @@ def build_files_api(
         )
         return _file_response(item, transfer_service)
 
-    @api.get("/api/v1/products/{product_id}/images")
+    @api.get("/api/v1/products/{product_id}/images", dependencies=[Depends(viewer_access)])
     def list_images(product_id: UUID):
         return {"items": [
             _file_response(item, transfer_service)
@@ -181,14 +230,14 @@ def build_files_api(
         )
         return _file_response(item, transfer_service)
 
-    @api.get("/api/v1/products/{product_id}/attachments")
+    @api.get("/api/v1/products/{product_id}/attachments", dependencies=[Depends(viewer_access)])
     def list_attachments(product_id: UUID):
         return {"items": [
             _file_response(item, transfer_service)
             for item in managed_service.repository.list_attachments(product_id)
         ]}
 
-    @api.get("/api/v1/files/{file_id}")
+    @api.get("/api/v1/files/{file_id}", dependencies=[Depends(viewer_access)])
     def download_file(file_id: UUID):
         managed = managed_service.repository.get(file_id)
         content = managed_service.read(file_id)
@@ -199,18 +248,18 @@ def build_files_api(
             headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
         )
 
-    @api.get("/api/v1/files/{file_id}/status")
+    @api.get("/api/v1/files/{file_id}/status", dependencies=[Depends(viewer_access)])
     def transfer_status(file_id: UUID):
         managed = managed_service.repository.get(file_id)
         return _status_response(managed, transfer_service)
 
     @api.post("/api/v1/products/{product_id}/images/{file_id}/primary")
-    def set_primary(product_id: UUID, file_id: UUID):
+    def set_primary(product_id: UUID, file_id: UUID, _actor: str = Depends(actor)):
         managed_service.set_primary_image(product_id=product_id, file_id=file_id)
         return {"file_id": str(file_id), "is_primary": True}
 
     @api.patch("/api/v1/products/{product_id}/files/{file_id}")
-    def update_relation(product_id: UUID, file_id: UUID, payload: RelationPatch):
+    def update_relation(product_id: UUID, file_id: UUID, payload: RelationPatch, _actor: str = Depends(actor)):
         relation = managed_service.update_relation(
             product_id=product_id, file_id=file_id,
             sort_order=payload.sort_order, caption=payload.caption,
@@ -280,6 +329,22 @@ def _default_services(
     )
     transfer = StoreForwardService(queue, repository, local)
     return ManagedFileService(repository, local, archive_coordinator=transfer), transfer
+
+
+def require_production_storage_ready(config: AppConfig) -> None:
+    """Fail startup when the configured production storage cannot publish files."""
+
+    if config.environment is not Environment.PROD:
+        return
+    storage = FilesystemStorage(config.storage_root or "", create_root=False)
+    health = storage.health()
+    if not health.writable:
+        raise StorageUnavailable("HMS_QR_STORAGE_ROOT không khả dụng hoặc không ghi được.")
+    probe_key = f"startup-validation/{uuid4().hex}.probe"
+    try:
+        storage.put(probe_key, b"HMS-QR-STORAGE-STARTUP-VALIDATION")
+    finally:
+        storage.delete(probe_key)
 
 
 async def _worker_loop(transfer: StoreForwardService) -> None:

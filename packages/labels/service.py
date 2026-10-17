@@ -30,7 +30,7 @@ class LabelTemplate:
     visible_fields: tuple[str, ...] = (
         "product_name", "customer_name", "product_code", "tracking_code",
         "material", "quantity", "unit", "size", "surface_treatment",
-        "delivery_date", "order_code", "customer_po_number", "notes",
+        "delivery_date", "notes",
     )
 
 

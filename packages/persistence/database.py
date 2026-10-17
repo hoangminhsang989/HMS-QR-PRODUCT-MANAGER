@@ -21,6 +21,7 @@ from config.environments import (
     Environment,
     validate_database_url,
 )
+from config.paths import SOURCE_ROOT
 
 
 class DatabaseUnavailableError(RuntimeError):
@@ -100,6 +101,52 @@ def require_database_ready(runtime: DatabaseRuntime) -> None:
         raise DatabaseUnavailableError("Required production database is unavailable.")
 
 
+def require_database_schema_current(runtime: DatabaseRuntime) -> None:
+    """Reject a production database until an operator applies the shipped migrations."""
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    scripts = ScriptDirectory.from_config(Config(str(SOURCE_ROOT / "alembic.ini")))
+    expected = scripts.get_current_head()
+    try:
+        with runtime.engine.connect() as connection:
+            actual = connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+    except Exception:
+        runtime.dispose()
+        raise DatabaseUnavailableError(
+            "Required production database schema is unavailable or uninitialized."
+        ) from None
+    if actual != expected:
+        runtime.dispose()
+        raise DatabaseUnavailableError(
+            "Required production database schema is not at the deployed migration revision."
+        )
+
+
+def database_schema_readiness(runtime: DatabaseRuntime) -> dict[str, object]:
+    """Return secret-free schema state without mutating the database."""
+
+    if runtime.config.environment is Environment.DEV:
+        return {"state": "NOT_REQUIRED"}
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    expected = ScriptDirectory.from_config(
+        Config(str(SOURCE_ROOT / "alembic.ini"))
+    ).get_current_head()
+    try:
+        with runtime.engine.connect() as connection:
+            actual = connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+    except Exception:
+        return {"state": "UNAVAILABLE"}
+    return {"state": "READY" if actual == expected else "STALE"}
+
+
 def create_database_runtime_for_url(value: str) -> DatabaseRuntime:
     """Compatibility helper for isolated repository tests and DEV callers."""
 
@@ -150,8 +197,10 @@ __all__ = [
     "DatabaseUnavailableError",
     "create_database_runtime",
     "create_database_runtime_for_url",
+    "database_schema_readiness",
     "redacted_database_url",
     "require_database_ready",
+    "require_database_schema_current",
     "resolve_database",
     "session_scope",
     "sqlite_path",

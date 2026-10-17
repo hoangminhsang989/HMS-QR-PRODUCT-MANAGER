@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import date
 from uuid import UUID
 
 from .product import Product, ProductStatus
@@ -17,6 +18,10 @@ class DuplicateProductCode(ValueError):
     pass
 
 
+class ProductConflict(ValueError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class ProductQuery:
     page: int = 1
@@ -25,6 +30,8 @@ class ProductQuery:
     status: ProductStatus | None = None
     sort_by: str = "updated_at"
     descending: bool = True
+    delivery_start: date | None = None
+    delivery_end: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,4 +62,4 @@ class ProductRepository(ABC):
     def list(self, query: ProductQuery) -> ProductPage: ...
 
 
-__all__ = ["DuplicateProductCode", "ProductNotFound", "ProductPage", "ProductQuery", "ProductRepository"]
+__all__ = ["DuplicateProductCode", "ProductConflict", "ProductNotFound", "ProductPage", "ProductQuery", "ProductRepository"]

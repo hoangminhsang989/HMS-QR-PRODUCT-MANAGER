@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy.engine import make_url
 
-from config.paths import require_test_root
+from config.paths import require_external_runtime_root, require_test_root, validate_external_runtime_path
 
 
 class Environment(StrEnum):
@@ -90,13 +90,28 @@ def load_config(environment: Environment | str | None = None) -> AppConfig:
     except ValueError:
         raise DatabaseConfigurationError("HMS_QR_ENV must be dev, staging, or prod.") from None
     if env is Environment.DEV:
+        configured_url = str(os.environ.get(DATABASE_URL_ENV, "")).strip()
+        configured_storage = str(os.environ.get("HMS_QR_STORAGE_ROOT", "")).strip()
+        if configured_url or configured_storage:
+            if not configured_url or not configured_storage:
+                raise DatabaseConfigurationError(
+                    "DEV shared runtime requires both HMS_QR_DATABASE_URL and HMS_QR_STORAGE_ROOT."
+                )
+            database_url = validate_database_url(env, configured_url)
+            database_path = Path(make_url(database_url).database or "")
+            validate_external_runtime_path(database_path, authority=DATABASE_URL_ENV)
+            storage_root = validate_external_runtime_path(
+                configured_storage, authority="HMS_QR_STORAGE_ROOT"
+            )
+            return AppConfig(env, database_url, "local", str(storage_root))
         test_root = require_test_root()
         db = Path(test_root, "db", "stage1_r002_dev.sqlite")
         return AppConfig(env, f"sqlite:///{db.as_posix()}", "local", str(test_root / "storage"))
     database_url = validate_database_url(env, os.environ.get(DATABASE_URL_ENV, ""))
     if env is Environment.STAGING:
         return AppConfig(env, database_url, "configured")
-    return AppConfig(env, database_url, "nas")
+    storage_root = require_external_runtime_root("HMS_QR_STORAGE_ROOT")
+    return AppConfig(env, database_url, "local", str(storage_root))
 
 
 __all__ = [

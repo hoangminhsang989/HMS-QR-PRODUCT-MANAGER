@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID,uuid4
 from sqlalchemy import func,select
 from packages.domain.tracking import *
+from packages.domain.product import format_quantity
 from .sqlalchemy_models import CustomerORM,ProductORM,PurchaseOrderLineORM,PurchaseOrderORM
 from .tracking_models import *
 from .database import resolve_database
@@ -46,13 +47,13 @@ class TrackingRepository:
             item=s.scalar(select(TrackingItemORM).where(TrackingItemORM.tracking_code==tracking_code,TrackingItemORM.qr_status==QRStatus.ACTIVE.value))
             if not item:raise LookupError("QR not found or revoked")
             product=s.get(ProductORM,item.product_id); customer=s.get(CustomerORM,item.customer_id); po=s.get(PurchaseOrderORM,item.purchase_order_id)
-            return {"internal_id":item.internal_id,"product_id":item.product_id,"tracking_code":item.tracking_code,"product_code":product.product_code,"part_name":product.part_name,"customer":customer.name,"order_code":po.internal_order_code or po.po_number,"customer_po_number":po.po_number,"delivery_date":item.delivery_date.isoformat(),"quantity":str(item.quantity),"unit":item.unit,"status":item.status,"qr_status":item.qr_status}
+            return {"internal_id":item.internal_id,"product_id":item.product_id,"tracking_code":item.tracking_code,"product_code":product.product_code,"part_name":product.part_name,"customer":customer.name,"order_code":po.internal_order_code or po.po_number,"customer_po_number":po.po_number,"delivery_date":item.delivery_date.isoformat(),"quantity":format_quantity(item.quantity),"unit":item.unit,"status":item.status,"qr_status":item.qr_status}
     def label_data(self,identifier):
         with self.Session() as s:
             item=s.get(TrackingItemORM,str(identifier)) or s.scalar(select(TrackingItemORM).where(TrackingItemORM.tracking_code==str(identifier)))
             if not item:raise LookupError("tracking item not found")
             product=s.get(ProductORM,item.product_id);customer=s.get(CustomerORM,item.customer_id);po=s.get(PurchaseOrderORM,item.purchase_order_id)
-            return {"product_name":product.part_name,"customer_name":customer.name,"product_code":product.product_code,"tracking_code":item.tracking_code,"material":product.material,"quantity":str(item.quantity),"unit":item.unit,"size":product.size,"surface_treatment":product.surface_treatment,"delivery_date":item.delivery_date.isoformat(),"order_code":po.internal_order_code or po.po_number,"customer_po_number":po.po_number,"notes":product.notes}
+            return {"product_name":product.part_name,"customer_name":customer.name,"product_code":product.product_code,"tracking_code":item.tracking_code,"material":product.material,"quantity":format_quantity(item.quantity),"unit":item.unit,"size":product.size,"surface_treatment":product.surface_treatment,"delivery_date":item.delivery_date.isoformat(),"order_code":po.internal_order_code or po.po_number,"customer_po_number":po.po_number,"notes":product.notes}
     def add_operator(self,obj):
         with self.Session() as s:s.add(OperatorORM(**vals(obj)));s.commit()
         return obj

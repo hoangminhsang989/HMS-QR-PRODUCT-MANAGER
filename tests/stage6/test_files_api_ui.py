@@ -4,7 +4,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from fastapi.testclient import TestClient
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from apps.desktop.file_panels import AdminStoragePanel, ProductFilesPanel
 from apps.mobile.web import MOBILE_HTML
@@ -78,6 +78,31 @@ def test_admin_api_is_guarded_and_status_is_path_free(store_forward_env):
     assert retry.json()["archive_status"] == "TRANSFER_QUEUED"
 
 
+def test_file_readiness_reports_ready_degraded_and_missing_configuration(store_forward_env):
+    env = store_forward_env
+    client = TestClient(build_files_api(
+        env["managed"], env["transfer"], app_config=load_config(Environment.DEV)
+    ))
+    ready = client.get("/health/readiness/files")
+    assert ready.status_code == 200
+    assert ready.json()["state"] == "READY"
+
+    env["archive_root"].rmdir()
+    degraded = client.get("/health/readiness/files")
+    assert degraded.status_code == 200
+    assert degraded.json()["state"] == "DEGRADED"
+
+    class MissingConfigurationTransfer:
+        def health(self):
+            raise LookupError("Chưa cấu hình kho lưu trữ đang hoạt động.")
+
+    missing = TestClient(build_files_api(
+        object(), MissingConfigurationTransfer(), app_config=load_config(Environment.DEV)
+    )).get("/health/readiness/files")
+    assert missing.status_code == 503
+    assert missing.json()["error"]["code"] == "FILE_TRANSFER_UNAVAILABLE"
+
+
 def test_desktop_light_industrial_file_and_admin_panels_smoke(store_forward_env):
     env = store_forward_env
     app = QApplication.instance() or QApplication([])
@@ -89,6 +114,23 @@ def test_desktop_light_industrial_file_and_admin_panels_smoke(store_forward_env)
     assert admin.grace_hours.maximum() == 168
     assert admin.isEnabled()
     files.close(); admin.close(); app.processEvents()
+
+
+def test_desktop_file_operation_reports_safe_success_and_hides_unexpected_error(store_forward_env, monkeypatch):
+    env = store_forward_env
+    app = QApplication.instance() or QApplication([])
+    files = ProductFilesPanel(env["managed"], env["transfer"])
+    files.set_product(env["product_id"])
+    files._run(lambda: None, "Đang kiểm tra tệp...")
+    assert "Hoàn tất" in files.state_label.text()
+    warning = __import__("unittest.mock", fromlist=["Mock"]).Mock()
+    monkeypatch.setattr(QMessageBox, "warning", warning)
+
+    files._run(lambda: (_ for _ in ()).throw(RuntimeError(r"D:\secret\storage")), "Đang kiểm tra tệp...")
+
+    assert "D:\\secret" not in warning.call_args.args[2]
+    assert "Kiểm tra kết nối Server" in files.state_label.text()
+    files.close(); app.processEvents()
 
 
 def test_mobile_file_access_is_server_mediated_touch_safe_and_has_no_raw_path():

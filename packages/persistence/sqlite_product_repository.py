@@ -14,7 +14,7 @@ from packages.domain.repository import DuplicateProductCode, ProductNotFound, Pr
 
 _COLUMNS = """internal_id, product_code, company, part_name, quantity, unit, material,
 requester, surface_treatment, outsourced, size, notes, delivery_schedule, status,
-created_at, updated_at, created_by, updated_by"""
+created_at, updated_at, created_by, updated_by, outsourced_company"""
 
 
 class SQLiteProductRepository(ProductRepository):
@@ -51,7 +51,11 @@ class SQLiteProductRepository(ProductRepository):
                 );
                 CREATE INDEX IF NOT EXISTS ix_products_status ON products(status);
                 CREATE INDEX IF NOT EXISTS ix_products_search ON products(product_code, part_name, company, material);
+                CREATE INDEX IF NOT EXISTS ix_products_delivery_product_code ON products(delivery_schedule, product_code);
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(products)")}
+            if "outsourced_company" not in columns:
+                db.execute("ALTER TABLE products ADD COLUMN outsourced_company TEXT")
 
     def next_sequence(self) -> int:
         with self._connect() as db:
@@ -109,6 +113,12 @@ class SQLiteProductRepository(ProductRepository):
         if query.status:
             conditions.append("status = ?")
             params.append(query.status.value)
+        if query.delivery_start:
+            conditions.append("delivery_schedule >= ?")
+            params.append(query.delivery_start.isoformat())
+        if query.delivery_end:
+            conditions.append("delivery_schedule < ?")
+            params.append(query.delivery_end.isoformat())
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         direction = "DESC" if query.descending else "ASC"
         offset = (query.page - 1) * query.page_size
@@ -124,16 +134,17 @@ class SQLiteProductRepository(ProductRepository):
     def _values(product: Product) -> tuple[object, ...]:
         return (str(product.internal_id), product.product_code, product.company, product.part_name,
                 str(product.quantity), product.unit, product.material, product.requester,
-                product.surface_treatment, int(product.outsourced), product.size, product.notes,
-                product.delivery_schedule.isoformat() if product.delivery_schedule else None,
-                product.status.value, product.created_at.isoformat(), product.updated_at.isoformat(),
-                product.created_by, product.updated_by)
+                 product.surface_treatment, int(product.outsourced), product.size, product.notes,
+                 product.delivery_schedule.isoformat() if product.delivery_schedule else None,
+                 product.status.value, product.created_at.isoformat(), product.updated_at.isoformat(),
+                 product.created_by, product.updated_by, product.outsourced_company)
 
     @staticmethod
     def _product(row: sqlite3.Row) -> Product:
         return Product(UUID(row["internal_id"]), row["product_code"], row["company"], row["part_name"],
                        Decimal(row["quantity"]), row["unit"], row["material"], row["requester"],
-                       row["surface_treatment"], bool(row["outsourced"]), row["size"], row["notes"],
-                       date.fromisoformat(row["delivery_schedule"]) if row["delivery_schedule"] else None,
-                       ProductStatus(row["status"]), datetime.fromisoformat(row["created_at"]),
-                       datetime.fromisoformat(row["updated_at"]), row["created_by"], row["updated_by"])
+                        row["surface_treatment"], bool(row["outsourced"]), row["size"], row["notes"],
+                        date.fromisoformat(row["delivery_schedule"]) if row["delivery_schedule"] else None,
+                        ProductStatus(row["status"]), datetime.fromisoformat(row["created_at"]),
+                        datetime.fromisoformat(row["updated_at"]), row["created_by"], row["updated_by"],
+                        row["outsourced_company"])

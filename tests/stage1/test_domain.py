@@ -15,10 +15,14 @@ def test_product_validates_fields_and_uses_utc_actor_metadata():
     assert product.status is ProductStatus.NEW
     assert product.created_at.tzinfo is not None and product.created_at.utcoffset().total_seconds() == 0
     assert product.created_by == product.updated_by == "user-01"
+    partial = Product.create(product_code="SP-1", company="", part_name="", quantity=0, unit="pcs", actor="u")
+    assert partial.company == "" and partial.part_name == "" and partial.quantity == Decimal("0")
     with pytest.raises(ProductValidationError):
-        Product.create(product_code="SP-1", company="", part_name="x", quantity=1, unit="pcs", actor="u")
+        Product.create(product_code="SP-1", company="HMS", part_name="x", quantity=-1, unit="pcs", actor="u")
     with pytest.raises(ProductValidationError):
-        Product.create(product_code="SP-1", company="HMS", part_name="x", quantity=0, unit="pcs", actor="u")
+        Product.create(product_code="SP-1", company="HMS", part_name="x", quantity=1, unit="", actor="u")
+    with pytest.raises(ProductValidationError):
+        Product.create(product_code="", company="HMS", part_name="x", quantity=1, unit="pcs", actor="u")
 
 
 def test_product_code_generation_is_centralized():

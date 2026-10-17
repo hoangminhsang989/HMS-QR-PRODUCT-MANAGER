@@ -55,7 +55,18 @@ def test_stage4_api_surface_status_filter_and_qr_unchanged(workflow_env):
 def test_stage4_desktop_controls_and_summary():
     app=QApplication.instance() or QApplication([]);window=TrackingWindow()
     assert window.table.columnCount()==12 and {"QC_CHECKED","SHORTAGE_REPORTED","QC_NG_RETURNED_TO_MACHINING","PACKED","DELIVERED","GENERAL_REPORT"} <= set(window.workflow_buttons)
-    window.show_summaries([{"tracking_code":"ITEM-1","current_status":"QC_NG","checked_quantity":"10","ng_quantity":"2","packed_quantity":"0","delivered_quantity":"0"}]);assert window.table.item(0,10).text()=="QC_NG"
+    window.selected_delivery_date=date(2026,9,26)
+    window._update_delivery_date_labels()
+    window.show_summaries([
+        {"tracking_code":"ITEM-1","delivery_date":"2026-09-26","current_status":"QC_NG","checked_quantity":"10","ng_quantity":"2","packed_quantity":"0","delivered_quantity":"0"},
+        {"tracking_code":"ITEM-2","delivery_date":"2026-09-27","current_status":"DELIVERED"},
+    ])
+    assert window.table.rowCount()==1 and window.table.item(0,10).text()=="QC_NG"
+    assert [window.delivery_date_labels[key].text() for key in ("year","month","day")]==["2026","THÁNG 9","26"]
+    window.change_delivery_date("day",1)
+    assert window.table.rowCount()==1 and window.table.item(0,0).text()=="ITEM-2"
+    window.change_delivery_date("month",-1)
+    assert window.selected_delivery_date==date(2026,8,27) and window.table.rowCount()==0
     window.close();app.processEvents()
 
 

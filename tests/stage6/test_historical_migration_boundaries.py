@@ -25,6 +25,8 @@ REVISIONS = (
     "0003_qc_packing_delivery",
     "0004_managed_files",
     "0005_store_forward",
+    "0006_outsourced_company",
+    "0007_server_accounts",
 )
 
 TABLES_0001 = {
@@ -48,7 +50,8 @@ TABLES_0002 = TABLES_0001 | {
 TABLES_0003 = TABLES_0002 | {"tracking_workflow_events"}
 TABLES_0004 = TABLES_0003 | {"managed_files", "product_file_relations"}
 TABLES_0005 = TABLES_0004 | {"storage_configurations", "archive_transfer_jobs"}
-TABLES_BY_REVISION = dict(zip(REVISIONS, (TABLES_0001, TABLES_0002, TABLES_0003, TABLES_0004, TABLES_0005)))
+TABLES_0007 = TABLES_0005 | {"user_accounts", "server_settings"}
+TABLES_BY_REVISION = dict(zip(REVISIONS, (TABLES_0001, TABLES_0002, TABLES_0003, TABLES_0004, TABLES_0005, TABLES_0005, TABLES_0007)))
 
 COLUMNS = {
     "products": {"internal_id", "product_code", "company", "part_name", "quantity", "unit", "material", "requester", "surface_treatment", "outsourced", "size", "notes", "delivery_schedule", "status", "created_at", "updated_at", "created_by", "updated_by"},
@@ -69,6 +72,8 @@ COLUMNS = {
     "product_file_relations": {"internal_id", "product_id", "managed_file_id", "kind", "attachment_category", "is_primary", "sort_order", "caption", "created_at", "archived_at"},
     "storage_configurations": {"internal_id", "local_ingest_root", "archive_target_root", "grace_period_hours", "retry_schedule_seconds", "warning_free_bytes", "critical_free_bytes", "upload_refusal_free_bytes", "active", "created_at", "updated_at"},
     "archive_transfer_jobs": {"internal_id", "managed_file_id", "configuration_id", "state", "attempt_count", "next_retry_at", "last_attempt_at", "last_error_code", "last_error_summary", "remote_verified_at", "grace_expires_at", "local_purged_at", "lease_token", "lease_expires_at", "created_at", "updated_at"},
+    "user_accounts": {"internal_id", "username", "password_hash", "role", "active", "created_at", "updated_at"},
+    "server_settings": {"setting_key", "setting_value", "updated_at"},
 }
 
 PRIMARY_KEYS = {
@@ -79,6 +84,7 @@ PRIMARY_KEYS = {
 PRIMARY_KEYS.update({
     "user_preferences": ("user_id",),
     "attempt_display_state": ("tracking_item_id", "machining_type_id"),
+    "server_settings": ("setting_key",),
 })
 
 FOREIGN_KEY_COUNTS = {
@@ -90,6 +96,7 @@ FOREIGN_KEY_COUNTS = {
     "tracking_audit_events": 1, "tracking_workflow_events": 5,
     "managed_files": 1, "product_file_relations": 2,
     "storage_configurations": 0, "archive_transfer_jobs": 2,
+    "user_accounts": 0, "server_settings": 0,
 }
 
 UNIQUE_SETS = {
@@ -105,6 +112,7 @@ UNIQUE_SETS = {
     "managed_files": {("storage_key",)},
     "product_file_relations": {("managed_file_id",)},
     "archive_transfer_jobs": {("managed_file_id",)},
+    "user_accounts": {("username",)},
 }
 
 NON_UNIQUE_INDEXES = {
@@ -156,6 +164,8 @@ def _assert_boundary(url: str, revision: str) -> dict[str, dict[str, object]]:
     assert set(snapshot) == TABLES_BY_REVISION[revision]
     for table in TABLES_BY_REVISION[revision] - {"alembic_version"}:
         expected_columns = set(COLUMNS[table])
+        if table == "products" and revision in ("0006_outsourced_company", "0007_server_accounts"):
+            expected_columns.add("outsourced_company")
         if table == "purchase_orders" and revision != "0001_stage2_baseline":
             expected_columns.add("internal_order_code")
         assert {column[0] for column in snapshot[table]["columns"]} == expected_columns
@@ -166,7 +176,10 @@ def _assert_boundary(url: str, revision: str) -> dict[str, dict[str, object]]:
             expected_uniques.add(("internal_order_code",))
         assert set(snapshot[table]["uniques"]) == expected_uniques
         actual_indexes = {columns for columns, unique in snapshot[table]["indexes"] if not unique}
-        assert actual_indexes == NON_UNIQUE_INDEXES.get(table, set())
+        expected_indexes = set(NON_UNIQUE_INDEXES.get(table, set()))
+        if table == "products" and revision == "0007_server_accounts":
+            expected_indexes.add(("delivery_schedule", "product_code"))
+        assert actual_indexes == expected_indexes
     return snapshot
 
 
@@ -193,7 +206,7 @@ def _exercise_full_traversal(url: str) -> None:
         current = _assert_boundary(url, revision)
         if revision == "0001_stage2_baseline":
             assert "internal_order_code" not in COLUMNS["purchase_orders"]
-        if revision == "0005_store_forward":
+        if revision == "0007_server_accounts":
             head_snapshot = current
 
     command.upgrade(config, "head")
@@ -212,7 +225,7 @@ def _exercise_full_traversal(url: str) -> None:
 def test_revision_graph_and_historical_sources_are_deterministic():
     config = _config("sqlite://")
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0005_store_forward"]
+    assert scripts.get_heads() == ["0007_server_accounts"]
     assert [revision.revision for revision in scripts.walk_revisions(base="base", head="heads")][::-1] == list(REVISIONS)
 
     root = Path("migrations/versions")

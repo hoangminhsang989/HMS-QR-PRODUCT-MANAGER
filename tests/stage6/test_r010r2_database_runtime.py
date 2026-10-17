@@ -14,9 +14,10 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from apps.server.app import build_api
+from apps.server.files import require_production_storage_ready
 from config.environments import (
     AppConfig,
     DATABASE_URL_ENV,
@@ -27,8 +28,10 @@ from config.environments import (
     validate_database_url,
 )
 from packages.persistence.database import (
+    DatabaseUnavailableError,
     create_database_runtime,
     redacted_database_url,
+    require_database_schema_current,
     session_scope,
     sqlite_path,
 )
@@ -39,6 +42,7 @@ from packages.persistence.sqlalchemy_repository import Stage2Repository
 from packages.persistence.store_forward_repository import StoreForwardRepository
 from packages.persistence.tracking_repository import TrackingRepository
 from packages.persistence.workflow_repository import WorkflowRepository
+from packages.application.server_auth import ServerAuthService, UserRole
 
 
 def _postgresql_url() -> str:
@@ -99,6 +103,7 @@ def test_environment_failure_never_silently_downgrades_to_dev(monkeypatch):
 def test_valid_prod_config_is_secret_safe_and_never_a_path(monkeypatch):
     url = _postgresql_url()
     monkeypatch.setenv(DATABASE_URL_ENV, url)
+    monkeypatch.setenv("HMS_QR_STORAGE_ROOT", "C:/hms-qr-production-storage")
     config = load_config(Environment.PROD)
     password = __import__("sqlalchemy").engine.make_url(url).password
     assert config.environment is Environment.PROD
@@ -107,6 +112,86 @@ def test_valid_prod_config_is_secret_safe_and_never_a_path(monkeypatch):
     assert password not in redacted_database_url(url)
     with pytest.raises(DatabaseConfigurationError):
         sqlite_path(url)
+
+
+def test_production_storage_root_must_be_ready_for_file_publication(tmp_path):
+    missing = AppConfig(
+        Environment.PROD,
+        "postgresql+psycopg://user:password@localhost/hms_qr",
+        "nas",
+        str(tmp_path / "missing-storage"),
+    )
+    with pytest.raises(Exception, match="HMS_QR_STORAGE_ROOT"):
+        require_production_storage_ready(missing)
+
+    ready_root = tmp_path / "ready-storage"
+    ready_root.mkdir()
+    ready = AppConfig(
+        Environment.PROD,
+        "postgresql+psycopg://user:password@localhost/hms_qr",
+        "nas",
+        str(ready_root),
+    )
+    require_production_storage_ready(ready)
+    assert not tuple(ready_root.rglob("*.probe"))
+
+
+def test_production_database_schema_must_match_deployed_alembic_head(tmp_path):
+    config = AppConfig(
+        Environment.DEV, f"sqlite:///{(tmp_path / 'schema.sqlite').as_posix()}", "local"
+    )
+    local = create_database_runtime(config)
+    production = type(local)(
+        AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas"),
+        local.engine,
+        local.session_factory,
+    )
+    with pytest.raises(DatabaseUnavailableError, match="schema is unavailable or uninitialized"):
+        require_database_schema_current(production)
+
+    local = create_database_runtime(config)
+    with local.engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0001_stage2_baseline')"))
+    production = type(local)(
+        AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas"),
+        local.engine,
+        local.session_factory,
+    )
+    with pytest.raises(DatabaseUnavailableError, match="not at the deployed migration revision"):
+        require_database_schema_current(production)
+
+    local = create_database_runtime(config)
+    with local.engine.begin() as connection:
+        connection.execute(text("DELETE FROM alembic_version"))
+        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0007_server_accounts')"))
+    production = type(local)(
+        AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas"),
+        local.engine,
+        local.session_factory,
+    )
+    require_database_schema_current(production)
+    production.dispose()
+
+
+def test_production_readiness_reports_stale_schema_without_hiding_database_state(tmp_path):
+    config = AppConfig(
+        Environment.DEV, f"sqlite:///{(tmp_path / 'readiness.sqlite').as_posix()}", "local"
+    )
+    local = create_database_runtime(config)
+    with local.engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0001_stage2_baseline')"))
+    runtime = type(local)(
+        AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas"),
+        local.engine,
+        local.session_factory,
+    )
+    client = TestClient(build_api(app_config=runtime.config, database_runtime=runtime))
+    response = client.get("/health/readiness/database")
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "DATABASE_SCHEMA_UNAVAILABLE"
+    runtime.dispose()
 
 
 def test_tracked_psycopg_dependency_is_canonical_metadata():
@@ -155,13 +240,19 @@ def test_session_scope_rolls_back_and_releases_on_exception(pg_runtime):
         )) == 0
 
 
-def test_product_master_postgresql_api_and_type_utc_round_trip(pg_runtime):
+def test_product_master_postgresql_api_and_type_utc_round_trip(pg_runtime, monkeypatch):
     code = f"R010R2-PG-{uuid4().hex[:8].upper()}"
     config = AppConfig(Environment.PROD, _postgresql_url(), "configured")
+    username = f"r010r2-editor-{uuid4().hex[:8]}"
+    monkeypatch.setenv("HMS_QR_AUTH_SECRET", "r010r2-postgresql-acceptance-token-secret")
+    auth = ServerAuthService(pg_runtime)
+    auth.create_account(username, "acceptance-password", UserRole.EDITOR.value)
+    token = auth.login(username, "acceptance-password")["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
     with TestClient(build_api(app_config=config, database_runtime=pg_runtime)) as client:
         created = client.post(
             "/api/v1/products",
-            headers={"X-Actor": "r010r2-user"},
+            headers=headers,
             json={
                 "product_code": code,
                 "company": "HMS",
@@ -177,11 +268,11 @@ def test_product_master_postgresql_api_and_type_utc_round_trip(pg_runtime):
         assert fetched.status_code == 200
         patched = client.patch(
             f"/api/v1/products/{body['internal_id']}",
-            headers={"X-Actor": "r010r2-editor"},
-            json={"status": "IN_PROGRESS"},
+            headers=headers,
+            json={"status": "IN_PROGRESS", "expected_updated_at": body["updated_at"]},
         )
         assert patched.status_code == 200
-        assert client.get("/api/v1/products", params={"search": code}).json()["total"] == 1
+        assert client.get("/api/v1/products", headers=headers, params={"search": code}).json()["total"] == 1
         readiness = client.get("/health/readiness/database")
         assert readiness.status_code == 200
         assert readiness.json()["state"] == "READY"
@@ -192,6 +283,36 @@ def test_product_master_postgresql_api_and_type_utc_round_trip(pg_runtime):
     assert product.outsourced is True
     assert product.created_at.utcoffset().total_seconds() == 0
     assert product.updated_at.utcoffset().total_seconds() == 0
+
+
+def test_two_editor_sessions_receive_product_conflict_for_stale_postgresql_write(pg_runtime, monkeypatch):
+    config = AppConfig(Environment.PROD, _postgresql_url(), "configured")
+    monkeypatch.setenv("HMS_QR_AUTH_SECRET", "r010r2-postgresql-acceptance-token-secret")
+    auth = ServerAuthService(pg_runtime)
+    tokens = []
+    for label in ("one", "two"):
+        username = f"r010r2-conflict-{label}-{uuid4().hex[:8]}"
+        auth.create_account(username, "acceptance-password", UserRole.EDITOR.value)
+        tokens.append(auth.login(username, "acceptance-password")["access_token"])
+    first_headers, second_headers = ({"Authorization": f"Bearer {token}"} for token in tokens)
+    with TestClient(build_api(app_config=config, database_runtime=pg_runtime)) as client:
+        created = client.post("/api/v1/products", headers=first_headers, json={
+            "product_code": f"R010R2-CONFLICT-{uuid4().hex[:8].upper()}", "company": "HMS",
+            "part_name": "Concurrent Plate", "quantity": "1", "unit": "pcs", "outsourced": False,
+        })
+        assert created.status_code == 201
+        product = created.json()
+        first_loaded = client.get(f"/api/v1/products/{product['internal_id']}", headers=first_headers).json()
+        second_loaded = client.get(f"/api/v1/products/{product['internal_id']}", headers=second_headers).json()
+        first_write = client.patch(f"/api/v1/products/{product['internal_id']}", headers=first_headers, json={
+            "notes": "editor one", "expected_updated_at": first_loaded["updated_at"],
+        })
+        stale_write = client.patch(f"/api/v1/products/{product['internal_id']}", headers=second_headers, json={
+            "notes": "editor two", "expected_updated_at": second_loaded["updated_at"],
+        })
+    assert first_write.status_code == 200
+    assert stale_write.status_code == 409
+    assert stale_write.json()["error"]["code"] == "PRODUCT_CONFLICT"
 
 
 def test_real_runtime_outage_and_pool_recovery(pg_runtime):

@@ -87,6 +87,10 @@ class SqlAlchemyProductRepository(ProductRepository):
             ))
         if query.status:
             statement = statement.where(ProductORM.status == query.status.value)
+        if query.delivery_start:
+            statement = statement.where(ProductORM.delivery_schedule >= query.delivery_start)
+        if query.delivery_end:
+            statement = statement.where(ProductORM.delivery_schedule < query.delivery_end)
         with self.Session() as session:
             total = int(session.scalar(
                 select(func.count()).select_from(statement.subquery())
@@ -117,6 +121,7 @@ class SqlAlchemyProductRepository(ProductRepository):
             "requester": product.requester,
             "surface_treatment": product.surface_treatment,
             "outsourced": product.outsourced,
+            "outsourced_company": product.outsourced_company,
             "size": product.size,
             "notes": product.notes,
             "delivery_schedule": product.delivery_schedule,
@@ -140,7 +145,7 @@ class SqlAlchemyProductRepository(ProductRepository):
             row.quantity, row.unit, row.material, row.requester,
             row.surface_treatment, row.outsourced, row.size, row.notes,
             row.delivery_schedule, ProductStatus(row.status), created_at, updated_at,
-            row.created_by, row.updated_by,
+            row.created_by, row.updated_by, row.outsourced_company,
         )
 
 
