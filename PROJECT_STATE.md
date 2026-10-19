@@ -4,7 +4,7 @@ Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
 Current WP: Engine cutover complete; mobile web app extracted for Vercel deployment
 Current Revision: ADR-015 engine cutover (SQLAlchemy/Alembic/PostgreSQL removed)
 Current Branch: main
-Current Verdict: ALEMBIC_CALLERS_REMOVED_ee0a2dd_757_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
+Current Verdict: BROWSER_E2E_VERIFIED_16OF16_JOURNEY_ZERO_JS_ERRORS_757_PASSED_D2_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
 
 R011 D2 remediation, two fresh independent committed-byte reviews, canonical
 fast-forward integration, post-integration runtime-fixture reconciliation,
@@ -510,7 +510,22 @@ begin R010 without that separate authority.
 - Verification: full regression on the current worktree 654 passed / 28 skipped / 0 failed (28 skips are the isolated PostgreSQL runtimes, not configured). New tests: tests/stage6/test_sqlite_lan_concurrency.py, tests/stage6/test_offline_assets.py, tests/stage6/test_lan_tls.py (includes a real HTTPS round-trip against the locally generated certificate).
 - Committed 2026-10-17 as `4ef368b` on main (29 files, +1,110/-92), together with the hosting prep and the portal.py portability fix. Worktree clean; main is ahead of origin by 1 and the push awaits LO direction.
 
-##### 2026-10-19 - Four callers were still invoking Alembic after the cutover (ee0a2dd)
+###### 2026-10-19 - The mobile page was driven in a real browser for the first time
+## State
+- **Every check up to now was static or server-side. The page had never been loaded in a browser.** It now has, through Chrome DevTools Protocol against a live server, and it works.
+- **Page load**: `readyState=complete`, title `HMS QR — Quản lý Sản xuất & Truy vết` with the diacritics intact, and **zero JavaScript errors** after a reload with an error collector installed before anything ran.
+- **The base variables resolve correctly at runtime**: `serverOrigin = "http://127.0.0.1:4321"`, `api = ".../tracking"`, `filesApi = ".../files"` - auto-detected from `location.origin`, no hardcoded host.
+- **Login, both paths**: a wrong password shows `Tên đăng nhập hoặc mật khẩu không đúng.` and stores nothing; the right password hides the error, writes `hms-access-token` and `hms-account` to `localStorage`, and the account pill changes from `Đăng nhập` to `admin`.
+- **The fetch wrapper attaches the token - proven at the network layer, not by reading the page's source.** An in-page spy placed *before* the wrapper sees no header and reports a false negative; the wrapper passes a `Headers` object, so `headers['Authorization']` is undefined on it. CDP `Network.requestWillBeSent` settles it: the page's own call sends `Authorization: Bearer eyJzdWIiOiJkNGNjNGM3Yi0...` and no cookie.
+- **Auth actually gates**: with the token removed, `/tracking/api/v1/operators`, `/machining-types` and `/tracking-items` all return **401**, and the 401 handler opens the login form. Logging back in returns 200 with data.
+- **The full operator journey, 16/16, through the API**: login, create operator, customer, product, purchase order, PO line, tracking item, **issue a QR**, **scan it back through `/tracking/api/v1/scan?payload=` and get the same item**, an unknown payload refused with 4xx rather than a 500, machining types seeded, operator preference written and read back, attempt display readable, **process report submitted and present in the history**.
+- **The same scan through the UI**: typing the payload into `#qr` and clicking `#qr-resolve` sends `GET /tracking/api/v1/scan?payload=...` with the Bearer token and renders `CHI TIẾT SẢN PHẨM & ĐƠN HÀNG` plus the five-step `TIẾN TRÌNH SẢN XUẤT` (Phôi → Gia công → QC → Đóng gói → Đã giao). Zero JS errors.
+- **Route layout confirmed while wiring the journey**: `/api/v1/products` lives on the **root app**, while `/api/v1/customers` and `/api/v1/purchase-orders` are mounted under **`/stage2`**. The page never calls either - it only calls `qr-catalog` and `scan-image` at the root - so this is harness knowledge, not a page defect.
+- **`/api/v1/qr-catalog` is readable without a token in DEV.** It sits on the root app, which carries no auth dependency, while the tracking sub-app has `require_tracking_access`. In non-DEV `require_sqlite_legacy_endpoint` returns 501, so there is no production exposure. The page shows the catalog *before* login, so gating it would change that behaviour - flagged for LO rather than changed.
+- **A QR payload is a JSON blob**, not a short code: `{"product_name":"Mặt bích A6061","custom...}`. Worth knowing before anyone prints a QR label.
+- Test server and the debug Chrome were both shut down afterwards; port 4321 and CDP 9222 are free and the worktree is clean.
+
+# 2026-10-19 - Four callers were still invoking Alembic after the cutover (ee0a2dd)
 ## State
 - **The engine cutover left four callers still invoking Alembic.** `alembic.ini` was deleted and `migrations/versions/` was emptied, so every one of them fails with `No 'script_location' key found in configuration`:
   - **`apps/server/tool.py` Start Server button** - the worst one. It ran the upgrade command as a precondition before launching uvicorn, so on a factory machine the operator clicks Start Server, gets a preparation failure, and **the production server never comes up at all**.
