@@ -4,7 +4,7 @@ Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
 Current WP: Engine cutover complete; mobile web app extracted for Vercel deployment
 Current Revision: ADR-015 engine cutover (SQLAlchemy/Alembic/PostgreSQL removed)
 Current Branch: main
-Current Verdict: LAUNCHER_LOGIN_FIXED_0830773_749_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
+Current Verdict: LAN_ASSETS_AND_TOKEN_EXPIRY_PINNED_f37dfe1_753_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
 
 R011 D2 remediation, two fresh independent committed-byte reviews, canonical
 fast-forward integration, post-integration runtime-fixture reconciliation,
@@ -510,7 +510,18 @@ begin R010 without that separate authority.
 - Verification: full regression on the current worktree 654 passed / 28 skipped / 0 failed (28 skips are the isolated PostgreSQL runtimes, not configured). New tests: tests/stage6/test_sqlite_lan_concurrency.py, tests/stage6/test_offline_assets.py, tests/stage6/test_lan_tls.py (includes a real HTTPS round-trip against the locally generated certificate).
 - Committed 2026-10-17 as `4ef368b` on main (29 files, +1,110/-92), together with the hosting prep and the portal.py portability fix. Worktree clean; main is ahead of origin by 1 and the push awaits LO direction.
 
-## 2026-10-19 - The launcher never gave the mobile app a way to sign in (0830773)
+### 2026-10-19 - LAN asset paths and mid-shift token expiry pinned by tests (f37dfe1)
+## State
+- **Nothing checked that the LAN server actually serves the assets the page references.** The page is served at `/tracking/mobile` but registers `/sw.js` and links `/manifest.json` at the **root**, so those absolute paths only resolve if the server mounts them there. A missing one fails silently - the QR scanner never loads, or offline support quietly never installs - with the page itself looking fine. Same class of miss as the Vercel `start_url` and the precache path, both of which shipped broken.
+- Verified by hand against a live server first, then codified: **30/30 checks** - `/tracking/mobile`, `/manifest.json`, `/sw.js`, `/static/jsqr.min.js`, `/static/manifest.json`, `/static/icon-192.png`, `/static/icon-512.png`, `/static/favicon.png` all 200 with usable content types; the LAN manifest's `start_url` is `/tracking/mobile` and all three icons resolve; every path the LAN service worker precaches resolves.
+- Noted, not a bug: `/static/manifest.json` is served as `application/json` rather than `application/manifest+json`, because `StaticFiles` guesses by extension. Harmless - only the service worker precaches it, and the page links the root copy, which `app.py:694` serves with the correct type explicitly.
+- **Token expiry verified**: a token crafted with the server's real secret but an `exp` sixty seconds in the past is refused with **401** and `"Phiên đăng nhập đã hết hạn."` - the message the page's fetch wrapper surfaces when it clears the token and reopens the login form. A token signed with a different secret is also refused. The page's wrapper (`web/index.html`, the `window.fetch` override) handles any 401 by clearing `hms-access-token`, clearing the account, re-rendering and reopening the login modal, so the mid-shift re-login path works. The login POST itself goes through `nativeFetch`, deliberately bypassing the wrapper so a wrong password does not trigger the session-expiry toast on top of the inline error.
+- **Four new tests** in `tests/stage6/test_mobile_web_deployment.py` (now 21): the server serves every absolute asset the page references; the service worker precaches only paths that resolve; the LAN manifest points at `/tracking/mobile` and its icons resolve; and a token driven past its eight-hour lifetime is refused with the expiry message. The expiry test builds a real PROD runtime over a migrated engine database and moves the module clock rather than reimplementing the token format.
+- Verified **RED** by pointing the LAN manifest's `start_url` at the Vercel value `/` (2 failures, including the pre-existing file-level guard), and **GREEN** once restored.
+- Full suite: **753 passed / 3 failed** in 629.13s. All three failures are `test_d2_19`, `test_d2_21`, `test_d2_22` - the documented private-`python.exe` subprocess flake. The whole D2 file passes **82/82** in isolation (46.73s). Zero non-D2 failures.
+- Committed 2026-10-19 as `f37dfe1` (1 file, +100) and pushed: `84e4cc9..f37dfe1`. Local and remote main in sync, worktree clean.
+
+# 2026-10-19 - The launcher never gave the mobile app a way to sign in (0830773)
 ## State
 - **The mobile page requires a login, but `CHAY_WEB.bat` set neither a token-signing secret nor a bootstrap administrator.** Reproduced by running the server under the launcher's exact environment and walking the path the phone walks: `POST /admin-api/api/v1/auth/login` -> **401 "Server has no administrator account. Configure bootstrap admin credentials."**, and every `/tracking/api/v1/*` call -> **401 AUTHENTICATION_REQUIRED**. The app was unusable as shipped.
 - Two independent causes, both in the launcher:
