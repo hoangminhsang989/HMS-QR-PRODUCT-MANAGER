@@ -314,3 +314,103 @@ def test_launcher_password_is_persisted_and_operator_changeable():
     assert r'if not exist "%DATA_ROOT%\admin-password.txt"' in launcher
     assert r'set /p ADMIN_PASSWORD=<"%DATA_ROOT%\admin-password.txt"' in launcher
     assert "FIRST_RUN" in launcher
+
+
+def test_lan_server_serves_every_asset_the_page_references(client):
+    """The page is served at /tracking/mobile but registers /sw.js and links
+    /manifest.json at the root.
+
+    On the LAN those absolute paths only resolve if the server mounts them
+    there. A missing one fails silently - the QR scanner never loads, or offline
+    support quietly never installs - with nothing in the page itself looking
+    wrong. This is the same class of miss as the Vercel start_url and the
+    precache path, both of which shipped broken.
+    """
+    page = client.get("/tracking/mobile").text
+    referenced = set(re.findall(r"""['"](/[^'"]+\.(?:js|json|png|svg|ico))['"]""", page))
+    assert referenced, "the page references no absolute assets at all"
+    for path in sorted(referenced):
+        response = client.get(path)
+        assert response.status_code == 200, f"{path} returned {response.status_code}"
+
+
+def test_lan_service_worker_precaches_only_paths_that_resolve(client):
+    """cache.addAll aborts the whole install if any asset 404s.
+
+    One dead path in the precache list silently removes offline support for the
+    entire app, which is exactly what /static/manifest.json did on Vercel.
+    """
+    worker = client.get("/sw.js").text
+    precached = [
+        line.strip().strip("',\"")
+        for line in worker.split("\n")
+        if line.strip().startswith("'/")
+    ]
+    assert precached, "the service worker precaches nothing"
+    for path in precached:
+        if not path.startswith("/") or path == "/static/":
+            continue
+        response = client.get(path)
+        assert response.status_code == 200, f"precaching {path} would 404"
+
+
+def test_lan_manifest_points_at_the_lan_route_and_its_icons_resolve(client):
+    """The LAN copy of the manifest must send the phone back to /tracking/mobile.
+
+    Vercel serves the page at the root, so its copy uses start_url "/". The LAN
+    copy is a different file with a different job, and the two must not drift.
+    """
+    manifest = client.get("/manifest.json").json()
+    assert manifest["start_url"] == "/tracking/mobile"
+    assert manifest["scope"] == "/"
+    for icon in manifest["icons"]:
+        response = client.get(icon["src"])
+        assert response.status_code == 200, f"icon {icon['src']} returned {response.status_code}"
+
+
+def test_an_expired_token_is_refused_with_the_message_the_page_shows(tmp_path, monkeypatch):
+    """A session that expires mid-shift must come back as a refusal the page acts on.
+
+    The page's fetch wrapper clears the token and reopens the login form on any
+    401, so this is the mid-shift re-login path. If the server answered anything
+    else - a 500, or a success with an empty body - the operator would be left
+    holding a dead session with no prompt to renew it.
+    """
+    from datetime import timedelta
+
+    from packages.application import server_auth
+    from packages.application.server_auth import AuthenticationError, ServerAuthService, UserRole
+    from packages.persistence.database import DatabaseRuntime
+    from packages.sqlengine import Database
+    from packages.sqlengine.migrations import load_migration_modules, run_migrations
+    from config.environments import AppConfig, Environment
+
+    database = Database(tmp_path / "expiry-engine")
+    try:
+        run_migrations(
+            database,
+            load_migration_modules(SOURCE_ROOT / "migrations" / "engine"),
+            now=lambda: "2026-01-01T00:00:00+00:00",
+        )
+        runtime = DatabaseRuntime(
+            AppConfig(Environment.PROD, "sqlite:///expiry.sqlite", "nas"),
+            database,
+            tmp_path / "expiry-engine",
+        )
+        secret = "expiry-acceptance-token-secret-value"
+        monkeypatch.setenv("HMS_QR_AUTH_SECRET", secret)
+        auth = ServerAuthService(runtime, token_secret=secret)
+        auth.create_account("expiry-editor", "expiry-password", UserRole.EDITOR.value)
+        token = auth.login("expiry-editor", "expiry-password")["access_token"]
+
+        assert auth.authenticate(token)["username"] == "expiry-editor"
+
+        # Move the clock past the eight-hour lifetime; the same token must now
+        # be refused with the message the page surfaces to the operator.
+        real_now = server_auth._now
+        monkeypatch.setattr(server_auth, "_now", lambda: real_now() + timedelta(hours=9))
+        with pytest.raises(AuthenticationError) as excinfo:
+            auth.authenticate(token)
+        assert "hết hạn" in str(excinfo.value)
+    finally:
+        database.close()
