@@ -4,7 +4,7 @@ Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
 Current WP: Engine cutover complete; mobile web app extracted for Vercel deployment
 Current Revision: ADR-015 engine cutover (SQLAlchemy/Alembic/PostgreSQL removed)
 Current Branch: main
-Current Verdict: LAN_ASSETS_AND_TOKEN_EXPIRY_PINNED_f37dfe1_753_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
+Current Verdict: ROUTE_GUARD_FULL_PATH_eead3da_754_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
 
 R011 D2 remediation, two fresh independent committed-byte reviews, canonical
 fast-forward integration, post-integration runtime-fixture reconciliation,
@@ -510,7 +510,18 @@ begin R010 without that separate authority.
 - Verification: full regression on the current worktree 654 passed / 28 skipped / 0 failed (28 skips are the isolated PostgreSQL runtimes, not configured). New tests: tests/stage6/test_sqlite_lan_concurrency.py, tests/stage6/test_offline_assets.py, tests/stage6/test_lan_tls.py (includes a real HTTPS round-trip against the locally generated certificate).
 - Committed 2026-10-17 as `4ef368b` on main (29 files, +1,110/-92), together with the hosting prep and the portal.py portability fix. Worktree clean; main is ahead of origin by 1 and the push awaits LO direction.
 
-### 2026-10-19 - LAN asset paths and mid-shift token expiry pinned by tests (f37dfe1)
+#### 2026-10-19 - Route guard now checks the whole fetch path; core flow verified (eead3da)
+## State
+- **The route guard only extracted the literal immediately after the base variable.** For `fetch(api + '/api/v1/operators/' + userId + '/preference')` it checked that `/tracking/api/v1/operators/` was a route prefix and stopped. Renaming the trailing segment - `/preference` to `/prefs`, `/history` to `/histories` - passed cleanly, which is the same silent-404 class as the base mistake the guard was written for.
+- The guard now flattens the **entire** concatenation, replacing each interpolated identifier with a placeholder, and matches the result against the registered routes segment by segment. A segment drawn from a lookup table (`routes[workflowType]` -> `qc-events` / `packing-events` / `delivery-events` / `reports`) expands to one path per value the table can hold, so a typo **inside** the table is caught too rather than hidden behind a wildcard.
+- Parsing the first `fetch` argument needs a small scanner, not a regex: `encodeURIComponent(q)` contains parentheses and the options object after the URL contains commas and braces. `_fetch_first_arguments` walks from the call's opening parenthesis to the first top-level comma or the matching close, tracking nesting and string state.
+- Verified **RED** against three separate breaks applied together - a renamed trailing segment (`/preference` -> `/prefs`), a typo inside the lookup table (`packing-events` -> `packing-event`), and a renamed workflow suffix (`/history` -> `/histories`) - all three reported, and **GREEN** once restored.
+- **The mobile app's core flow was driven end to end with real data for the first time** (16/18; the 2 misses were the harness's fault - `qr-catalog` is mounted on the root app and the harness only built the tracking sub-app, and it is covered separately). Verified: create operator -> listed; machining types seeded; issue a QR for a tracking item; **scan that QR through `/api/v1/scan?payload=...`** and get the item back with a formattable quantity; read `/api/v1/operators/{id}/preference` and `/api/v1/tracking-items/{id}/attempt-display`; **submit a process report** and find it in the history. The app's reason to exist works.
+- **The service worker was audited and is correct**: `apps/static/sw.js` handles only `/static/` paths, cache-first. It does **not** cache the HTML page or any API response, so there is no stale page after a deploy and no cached API data - the two failure modes a tracking app cannot afford.
+- Full suite: **754 passed / 2 failed** in 771.43s. Both failures are `test_d2_19` and `test_d2_21`, the documented private-`python.exe` subprocess flake; each passes alone (`test_d2_21` 1 passed in 57.56s) and the D2 file passes 82/82 in a second isolated run. Zero non-D2 failures.
+- Committed 2026-10-19 as `eead3da` (1 file, +159/-18) and pushed: `970d14a..eead3da`. Local and remote main in sync, worktree clean.
+
+# 2026-10-19 - LAN asset paths and mid-shift token expiry pinned by tests (f37dfe1)
 ## State
 - **Nothing checked that the LAN server actually serves the assets the page references.** The page is served at `/tracking/mobile` but registers `/sw.js` and links `/manifest.json` at the **root**, so those absolute paths only resolve if the server mounts them there. A missing one fails silently - the QR scanner never loads, or offline support quietly never installs - with the page itself looking fine. Same class of miss as the Vercel `start_url` and the precache path, both of which shipped broken.
 - Verified by hand against a live server first, then codified: **30/30 checks** - `/tracking/mobile`, `/manifest.json`, `/sw.js`, `/static/jsqr.min.js`, `/static/manifest.json`, `/static/icon-192.png`, `/static/icon-512.png`, `/static/favicon.png` all 200 with usable content types; the LAN manifest's `start_url` is `/tracking/mobile` and all three icons resolve; every path the LAN service worker precaches resolves.
