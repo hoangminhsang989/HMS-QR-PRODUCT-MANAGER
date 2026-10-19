@@ -10,6 +10,7 @@ unless an operator explicitly allows an origin.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,16 @@ from fastapi.testclient import TestClient
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 MOBILE_PAGE = SOURCE_ROOT / "web" / "index.html"
+
+# Which base each fetch variable resolves to. ``serverOrigin`` is the app root,
+# so ``/api/v1/qr-catalog`` and ``/api/v1/scan-image`` live there, NOT under
+# ``/tracking`` - getting that wrong returns 404 and silently kills the part
+# picker and the camera scan.
+FETCH_BASES = {
+    "api": "/tracking",
+    "filesApi": "/files",
+    "serverOrigin": "",
+}
 
 
 @pytest.fixture()
@@ -98,6 +109,109 @@ def test_login_endpoint_is_reachable_cross_origin(monkeypatch):
         )
         assert response.status_code == 401
         assert response.headers["access-control-allow-origin"] == "https://hms-qr.vercel.app"
+
+
+def _page_fetch_paths() -> list[tuple[str, str]]:
+    """Return ``(variable, literal_path)`` for every fetch the page issues."""
+
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    found: list[tuple[str, str]] = []
+    for variable in FETCH_BASES:
+        pattern = rf"fetch\(\s*{variable}\s*\+\s*['\"]([^'\"]+)['\"]"
+        found.extend((variable, path) for path in re.findall(pattern, page))
+        template = rf"fetch\(\s*`\$\{{{variable}\}}([^`]*)`"
+        found.extend((variable, path) for path in re.findall(template, page))
+    return found
+
+
+def _registered_paths(app, prefix: str = "") -> list[str]:
+    """Every route path, including those inside mounted sub-applications.
+
+    ``app.mount("/tracking", tracking_api)`` hides the tracking routes one level
+    down, and their paths are relative to the mount, so a flat scan of
+    ``app.routes`` only ever sees ``/tracking`` and the children as
+    ``/api/v1/...``. Both halves are needed to resolve a full URL.
+    """
+
+    found: list[str] = []
+    for route in getattr(app, "routes", []):
+        path = getattr(route, "path", "")
+        if path:
+            found.append(prefix + path)
+        children = getattr(route, "routes", None)
+        if children:
+            found.extend(_registered_paths(route, prefix + path))
+    return found
+
+
+def _matches(path: str, registered: list[str]) -> bool:
+    """Does ``path`` match a registered route, with path params filled in?"""
+
+    for route in registered:
+        pattern = "^" + re.sub(r"\{[^}]+\}", "[^/]+", route) + "$"
+        if re.match(pattern, path):
+            return True
+    return False
+
+
+def _resolves(variable: str, literal: str, registered: list[str]) -> bool:
+    """Does this fetch reach a route the server actually registered?"""
+
+    base = FETCH_BASES[variable]
+    path = literal.split("?", 1)[0]
+    full = base + path
+    if path.endswith("/"):
+        # The caller appends an identifier, and sometimes further segments
+        # (``/api/v1/operators/' + userId + '/preference'``), so the literal is
+        # a prefix rather than a whole path.
+        return any(route.startswith(full) for route in registered)
+    return _matches(full, registered)
+
+
+def test_every_api_path_the_page_calls_is_a_real_route(client):
+    """A mistyped base turns a working feature into a silent 404.
+
+    ``/api/v1/qr-catalog`` and ``/api/v1/scan-image`` are mounted at the app
+    root, so prefixing them with ``/tracking`` 404s. Nothing else in the suite
+    notices: the page still loads, the fetch just never resolves.
+    """
+
+    registered = _registered_paths(client.app)
+    assert registered, "no routes discovered"
+
+    unresolved = [
+        f"{variable} + '{literal}' -> {FETCH_BASES[variable] + literal.split('?', 1)[0]}"
+        for variable, literal in _page_fetch_paths()
+        if not _resolves(variable, literal, registered)
+    ]
+    assert not unresolved, "page calls paths that are not routes:\n  " + "\n  ".join(unresolved)
+
+
+def test_page_does_not_fetch_an_absolute_api_path(client):
+    """An absolute ``fetch('/api/...')`` would ignore the configured origin.
+
+    That is what the page did before the origin became configurable, and it is
+    what breaks the Vercel deployment: the browser would resolve it against the
+    Vercel host, which has no such route.
+    """
+
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    absolute = re.findall(r"fetch\(\s*['\"](/api/[^'\"]*)['\"]", page)
+    assert not absolute, f"absolute API fetches ignore the configured origin: {absolute}"
+
+
+def test_lan_server_serves_the_page_byte_identically_to_vercel(client):
+    """Vercel serves the raw file; the LAN server must not translate newlines.
+
+    Reading the page through ``read_text`` applies universal-newline
+    translation, so the phone would get LF while Vercel serves the CRLF file.
+    Browsers do not care, but the two deployments then differ for no reason
+    anyone can see, and the difference hides real drift.
+    """
+
+    response = client.get("/tracking/mobile")
+    assert response.status_code == 200
+    assert response.content == MOBILE_PAGE.read_bytes()
 
 
 def test_vercel_deployment_assets_exist():

@@ -1270,7 +1270,7 @@
       modal.style.display = 'block';
       if (!allAvailableParts.length) {
         try {
-          const res = await fetch(api + '/api/v1/qr-catalog?limit=150');
+          const res = await fetch(serverOrigin + '/api/v1/qr-catalog?limit=150');
           if (res.ok) {
             const data = await res.json();
             allAvailableParts = data.items || [];
@@ -1330,7 +1330,7 @@
       const formData = new FormData();
       formData.append('file', file);
       try {
-        const res = await fetch(api + '/api/v1/scan-image', { method: 'POST', body: formData });
+        const res = await fetch(serverOrigin + '/api/v1/scan-image', { method: 'POST', body: formData });
         if (res.ok) {
           const data = await res.json();
           if (data.payload) {

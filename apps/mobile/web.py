@@ -16,10 +16,16 @@ MOBILE_PAGE_PATH = SOURCE_ROOT / "web" / "index.html"
 
 
 def mobile_page() -> HTMLResponse:
-    """Return the mobile web app, read fresh so edits need no server restart."""
+    """Return the mobile web app, read fresh so edits need no server restart.
+
+    The bytes are served exactly as they sit on disk. Reading through
+    ``read_text`` would apply universal-newline translation and hand the phone
+    LF while Vercel serves the CRLF file, so the two deployments would differ
+    for no reason a browser can see.
+    """
 
     try:
-        page = MOBILE_PAGE_PATH.read_text(encoding="utf-8")
+        page = MOBILE_PAGE_PATH.read_bytes()
     except OSError:
         return HTMLResponse(
             "<!doctype html><html lang='vi'><meta charset='utf-8'>"
