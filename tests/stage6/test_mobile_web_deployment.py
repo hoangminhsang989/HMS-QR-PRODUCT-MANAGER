@@ -112,17 +112,167 @@ def test_login_endpoint_is_reachable_cross_origin(monkeypatch):
 
 
 def _page_fetch_paths() -> list[tuple[str, str]]:
-    """Return ``(variable, literal_path)`` for every fetch the page issues."""
+    """Return ``(variable, full_path)`` for every fetch the page issues.
 
+    The path keeps the whole concatenation, with each interpolated identifier
+    replaced by a placeholder, so ``fetch(api + '/api/v1/operators/' + userId +
+    '/preference')`` yields ``/api/v1/operators/{}/preference`` rather than just
+    the leading literal. Taking only the first literal would let a renamed
+    trailing segment - ``/preference`` becoming ``/prefs`` - through unnoticed,
+    which is the same silent-404 class as the base mistakes.
+
+    A segment drawn from a lookup table (``routes[workflowType]``) expands to
+    one path per value the table can hold, so a typo inside the table is caught
+    too rather than hidden behind a wildcard.
+    """
     page = MOBILE_PAGE.read_text(encoding="utf-8")
+    tables = _lookup_tables(page)
     found: list[tuple[str, str]] = []
-    for variable in FETCH_BASES:
-        pattern = rf"fetch\(\s*{variable}\s*\+\s*['\"]([^'\"]+)['\"]"
-        found.extend((variable, path) for path in re.findall(pattern, page))
-        template = rf"fetch\(\s*`\$\{{{variable}\}}([^`]*)`"
-        found.extend((variable, path) for path in re.findall(template, page))
+    for expression in _fetch_first_arguments(page):
+        for variable in FETCH_BASES:
+            if expression.startswith(variable):
+                for path in _concatenated_paths(expression[len(variable):], tables):
+                    found.append((variable, path))
+                break
     return found
 
+
+def _lookup_tables(source: str) -> dict[str, list[str]]:
+    """Every ``const name = { KEY: 'value', ... }`` table in the page."""
+    tables: dict[str, list[str]] = {}
+    for match in re.finditer(r"const\s+(\w+)\s*=\s*\{([^}]*)\}", source):
+        values = re.findall(r"['\"]([^'\"]+)['\"]", match.group(2))
+        if values:
+            tables[match.group(1)] = values
+    return tables
+
+
+def _fetch_first_arguments(source: str) -> list[str]:
+    """The first argument of every ``fetch(...)`` call, as source text.
+
+    Scans for the call's opening parenthesis and walks to the first top-level
+    comma or the matching close, tracking nesting and string state. A regex
+    cannot do this: ``encodeURIComponent(q)`` contains parentheses, and the
+    options object after the URL contains both commas and braces.
+    """
+    arguments: list[str] = []
+    for match in re.finditer(r"fetch\(", source):
+        index = match.end()
+        start = index
+        depth = 1
+        quote = ""
+        while index < len(source) and depth > 0:
+            char = source[index]
+            if quote:
+                if char == "\\":
+                    index += 2
+                    continue
+                if char == quote:
+                    quote = ""
+            elif char in "'\"`":
+                quote = char
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif char == "," and depth == 1:
+                break
+            index += 1
+        arguments.append(source[start:index])
+    return arguments
+
+
+def _concatenated_paths(expression: str, tables: dict[str, list[str]]) -> list[str]:
+    """Flatten a JS ``+`` concatenation into paths with placeholders."""
+    results = [""]
+    for part in expression.split("+"):
+        part = part.strip()
+        if not part:
+            continue
+        literal = re.match(r"^['\"]([^'\"]*)['\"]$", part)
+        if literal:
+            results = [prefix + literal.group(1) for prefix in results]
+            continue
+        member = re.match(r"^(\w+)\[", part)
+        if member and member.group(1) in tables:
+            # A lookup table: one path per value it can hold.
+            results = [prefix + value for prefix in results for value in tables[member.group(1)]]
+            continue
+        # An identifier, a member access, or a call: a single path segment or a
+        # query value. Either way it is not a literal to check.
+        results = [prefix + "{}" for prefix in results]
+    return results
+
+def _fetch_first_arguments(source: str) -> list[str]:
+    """The first argument of every ``fetch(...)`` call, as source text.
+
+    Scans for the call's opening parenthesis and walks to the first top-level
+    comma or the matching close, tracking nesting and string state. A regex
+    cannot do this: ``encodeURIComponent(q)`` contains parentheses, and the
+    options object after the URL contains both commas and braces.
+    """
+    arguments: list[str] = []
+    for match in re.finditer(r"fetch\(", source):
+        index = match.end()
+        start = index
+        depth = 1
+        quote = ""
+        while index < len(source) and depth > 0:
+            char = source[index]
+            if quote:
+                if char == "\\":
+                    index += 2
+                    continue
+                if char == quote:
+                    quote = ""
+            elif char in "'\"`":
+                quote = char
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif char == "," and depth == 1:
+                break
+            index += 1
+        arguments.append(source[start:index])
+    return arguments
+
+
+def _concatenated_path(expression: str) -> str:
+    """Flatten a JS ``+`` concatenation into one path with placeholders."""
+    pieces: list[str] = []
+    for part in expression.split("+"):
+        part = part.strip()
+        if not part:
+            continue
+        literal = re.match(r"^['\"]([^'\"]*)['\"]$", part)
+        if literal:
+            pieces.append(literal.group(1))
+        else:
+            # An identifier, a member access, or a call: a single path segment
+            # or a query value. Either way it is not a literal to check.
+            pieces.append("{}")
+    return "".join(pieces)
+
+def _concatenated_path(expression: str) -> str:
+    """Flatten a JS ``+`` concatenation into one path with placeholders."""
+    pieces: list[str] = []
+    for part in expression.split("+"):
+        part = part.strip()
+        if not part:
+            continue
+        literal = re.match(r"^['\"]([^'\"]*)['\"]$", part)
+        if literal:
+            pieces.append(literal.group(1))
+        else:
+            # An identifier, a member access, or a call: a single path segment
+            # or a query value. Either way it is not a literal to check.
+            pieces.append("{}")
+    return "".join(pieces)
 
 def _registered_paths(app, prefix: str = "") -> list[str]:
     """Every route path, including those inside mounted sub-applications.
@@ -154,19 +304,10 @@ def _matches(path: str, registered: list[str]) -> bool:
     return False
 
 
-def _resolves(variable: str, literal: str, registered: list[str]) -> bool:
+def _resolves(variable: str, path: str, registered: list[str]) -> bool:
     """Does this fetch reach a route the server actually registered?"""
-
-    base = FETCH_BASES[variable]
-    path = literal.split("?", 1)[0]
-    full = base + path
-    if path.endswith("/"):
-        # The caller appends an identifier, and sometimes further segments
-        # (``/api/v1/operators/' + userId + '/preference'``), so the literal is
-        # a prefix rather than a whole path.
-        return any(route.startswith(full) for route in registered)
+    full = FETCH_BASES[variable] + path.split("?", 1)[0]
     return _matches(full, registered)
-
 
 def test_every_api_path_the_page_calls_is_a_real_route(client):
     """A mistyped base turns a working feature into a silent 404.
