@@ -4,7 +4,7 @@ Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
 Current WP: Engine cutover complete; mobile web app extracted for Vercel deployment
 Current Revision: ADR-015 engine cutover (SQLAlchemy/Alembic/PostgreSQL removed)
 Current Branch: main
-Current Verdict: ENGINE_CUTOVER_COMPLETE_743_PASSED_D2_SUBPROCESS_FLAKE_ONLY_MOBILE_WEB_ON_VERCEL_READY
+Current Verdict: ENGINE_CUTOVER_COMMITTED_AND_PUSHED_8b86526_743_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
 
 R011 D2 remediation, two fresh independent committed-byte reviews, canonical
 fast-forward integration, post-integration runtime-fixture reconciliation,
@@ -509,6 +509,14 @@ begin R010 without that separate authority.
 - Self-signed TLS for phone cameras: getUserMedia requires a secure context, so http://LAN-IP was blocked. New apps/server/tls.py generates an RSA-2048 self-signed certificate (SAN: localhost + hostname + private LAN IPv4 addresses, 10-year validity) locally with the bundled cryptography wheel (cryptography-50.0.2, cffi-2.1.1, pycparser-3.11 added to installer/wheels; cryptography>=43.0.0 added to requirements.txt). The Server runs uvicorn with --ssl-certfile/--ssl-keyfile; packages/application/lan_transport.py lan_urlopen trusts the local certificate on https LAN URLs; discovery, admin, portal, and mobile URLs switch to https when TLS is enabled; the Server Tool has a new "BẬT HTTPS CAMERA" button and the 1-click flow creates the certificate automatically. Phones trust the certificate once through the browser warning.
 - Verification: full regression on the current worktree 654 passed / 28 skipped / 0 failed (28 skips are the isolated PostgreSQL runtimes, not configured). New tests: tests/stage6/test_sqlite_lan_concurrency.py, tests/stage6/test_offline_assets.py, tests/stage6/test_lan_tls.py (includes a real HTTPS round-trip against the locally generated certificate).
 - Committed 2026-10-17 as `4ef368b` on main (29 files, +1,110/-92), together with the hosting prep and the portal.py portability fix. Worktree clean; main is ahead of origin by 1 and the push awaits LO direction.
+
+# 2026-10-19 Engine cutover committed and pushed (8b86526) + mobile web app on Vercel
+## State
+- Committed 2026-10-19 as `8b86526` on main: **107 files, +10,533/-5,767**. Working tree clean; local and remote main in sync (`32765a0..8b86526` pushed to `https://github.com/hoangminhsang989/HMS-QR-PRODUCT-MANAGER.git`).
+- Scope: the engine cutover (new `packages/sqlengine/` 9 files, `migrations/engine/` 7 migrations, `config/dburl.py`, all persistence/excel/server layers rewritten, `requirements.txt` + `pyproject.toml` drop sqlalchemy/alembic/psycopg, 15 Alembic/ORM files deleted) together with the mobile web app work (new `web/` tree, `apps/mobile/web.py` rewrite, CORS + `/tracking/mobile` exemption in `apps/server/app.py`, new `apps/server/tunnel_url.py`, `CHAY_WEB.bat`, 3 new + 2 updated test files) and the D2 frozen-bundle re-bless.
+- Pre-commit checks: secret scan of all 92 changed/untracked files (2 hits, both pre-existing test fixtures - `password="new-password-456"` in `test_server_admin.py:139` and `note="postgresql://user:pass@host/db"` in `test_r011_wp1a_deployment.py:185`; no real secrets). All modules import clean with `HMS_QR_TEST_ROOT` set. D2 gate **82/82**.
+- **NEXT (needs LO): the one-time Vercel project setup.** `vercel` and `gh` CLIs are not installed on this machine, so the deploy step needs LO's Vercel login. Settings that matter: Root Directory = `web`, Framework Preset = `Other`, no build command, no output directory. Full instructions in `web/README.md`. Once the project exists, every push to `main` auto-deploys.
+- After Vercel is live: run `CHAY_WEB.bat` on the factory machine, read `D:\HMS-QR-DATA\tunnel-url.txt`, paste it into the app's connection screen (MÁY CHỦ -> dán URL -> LƯU & KẾT NỐI), then write the Vercel hostname into `D:\HMS-QR-DATA\cors-origins.txt` and restart the server so the frontend may call the API.
 
 # 2026-10-19 Engine cutover finished - mojibake repair, test rewrites, last consumers
 ## State
