@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 title HMS QR Product Manager
 set "HMS_QR_TEST_ROOT=F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST"
 set "HMS_QR_DATABASE_URL=sqlite:///D:/HMS-QR-DATA/hms_qr_shared.sqlite"
@@ -47,8 +47,17 @@ set "HMS_QR_BOOTSTRAP_ADMIN_PASSWORD=%ADMIN_PASSWORD%"
 
 REM Cross-origin origins are opt-in: drop them in cors-origins.txt, one per line
 REM or comma-separated. Empty or absent means LAN-only, same-origin, as before.
+REM Every line is kept: a plain "set" inside the loop would leave only the last
+REM one, so adding a second frontend would silently lock the first out.
 if exist "%DATA_ROOT%\cors-origins.txt" (
-  for /f "usebackq delims=" %%o in ("%DATA_ROOT%\cors-origins.txt") do set "HMS_QR_CORS_ORIGINS=%%o"
+  set "HMS_QR_CORS_ORIGINS="
+  for /f "usebackq delims=" %%o in ("%DATA_ROOT%\cors-origins.txt") do (
+    if defined HMS_QR_CORS_ORIGINS (
+      set "HMS_QR_CORS_ORIGINS=!HMS_QR_CORS_ORIGINS!,%%o"
+    ) else (
+      set "HMS_QR_CORS_ORIGINS=%%o"
+    )
+  )
 )
 
 if defined FIRST_RUN (

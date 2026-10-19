@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 import os
 from pathlib import Path
+import re
 from typing import Annotated
 from uuid import UUID, uuid4
 
@@ -94,10 +95,20 @@ def cors_origins_from_environment() -> tuple[str, ...]:
     Empty by default: a LAN-only deployment stays same-origin, exactly as before.
     Set the variable to the Vercel deployment origin (comma-separated for several)
     to let that frontend call this server through the tunnel.
+
+    Separators are commas *and* newlines, because the launcher reads the list out
+    of a text file where one origin per line is the natural way to write it.
+    Splitting on commas alone would turn a two-line file into a single origin
+    containing an embedded newline, which matches nothing and silently locks the
+    first frontend out.
     """
 
     raw = os.environ.get("HMS_QR_CORS_ORIGINS", "")
-    return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
+    return tuple(
+        origin.strip()
+        for origin in re.split(r"[,\r\n]", raw)
+        if origin.strip()
+    )
 
 
 def apply_cors(api: FastAPI) -> None:

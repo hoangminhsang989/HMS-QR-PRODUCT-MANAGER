@@ -116,6 +116,50 @@ def test_login_endpoint_is_reachable_cross_origin(monkeypatch):
         assert response.headers["access-control-allow-origin"] == "https://hms-qr.vercel.app"
 
 
+def test_cors_origins_split_on_newlines_as_well_as_commas(monkeypatch):
+    """The launcher hands the allowlist over as one origin per line.
+
+    ``CHAY_WEB.bat`` reads ``cors-origins.txt`` into a single environment
+    variable, and one origin per line is how anyone would write that file.
+    Splitting on commas alone would leave a two-line file as one entry
+    containing an embedded newline - which matches no origin, so the first
+    frontend is locked out with a CORS error that says nothing about why.
+    """
+    import apps.server.app as app_module
+
+    monkeypatch.setenv("HMS_QR_CORS_ORIGINS",
+                       "https://first.vercel.app\nhttps://second.vercel.app\n")
+    origins = app_module.cors_origins_from_environment()
+    assert origins == ("https://first.vercel.app", "https://second.vercel.app")
+
+    monkeypatch.setenv("HMS_QR_CORS_ORIGINS", "https://a.vercel.app,https://b.vercel.app")
+    assert app_module.cors_origins_from_environment() == (
+        "https://a.vercel.app", "https://b.vercel.app",
+    )
+
+    monkeypatch.setenv("HMS_QR_CORS_ORIGINS", "")
+    assert app_module.cors_origins_from_environment() == ()
+
+
+def test_the_launcher_keeps_every_origin_line():
+    """A bare ``set`` inside the loop leaves only the last line behind.
+
+    That is what the launcher did, so adding a second frontend silently
+    disabled the first. Verified by running the real loop shape rather than by
+    looking for the assignment, for the same reason the catalog guard uses ast:
+    a substring check is satisfied by code that no longer does the job.
+    """
+    launcher = Path("CHAY_WEB.bat").read_text(encoding="utf-8")
+    block = launcher[launcher.index("cors-origins.txt"):]
+    block = block[: block.index("\n)")]
+    assert "EnableDelayedExpansion" in launcher, (
+        "the launcher needs delayed expansion to accumulate across loop iterations"
+    )
+    assert "!HMS_QR_CORS_ORIGINS!" in block, (
+        "the launcher overwrites the origin list on each line instead of appending"
+    )
+
+
 def _page_fetch_paths() -> list[tuple[str, str]]:
     """Return ``(variable, full_path)`` for every fetch the page issues.
 
