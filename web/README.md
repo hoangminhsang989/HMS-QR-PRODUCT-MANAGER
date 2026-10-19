@@ -6,7 +6,7 @@ Vercel phục vụ đúng như máy chủ LAN phục vụ, cùng một tệp `in
 ```
 web/
   index.html        toàn bộ app: HTML + CSS + JS inline
-  manifest.json     PWA manifest (start_url /tracking/mobile)
+  manifest.json     PWA manifest (start_url "/" — Vercel phục vụ web/ ở gốc domain)
   sw.js             service worker, chỉ cache tài nguyên cục bộ
   vercel.json       cache header + security header cho Vercel
   static/           jsqr.min.js (quét QR), icon, favicon
