@@ -4,7 +4,7 @@ Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
 Current WP: Engine cutover complete; mobile web app extracted for Vercel deployment
 Current Revision: ADR-015 engine cutover (SQLAlchemy/Alembic/PostgreSQL removed)
 Current Branch: main
-Current Verdict: ROUTE_GUARD_FULL_PATH_eead3da_754_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
+Current Verdict: ALEMBIC_CALLERS_REMOVED_ee0a2dd_757_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
 
 R011 D2 remediation, two fresh independent committed-byte reviews, canonical
 fast-forward integration, post-integration runtime-fixture reconciliation,
@@ -510,7 +510,24 @@ begin R010 without that separate authority.
 - Verification: full regression on the current worktree 654 passed / 28 skipped / 0 failed (28 skips are the isolated PostgreSQL runtimes, not configured). New tests: tests/stage6/test_sqlite_lan_concurrency.py, tests/stage6/test_offline_assets.py, tests/stage6/test_lan_tls.py (includes a real HTTPS round-trip against the locally generated certificate).
 - Committed 2026-10-17 as `4ef368b` on main (29 files, +1,110/-92), together with the hosting prep and the portal.py portability fix. Worktree clean; main is ahead of origin by 1 and the push awaits LO direction.
 
-#### 2026-10-19 - Route guard now checks the whole fetch path; core flow verified (eead3da)
+##### 2026-10-19 - Four callers were still invoking Alembic after the cutover (ee0a2dd)
+## State
+- **The engine cutover left four callers still invoking Alembic.** `alembic.ini` was deleted and `migrations/versions/` was emptied, so every one of them fails with `No 'script_location' key found in configuration`:
+  - **`apps/server/tool.py` Start Server button** - the worst one. It ran the upgrade command as a precondition before launching uvicorn, so on a factory machine the operator clicks Start Server, gets a preparation failure, and **the production server never comes up at all**.
+  - **`Dockerfile` CMD** and **`render.yaml` startCommand** - a fresh container or a Render deploy never serves traffic.
+  - **`TEST_HMS_QR_SERVER.bat`** - has been failing since the cutover.
+- What each needs is the engine migrations, because that is what `require_database_schema_current` compares the applied versions against in production. `tool.py` now applies them through `_apply_engine_migrations()`, which runs the same script `Stage2Repository.create_schema()` uses; the launcher, Dockerfile and render.yaml run that script directly.
+- **The tool migrates the production database, not the caller's shell database**: `production_server_environment()` pins `HMS_QR_ENV=prod` and `HMS_QR_DATABASE_URL=sqlite:///D:/HMS-QR-PROD/database/hms_qr.sqlite`. Verified by capturing the subprocess the method launches: program `py -3.14 -c`, cwd `E:\QR`, `create_schema()` present, no alembic.
+- **PROD accepts a standalone absolute SQLite URL** (`config/environments.py:59`) - the engine cutover made SQLite the production backend too, so `sqlite:///D:/HMS-QR-PROD/...` is valid. The docstring at line 42 says as much.
+- **The guard that should have caught this was itself blind.** It matched the literal command string, which misses the subprocess argument-list form `["py", "-3.14", "-m", "alembic", "upgrade", "head"]` the tool used. Re-introducing that call left both new tests green. It now squashes whitespace and quotes before matching (`_squash`), so every quoting style collapses to one shape.
+- **The second guard was blind too**: it checked the file contained `create_schema()`, which a dead helper next to a replaced call site satisfies. It now also asserts `self._apply_engine_migrations()` appears in `tool.py`.
+- Verified RED by re-introducing the list-form alembic call into `tool.py` - both tests failed - and GREEN after restoring. `TEST_HMS_QR_SERVER.bat`'s own REM comment had to be reworded, because it quoted the command string and tripped the guard.
+- **The deployment doc** (`docs/POSTGRESQL_LAN_DEPLOYMENT.md`) told operators to run the upgrade command and to check `alembic heads`. Rewritten to the engine migrations, plus a note that the engine has **no downgrade support**, so a rollback means restoring a backup rather than reversing a migration.
+- **Left alone deliberately**: ten tracked `_stage_*.ps1` staging scripts still reference alembic, sqlalchemy and psycopg. Nothing in the repo references them and they were last touched before the cutover; they are PostgreSQL-staging leftovers, not a runtime path. Flagged for LO rather than deleted unilaterally.
+- Full suite: **757 passed / 2 failed** in 761.43s, both the documented D2 private-`python.exe` subprocess flake. D2 file alone passes 82/82 (51.39s). stage6 alone: 507 passed / 1 failed, same flake.
+- Committed 2026-10-19 as `ee0a2dd` (6 files, +149/-12) and pushed: `2d3313b..ee0a2dd`. Local and remote main in sync.
+
+# 2026-10-19 - Route guard now checks the whole fetch path; core flow verified (eead3da)
 ## State
 - **The route guard only extracted the literal immediately after the base variable.** For `fetch(api + '/api/v1/operators/' + userId + '/preference')` it checked that `/tracking/api/v1/operators/` was a route prefix and stopped. Renaming the trailing segment - `/preference` to `/prefs`, `/history` to `/histories` - passed cleanly, which is the same silent-404 class as the base mistake the guard was written for.
 - The guard now flattens the **entire** concatenation, replacing each interpolated identifier with a placeholder, and matches the result against the registered routes segment by segment. A segment drawn from a lookup table (`routes[workflowType]` -> `qc-events` / `packing-events` / `delivery-events` / `reports`) expands to one path per value the table can hold, so a typo **inside** the table is caught too rather than hidden behind a wildcard.
