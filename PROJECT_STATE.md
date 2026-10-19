@@ -627,3 +627,25 @@ begin R010 without that separate authority.
 - Verification: full suite **743 passed / 2 failed** in 824.78s. Both failures are `tests/stage6/test_r011_d2_os_trusted_one_shot.py` private-embeddable-`python.exe` subprocess tests (`test_d2_20`, `test_d2_21`), both exiting `3221225477` = `0xC0000005 STATUS_ACCESS_VIOLATION` under full-suite disk load. Both pass when run alone (`test_d2_20` 1 passed; `test_d2_21` 1 passed in 61.19s). This is the documented flake family `test_d2_19`-`test_d2_22`; the exact failing subset varies run to run (an earlier run in this same session showed 744 passed / 1 failed with only `test_d2_19`). Zero non-D2 failures. Mobile/tunnel/offline/assets slice: 28 passed.
 - All text files normalized to CRLF to match `core.autocrlf=true`; zero U+FFFD anywhere. `web/static/jsqr.min.js` is byte-identical to the checksum-pinned `apps/static/jsqr.min.js` (130,594 bytes, SHA-256 32214c74...).
 - NOT done (needs LO): commit, push to GitHub, and the one-time Vercel project setup (Root Directory must be `web`, Framework Preset `Other`, no build command). `vercel` CLI and `gh` CLI are not installed, so the deploy step needs LO's Vercel login.
+
+# 2026-10-19 QR catalog read the wrong customer field and 500'd on a company-less product
+
+## State
+- Found while adding tracking data to test the part-picker button label: `/api/v1/qr-catalog` returned **HTTP 500** as soon as any tracking item's product had no `company`.
+- Root cause 1 (the 500): the endpoint built `QrPayload(product["part_name"], product["company"], ...)` unguarded inside its loop. `company` is optional on `ProductPayload` (`company: str = Field(default="", max_length=255)`), and `QrPayloadService.encode()` raises `TrackingError("QR payload fields must be non-empty strings")` on an empty field. One bad product killed the whole endpoint - the part picker dies entirely, not just for that row.
+- Root cause 2 (found while fixing it): the catalog read `products.company` while `TrackingService.qr_payload` - the endpoint that actually issues and validates QR codes - reads `customers.name` via `repo.qr_identity`. Two different values for the same field meant a payload rendered in the picker decoded to something `scan()` then reported as inconsistent (`qr_identity_consistent` false).
+- Fix: the catalog now reads `customers.name` (same source as the issued QR) and wraps the payload build in `try/except TrackingError: continue`, matching the existing `if product is None: continue` pattern. An item whose identity cannot produce a scannable code is skipped rather than failing the request.
+- Also fixed: the picker button carried a hardcoded "Danh Sách 76 Chi Tiết" that had nothing to do with the catalog. Added `id='part-picker-btn'`, removed the 76, and the label is now written from `data.total` after the catalog fetch (falling back to `items.length`, which the limit can cap below the total).
+- Emoji escape bug fixed along the way: the label used `\U0001f50d` inside a JS string literal, which is not a JS escape - replaced with the literal `🔍` character.
+- Verified against a live server: catalog returns 200 with a company-less product; the catalog's `qr_payload` matches the issued QR **exactly**; the payload carries the customer record's name; `total` equals `len(items)`; label reads "🔍 Danh Sách 1 Chi Tiết".
+- Three guards added to `tests/stage6/test_mobile_web_deployment.py`, each verified RED by re-introducing its defect:
+  - `test_the_catalog_reads_the_customer_name_from_the_customer_record`
+  - `test_a_product_without_a_company_cannot_take_the_catalog_down` - checked **structurally with `ast`**, not by substring. A substring check for `except TrackingError` is satisfied by an orphaned except clause that no longer guards anything, which is exactly what a careless edit leaves behind (this was caught during verification: the first version of the guard passed against a syntactically broken file).
+  - `test_the_catalog_button_does_not_advertise_a_made_up_count`
+- Full suite: **759 passed / 3 failed** in 1251.52s. All three failures are the known D2 private-embeddable `python.exe` flake (`test_d2_19`, `test_d2_21`, `test_d2_22`); the D2 file alone passes 82/82.
+- stage6 also produced a one-off failure of `test_semantic_identity_documents_timestamp_exclusion` that did not reproduce on re-run and passes alone and with its whole file - a load flake, not a regression.
+- Committed and pushed as `ed4d9d1`.
+
+## Next
+- Wait for LO to complete the one-time Vercel setup (Root Directory `web`, Framework Preset `Other`, no build command), then verify CORS and the manifest against the live Vercel URL.
+- On the factory machine: run `CHAY_WEB.bat`, read `D:\HMS-QR-DATA\tunnel-url.txt`, paste into the app's connection screen, write the Vercel hostname to `D:\HMS-QR-DATA\cors-origins.txt`, restart the server.
