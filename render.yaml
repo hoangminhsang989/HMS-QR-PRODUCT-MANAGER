@@ -3,7 +3,9 @@ services:
     name: hms-qr-product-manager
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: alembic upgrade head && uvicorn apps.server.app:app --host 0.0.0.0 --port $PORT
+    # Alembic is gone from the runtime; the engine migrations are what
+    # require_database_schema_current verifies against.
+    startCommand: py -3.14 -c "from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.sqlalchemy_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()" && uvicorn apps.server.app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: HMS_QR_ENV
         value: prod

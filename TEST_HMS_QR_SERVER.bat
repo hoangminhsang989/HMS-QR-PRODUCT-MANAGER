@@ -19,8 +19,14 @@ if not errorlevel 1 (
   goto tool
 )
 
+REM The engine cutover removed Alembic from the runtime path: there is no
+REM alembic.ini and migrations/versions is empty, so the old upgrade command
+REM fails outright. The DEV server applies the shipped engine migrations itself
+REM through Stage2Repository.create_schema(), so this step only has to make sure
+REM the database directory exists and the schema is current before the
+REM administrator is bootstrapped.
 echo Applying test database migrations...
-py -3.14 -m alembic upgrade head
+py -3.14 -c "from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.sqlalchemy_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()"
 if errorlevel 1 (
   echo Migration failed. The test server was not started.
   pause

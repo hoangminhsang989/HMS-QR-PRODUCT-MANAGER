@@ -27,4 +27,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # PROD fails fast without HMS_QR_DATABASE_URL (postgresql+psycopg://user:password@host:5432/db).
 # Migrations run before the API so a fresh container never serves a stale schema.
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn apps.server.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Alembic is gone from the runtime; the engine migrations are what
+# require_database_schema_current verifies against.
+CMD ["sh", "-c", "py -3.14 -c \"from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.sqlalchemy_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()\" && exec uvicorn apps.server.app:app --host 0.0.0.0 --port ${PORT:-8000}"]

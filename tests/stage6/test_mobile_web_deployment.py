@@ -10,7 +10,10 @@ unless an operator explicitly allows an origin.
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -442,6 +445,103 @@ def test_launcher_supplies_bootstrap_admin_credentials():
     assert "HMS_QR_BOOTSTRAP_ADMIN_USERNAME" in launcher
     assert "HMS_QR_BOOTSTRAP_ADMIN_PASSWORD" in launcher
     assert "admin-password.txt" in launcher
+
+
+def _squash(text: str) -> str:
+    """Drop whitespace and quotes so every quoting style collapses to one form.
+
+    Alembic was invoked three different ways across the repo - a shell string in
+    the batch launcher, a YAML startCommand, and a subprocess argument list in
+    tool.py. Matching the literal "alembic upgrade head" catches only the first
+    two, which is how a re-introduced list-form call slipped past this guard.
+    """
+    return re.sub(r"[\s\"']+", "", text)
+
+
+def test_no_runtime_path_invokes_alembic():
+    """Alembic is gone from the runtime, so any caller of it now fails outright.
+
+    The engine cutover deleted alembic.ini and emptied migrations/versions, but
+    four callers were left invoking it: the test launcher, the tool's Start
+    Server button, the Dockerfile CMD and the render.yaml startCommand. Each of
+    them fails with "No 'script_location' key found in configuration", which for
+    the tool means the operator can never start the production server from the
+    GUI at all.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    callers = [
+        repo_root / "TEST_HMS_QR_SERVER.bat",
+        repo_root / "CHAY_WEB.bat",
+        repo_root / "apps" / "server" / "tool.py",
+        repo_root / "Dockerfile",
+        repo_root / "render.yaml",
+    ]
+    for caller in callers:
+        squashed = _squash(caller.read_text(encoding="utf-8"))
+        for pattern in ("alembicupgradehead", "-malembic", "-m,alembic"):
+            assert pattern not in squashed, (
+                f"{caller.name} still invokes alembic, which fails without alembic.ini"
+            )
+
+
+def test_every_migration_caller_applies_the_engine_migrations():
+    """Removing Alembic is only half the job - the schema still has to be built.
+
+    A caller that simply drops its migration step leaves a fresh database empty
+    and production refuses to start on it, so each of these must apply the engine
+    migrations instead. For tool.py the check is that the start path actually
+    calls the helper, not merely that the helper exists somewhere in the file -
+    a dead helper next to a replaced call site passes a plain substring check.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    for caller in (
+        repo_root / "TEST_HMS_QR_SERVER.bat",
+        repo_root / "Dockerfile",
+        repo_root / "render.yaml",
+    ):
+        assert "create_schema()" in caller.read_text(encoding="utf-8"), (
+            f"{caller.name} no longer applies the engine migrations"
+        )
+    tool = (repo_root / "apps" / "server" / "tool.py").read_text(encoding="utf-8")
+    assert "def _apply_engine_migrations" in tool
+    assert "self._apply_engine_migrations()" in tool
+
+
+def test_the_engine_migration_script_satisfies_the_production_schema_check(tmp_path):
+    """The script the callers run must leave a database production will accept.
+
+    require_database_schema_current rejects a production runtime whose applied
+    versions fall short of the shipped head, so running the script has to move a
+    fresh database past that check rather than merely creating tables.
+    """
+    script = (
+        "from config.environments import load_config;"
+        "from packages.persistence.database import create_database_runtime, require_database_schema_current;"
+        "from packages.persistence.sqlalchemy_repository import Stage2Repository;"
+        "runtime=create_database_runtime(load_config());"
+        "Stage2Repository(runtime).create_schema();"
+        "require_database_schema_current(runtime);"
+        "print('SCHEMA_CURRENT');"
+        "runtime.dispose()"
+    )
+    repo_root = Path(__file__).resolve().parents[2]
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir(parents=True, exist_ok=True)
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(repo_root)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    environment["HMS_QR_ENV"] = "staging"
+    environment["HMS_QR_DATABASE_URL"] = f"sqlite:///{(tmp_path / 'schema-check.sqlite').as_posix()}"
+    environment["HMS_QR_STORAGE_ROOT"] = str(storage_root)
+    environment["HMS_QR_AUTH_SECRET"] = "engine-migration-verification-secret-2026"
+    environment["HMS_QR_BOOTSTRAP_ADMIN_USERNAME"] = "schema-check-admin"
+    environment["HMS_QR_BOOTSTRAP_ADMIN_PASSWORD"] = "schema-check-password-123"
+    result = subprocess.run(
+        ["py", "-3.14", "-c", script],
+        cwd=str(repo_root), env=environment, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr[-600:]
+    assert "SCHEMA_CURRENT" in result.stdout
 
 
 def test_launcher_password_is_persisted_and_operator_changeable():

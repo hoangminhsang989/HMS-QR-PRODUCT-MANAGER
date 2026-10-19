@@ -1607,14 +1607,42 @@ class ServerToolWindow(QMainWindow):
             environment.insert(name, value)
         return environment
 
+    def _apply_engine_migrations(self) -> None:
+        """Bring the production database to the shipped engine migration head.
+
+        Alembic is gone from the runtime: there is no alembic.ini and
+        migrations/versions is empty, so the old upgrade command failed
+        outright and blocked the operator from starting the server at all. The
+        engine migrations are what the app verifies against through
+        require_database_schema_current, so applying them here is the same
+        contract the old command was meant to satisfy.
+        """
+
+        script = (
+            "from config.environments import load_config;"
+            "from packages.persistence.database import create_database_runtime;"
+            "from packages.persistence.sqlalchemy_repository import Stage2Repository;"
+            "runtime=create_database_runtime(load_config());"
+            "Stage2Repository(runtime).create_schema();"
+            "runtime.dispose()"
+        )
+        environment = os.environ.copy()
+        environment.update(production_server_environment())
+        subprocess.run(
+            ["py", "-3.14", "-c", script],
+            cwd=Path(__file__).resolve().parents[2],
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
     def start_server(self) -> None:
         if self._server_listening():
             self.status_label.setText("Server đã chạy. Tool đang kết nối đến service hiện có.")
             return
         try:
-            migration_environment = os.environ.copy()
-            migration_environment.update(production_server_environment())
-            subprocess.run(["py", "-3.14", "-m", "alembic", "upgrade", "head"], cwd=Path(__file__).resolve().parents[2], env=migration_environment, check=True, capture_output=True, text=True)
+            self._apply_engine_migrations()
         except (OSError, ValueError, subprocess.CalledProcessError) as exc:
             QMessageBox.warning(self, "Không thể chuẩn bị Server", getattr(exc, "stderr", "") or str(exc))
             return

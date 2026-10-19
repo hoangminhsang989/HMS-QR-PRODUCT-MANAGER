@@ -38,19 +38,18 @@ HMS_QR_ALLOW_EMPTY_PASSWORDS=false
 
 The application validates the database URL, storage root, and authentication configuration at startup. `prod` requires a complete `postgresql+psycopg` URL, an existing writable external storage root, and an `HMS_QR_AUTH_SECRET` of at least 32 characters. Startup writes and removes a probe file in the storage root, so it will fail if the NAS mount is unavailable or not writable. It will not start with SQLite, a placeholder value, or `HMS_QR_ALLOW_EMPTY_PASSWORDS=true`.
 
-Before starting or upgrading the server, run `alembic upgrade head` with the same `HMS_QR_DATABASE_URL`. Production startup verifies the database `alembic_version` is exactly the migration head shipped with the server; it does not apply migrations automatically.
+Before starting or upgrading the server, apply the shipped engine migrations with the same `HMS_QR_DATABASE_URL`. Production startup verifies the applied engine migration versions are at least the head shipped with the server; it does not apply migrations automatically.
 
 ## Migrate Then Start
 
 Run migrations from the repository root in the same protected environment:
 
 ```powershell
-alembic upgrade head
-alembic current
+py -3.14 -c "from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.sqlalchemy_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()"
 uvicorn apps.server.app:app --host 0.0.0.0 --port 8000
 ```
 
-`migrations/env.py` reads `HMS_QR_DATABASE_URL`, so `alembic.ini` remains free of a connection string. At this revision, `alembic heads` must report `0007_server_accounts` and `alembic current` must report that revision after a successful migration.
+`load_config()` reads `HMS_QR_DATABASE_URL` from the environment, so no configuration file carries a connection string. The engine migrations under `migrations/engine/` are what `require_database_schema_current` compares against, so a successful run leaves the applied versions at the shipped head.
 
 Do not use `--reload` for the deployed server. Terminate and restart the managed server process only through the approved service-management procedure when updating code or configuration.
 
@@ -63,7 +62,7 @@ Invoke-WebRequest http://SERVER-LAN-IP:8000/health/readiness/database
 Invoke-WebRequest http://SERVER-LAN-IP:8000/files/health/readiness/files
 ```
 
-The database endpoint must return a successful response before connecting Desktop clients. A `200` response means the database is reachable and its schema matches the deployed Alembic head; a schema problem returns `503 DATABASE_SCHEMA_UNAVAILABLE`. The configured storage root is write-probed during startup, so a running production server has already passed that check. Configure a distinct archive target through the storage administration API before file uploads; the file endpoint returns `503 FILE_TRANSFER_UNAVAILABLE` until an active configuration and writable local ingest exist. It returns `200` with `DEGRADED` when the archive is temporarily unavailable but local-first uploads remain safe to queue. Sign in at `http://SERVER-LAN-IP:8000/admin` using the bootstrap administrator, create named `EDITOR` and `VIEWER` accounts, and confirm the diagnostics page reports the intended server address.
+The database endpoint must return a successful response before connecting Desktop clients. A `200` response means the database is reachable and its schema matches the deployed engine migration head; a schema problem returns `503 DATABASE_SCHEMA_UNAVAILABLE`. The configured storage root is write-probed during startup, so a running production server has already passed that check. Configure a distinct archive target through the storage administration API before file uploads; the file endpoint returns `503 FILE_TRANSFER_UNAVAILABLE` until an active configuration and writable local ingest exist. It returns `200` with `DEGRADED` when the archive is temporarily unavailable but local-first uploads remain safe to queue. Sign in at `http://SERVER-LAN-IP:8000/admin` using the bootstrap administrator, create named `EDITOR` and `VIEWER` accounts, and confirm the diagnostics page reports the intended server address.
 
 ## Native Server Tool LAN operations
 
@@ -104,4 +103,4 @@ For two-machine acceptance, open the same product on two `EDITOR` desktops. Save
 - Permit client HTTP access only to the reviewed HMS QR server listener. PostgreSQL remains server-local.
 - Add TLS/reverse proxy and explicit public-access review before any Internet exposure. Do not publish the direct Uvicorn listener.
 - Back up PostgreSQL using the database administrator's approved procedure and back up NAS-managed files separately.
-- Before upgrade, take a verified database backup, run `alembic upgrade head`, check readiness, and retain the previous application release for rollback. Do not downgrade a production schema without a tested recovery plan.
+- Before upgrade, take a verified database backup, apply the shipped engine migrations, check readiness, and retain the previous application release for rollback. The engine has no downgrade support, so a rollback means restoring the backup rather than reversing a migration.
