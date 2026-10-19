@@ -4,7 +4,7 @@ Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
 Current WP: Engine cutover complete; mobile web app extracted for Vercel deployment
 Current Revision: ADR-015 engine cutover (SQLAlchemy/Alembic/PostgreSQL removed)
 Current Branch: main
-Current Verdict: ENGINE_CUTOVER_COMMITTED_AND_PUSHED_8b86526_743_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
+Current Verdict: ENGINE_CUTOVER_COMMITTED_AND_PUSHED_03010ae_746_PASSED_D2_SUBPROCESS_FLAKE_ONLY_VERCEL_SETUP_PENDING_LO
 
 R011 D2 remediation, two fresh independent committed-byte reviews, canonical
 fast-forward integration, post-integration runtime-fixture reconciliation,
@@ -509,6 +509,17 @@ begin R010 without that separate authority.
 - Self-signed TLS for phone cameras: getUserMedia requires a secure context, so http://LAN-IP was blocked. New apps/server/tls.py generates an RSA-2048 self-signed certificate (SAN: localhost + hostname + private LAN IPv4 addresses, 10-year validity) locally with the bundled cryptography wheel (cryptography-50.0.2, cffi-2.1.1, pycparser-3.11 added to installer/wheels; cryptography>=43.0.0 added to requirements.txt). The Server runs uvicorn with --ssl-certfile/--ssl-keyfile; packages/application/lan_transport.py lan_urlopen trusts the local certificate on https LAN URLs; discovery, admin, portal, and mobile URLs switch to https when TLS is enabled; the Server Tool has a new "BẬT HTTPS CAMERA" button and the 1-click flow creates the certificate automatically. Phones trust the certificate once through the browser warning.
 - Verification: full regression on the current worktree 654 passed / 28 skipped / 0 failed (28 skips are the isolated PostgreSQL runtimes, not configured). New tests: tests/stage6/test_sqlite_lan_concurrency.py, tests/stage6/test_offline_assets.py, tests/stage6/test_lan_tls.py (includes a real HTTPS round-trip against the locally generated certificate).
 - Committed 2026-10-17 as `4ef368b` on main (29 files, +1,110/-92), together with the hosting prep and the portal.py portability fix. Worktree clean; main is ahead of origin by 1 and the push awaits LO direction.
+
+# 2026-10-19 Regression found and fixed - mobile page called two app-root routes through /tracking (03010ae)
+## State
+- **Bug I introduced in the origin refactor, caught by an E2E check before LO deployed.** The refactor rewrote every fetch to go through a base variable, but `/api/v1/qr-catalog` and `/api/v1/scan-image` are mounted at the application root (`@app.get("/api/v1/qr-catalog")`, `@app.post("/api/v1/scan-image")`), NOT under `/tracking`. Prefixing them produced `/tracking/api/v1/qr-catalog` and `/tracking/api/v1/scan-image`, both **404**. The original page used absolute paths (`fetch('/api/v1/qr-catalog?limit=150')`) which happened to be correct.
+- Impact: the **part picker** (`openPartPicker`) and the **scan-from-image** feature (`scanFromImage`) failed silently. The page still loaded, the fetch simply never resolved, and no existing test noticed - the failure is invisible at the HTTP level of the page itself.
+- Fix: both now use `serverOrigin` (the app root) instead of `api` (`/tracking`). Verified on a live server: `GET /api/v1/qr-catalog?limit=150` -> 200 (was 404), `POST /api/v1/scan-image` -> 422 (route exists, needs a file; was 404), both carrying the correct `access-control-allow-origin`.
+- Second fix in the same commit: `apps/mobile/web.py` read the page with `read_text()`, which applies universal-newline translation, so the LAN server returned 56,669 bytes of LF while Vercel serves the 58,078-byte CRLF file. Content was identical after normalisation but the two deployments were not byte-identical. It now returns the raw bytes.
+- **New guard test** `test_every_api_path_the_page_calls_is_a_real_route`: walks every `fetch()` in the page, resolves it against the routes the server actually registered (recursing into the mounted sub-applications, whose paths are relative to the mount), and fails on any path that is not a route. Companion test `test_page_does_not_fetch_an_absolute_api_path` fails on an absolute `fetch('/api/...')`, which would ignore the configured origin and break the Vercel deployment. The guard was verified RED against the bug and GREEN after the fix.
+- Also verified end-to-end with a static server standing in for Vercel (root = `web/`) plus the real server with CORS enabled: 22/22 checks - every asset resolves, manifest `start_url` is `/`, service worker precaches only paths that exist, CORS preflight 200 with the right allow-origin/allow-headers, 401 without a token, disallowed origin refused, `/tracking/mobile` reachable without auth and byte-identical to the file on disk.
+- Committed 2026-10-19 as `03010ae` (3 files, +124/-4) and pushed: `d4db8ea..03010ae`. Local and remote main in sync, worktree clean.
+- Verification: full suite **746 passed / 2 failed** in 758.94s. Both failures are `test_d2_20` and `test_d2_22`, the documented private-embeddable-`python.exe` subprocess flake - **both pass when run alone** (`test_d2_20` 1 passed in 27.34s, `test_d2_22` 1 passed in 0.48s), and the whole D2 file passes 82/82 in isolation. Zero non-D2 failures. Mobile/tunnel/offline/assets slice: 31 passed.
 
 # 2026-10-19 Engine cutover committed and pushed (8b86526) + mobile web app on Vercel
 ## State
