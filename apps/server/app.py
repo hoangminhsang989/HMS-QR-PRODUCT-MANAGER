@@ -609,8 +609,8 @@ def qr_catalog(search: str | None = None, limit: int = 150):
     # item's. The lookup is therefore resolved in Python, as in the portal.
     database = SERVER_DATABASE_RUNTIME.database
     items = database.query(
-        "SELECT internal_id, tracking_code, quantity, unit, status, delivery_date, product_id"
-        " FROM order_tracking_items"
+        "SELECT internal_id, tracking_code, quantity, unit, status, delivery_date,"
+        " product_id, customer_id FROM order_tracking_items"
     )
     products = {
         row["internal_id"]: row
@@ -618,6 +618,16 @@ def qr_catalog(search: str | None = None, limit: int = 150):
             "SELECT internal_id, part_name, product_code, company, material, size,"
             " surface_treatment FROM products"
         )
+    }
+    # The QR contract's customer_name is the customer record's name - the same
+    # source TrackingService.qr_payload reads, so a payload rendered here decodes
+    # and matches what scan() verifies. Reading products.company instead made the
+    # catalog disagree with the issued QR, and because company is optional on a
+    # product, an empty one raised inside encode() and took the whole endpoint
+    # down with a 500 rather than skipping the one item.
+    customers = {
+        row["internal_id"]: row
+        for row in database.query("SELECT internal_id, name FROM customers")
     }
     if search:
         term = f"%{search.strip()}%"
@@ -637,10 +647,18 @@ def qr_catalog(search: str | None = None, limit: int = 150):
     catalog = []
     for item in items:
         product = products.get(item["product_id"])
-        if product is None:
+        customer = customers.get(item["customer_id"])
+        if product is None or customer is None:
             continue
-        p = QrPayload(product["part_name"], product["company"], product["product_code"], item["tracking_code"])
-        uri, enc = qr_svc.data_uri(p)
+        try:
+            p = QrPayload(product["part_name"], customer["name"], product["product_code"], item["tracking_code"])
+            uri, enc = qr_svc.data_uri(p)
+        except TrackingError:
+            # An item whose identity is incomplete cannot produce a scannable QR,
+            # so it does not belong in a picker whose whole job is handing out
+            # scannable codes. Skipping it keeps one bad row from failing the
+            # entire catalog.
+            continue
         raw_qty = item["quantity"]
         try:
             fq = float(raw_qty)

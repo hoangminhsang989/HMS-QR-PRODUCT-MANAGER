@@ -511,7 +511,7 @@
         <button id='qr-resolve' onclick='resolveScan()' style='background:var(--card-raised);border-color:var(--accent);color:var(--accent);'>Tra cứu</button>
       </div>
       <div class='samples-wrap'>
-        <button type='button' class='sample-btn' style='background:var(--card-raised);border-color:var(--accent);color:var(--accent);font-weight:700;' onclick='openPartPicker()'>🔍 Danh Sách 76 Chi Tiết</button>
+        <button type='button' id='part-picker-btn' class='sample-btn' style='background:var(--card-raised);border-color:var(--accent);color:var(--accent);font-weight:700;' onclick='openPartPicker()'>🔍 Danh Sách Chi Tiết</button>
         <button type='button' class='sample-btn' onclick='fillSample(1)'>⚡ Mẫu 1: Trục S45C</button>
         <button type='button' class='sample-btn' onclick='fillSample(2)'>⚡ Mẫu 2: Mặt Bích A6061</button>
         <button type='button' class='sample-btn' onclick='fillSample(3)'>⚡ Mẫu 3: CT-S26169H (CIT)</button>
@@ -1274,6 +1274,13 @@
           if (res.ok) {
             const data = await res.json();
             allAvailableParts = data.items || [];
+            // The button used to carry a hardcoded "76", so it advertised a
+            // count that had nothing to do with the catalog. The server reports
+            // the real total; fall back to what was actually returned, which the
+            // limit can cap below the total.
+            const total = typeof data.total === 'number' ? data.total : allAvailableParts.length;
+            const label = document.getElementById('part-picker-btn');
+            if (label) label.textContent = '🔍 Danh Sách ' + total + ' Chi Tiết';
           }
         } catch(e) {}
       }

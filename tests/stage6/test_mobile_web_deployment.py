@@ -9,6 +9,7 @@ unless an operator explicitly allows an origin.
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -329,6 +330,101 @@ def test_every_api_path_the_page_calls_is_a_real_route(client):
         if not _resolves(variable, literal, registered)
     ]
     assert not unresolved, "page calls paths that are not routes:\n  " + "\n  ".join(unresolved)
+
+
+def test_the_catalog_reads_the_customer_name_from_the_customer_record():
+    """The catalog and the issued QR must agree on what a payload says.
+
+    ``/api/v1/qr-catalog`` built its payload from ``products.company`` while
+    ``TrackingService.qr_payload`` - the endpoint that actually issues and
+    validates QR codes - reads ``customers.name``. Two different values for the
+    same field means a payload rendered in the picker decodes to something
+    ``scan()`` then reports as inconsistent.
+    """
+    source = (SOURCE_ROOT / "apps" / "server" / "app.py").read_text(encoding="utf-8")
+    catalog = source[source.index("def qr_catalog"):]
+    catalog = catalog[: catalog.index("\n@")] if "\n@" in catalog else catalog
+    assert 'customer["name"]' in catalog, (
+        "the catalog no longer reads the customer record's name"
+    )
+    assert 'QrPayload(product["part_name"], product["company"]' not in catalog, (
+        "the catalog still builds its payload from products.company, which "
+        "disagrees with the QR the tracking service issues"
+    )
+    assert "SELECT internal_id, name FROM customers" in catalog
+
+
+def _qr_catalog_function() -> ast.FunctionDef:
+    source = (SOURCE_ROOT / "apps" / "server" / "app.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "qr_catalog":
+            return node
+    raise AssertionError("qr_catalog not found in apps/server/app.py")
+
+
+def test_a_product_without_a_company_cannot_take_the_catalog_down():
+    """``company`` is optional on a product, and an empty one used to 500 the route.
+
+    ``QrPayloadService.encode`` rejects an empty field, and the catalog called it
+    unguarded inside its loop, so one product with no company made the whole
+    endpoint return 500 - the part picker dies entirely, not just for that row.
+
+    This is checked structurally rather than by substring: a guard that only looks
+    for the text "except TrackingError" is satisfied by an orphaned except clause
+    that no longer guards anything, which is exactly what a careless edit leaves
+    behind.
+    """
+    function = _qr_catalog_function()
+
+    guarded = []
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if name not in ("QrPayload", "data_uri"):
+            continue
+        # Walk up through the AST parents to see whether a try statement covers it.
+        for parent in ast.walk(function):
+            if not isinstance(parent, ast.Try):
+                continue
+            covers = any(
+                child is node or node in ast.walk(child)
+                for child in parent.body
+            )
+            if not covers:
+                continue
+            catches = [
+                handler for handler in parent.handlers
+                if any(
+                    isinstance(item, ast.Name) and item.id == "TrackingError"
+                    for handler_name in ([handler.type] if handler.type else [])
+                    for item in ast.walk(handler_name)
+                )
+            ]
+            guarded.append((name, bool(catches)))
+
+    assert guarded, "no QrPayload or data_uri call found inside qr_catalog"
+    for name, catches in guarded:
+        assert catches, (
+            f"the {name} call in qr_catalog is not wrapped in a try that catches "
+            "TrackingError, so one unencodable row fails the whole request"
+        )
+
+
+def test_the_catalog_button_does_not_advertise_a_made_up_count():
+    """The picker button used to carry a hardcoded "76".
+
+    The number had nothing to do with the catalog, so the operator was told there
+    were 76 details whether the database held none or three hundred. The label is
+    now written from the total the server reports.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    assert "Danh Sách 76" not in page, "the picker button still hardcodes a count"
+    assert "id='part-picker-btn'" in page, "the picker button has no id to update"
+    assert "Danh Sách ' + total + ' Chi Tiết" in page, (
+        "the picker button label is not written from the server's total"
+    )
 
 
 def test_page_does_not_fetch_an_absolute_api_path(client):
