@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -330,6 +331,107 @@ def test_every_api_path_the_page_calls_is_a_real_route(client):
         if not _resolves(variable, literal, registered)
     ]
     assert not unresolved, "page calls paths that are not routes:\n  " + "\n  ".join(unresolved)
+
+
+def _isolated_app(tmp_path, monkeypatch):
+    """A full app on its own engine database, so data cannot leak between tests."""
+    import apps.server.app as app_module
+    from config.environments import load_config
+    from packages.application.server_auth import ServerAuthService
+    from packages.persistence.database import create_database_runtime
+    from packages.persistence.sqlalchemy_repository import Stage2Repository
+
+    monkeypatch.setenv("HMS_QR_BOOTSTRAP_ADMIN_USERNAME", "admin")
+    monkeypatch.setenv("HMS_QR_BOOTSTRAP_ADMIN_PASSWORD", "bootstrap-password")
+    monkeypatch.setenv("HMS_QR_AUTH_SECRET", "edge-case-signing-secret")
+
+    config = load_config()
+    config = replace(config, database_url=f"sqlite:///{(tmp_path / 'edge.sqlite').as_posix()}")
+    runtime = create_database_runtime(config)
+    Stage2Repository(runtime).create_schema()
+    ServerAuthService(runtime).bootstrap_admin()
+
+    app = app_module.build_api(app_config=config, database_runtime=runtime)
+    app.mount("/tracking", app_module.build_tracking_api(app_config=config, database_runtime=runtime))
+    app.mount("/admin-api", app_module.build_admin_api(config, runtime))
+    app.mount("/stage2", app_module.build_stage2_api(app_config=config, database_runtime=runtime))
+    return app, runtime
+
+
+def _login(client):
+    response = client.post("/admin-api/api/v1/auth/login",
+                           json={"username": "admin", "password": "bootstrap-password"})
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_path, monkeypatch):
+    """A product may legitimately have no part_name yet - an import that has not
+    been completed. What must not happen is the two failure modes this guards:
+
+    the QR issue endpoint returning a 500 instead of naming the problem, and the
+    catalog taking the whole picker down because of that one row.
+    """
+    app, runtime = _isolated_app(tmp_path, monkeypatch)
+    try:
+        with TestClient(app) as client:
+            headers = _login(client)
+
+            customer = client.post("/stage2/api/v1/customers", headers=headers, json={
+                "customer_code": "C-EDGE", "name": "Công ty Biên",
+            }).json()
+            po = client.post("/stage2/api/v1/purchase-orders", headers=headers, json={
+                "po_number": "PO-EDGE", "customer_id": customer["internal_id"],
+                "po_date": "2026-10-19", "status": "CONFIRMED",
+            }).json()
+
+            # Blank part_name is accepted on purpose: test_api.py and
+            # test_domain.py both assert it, because a product can arrive from an
+            # import before its name is known.
+            product = client.post("/api/v1/products", headers={**headers, "X-Actor": "test"}, json={
+                "part_name": "", "quantity": "10", "unit": "cái",
+            })
+            assert product.status_code == 201, product.text
+            assert product.json()["part_name"] == ""
+            assert product.json()["product_code"], "a null product_code is auto-generated"
+
+            line = client.post(f"/stage2/api/v1/purchase-orders/{po['internal_id']}/lines",
+                               headers=headers, json={
+                                   "product_id": product.json()["internal_id"], "line_number": 1,
+                                   "ordered_quantity": "10", "unit": "cái",
+                               }).json()
+            item = client.post("/tracking/api/v1/tracking-items", headers=headers, json={
+                "purchase_order_id": po["internal_id"],
+                "purchase_order_line_id": line["internal_id"],
+                "product_id": product.json()["internal_id"],
+                "customer_id": customer["internal_id"],
+                "quantity": "10", "unit": "cái", "delivery_date": "2026-11-30",
+            }).json()
+            item_id = item["internal_id"]
+
+            # The QR contract needs a non-empty product name, so this is a
+            # validation failure the operator can act on - not a server fault.
+            # (The catalog's side of this is covered by the guards above and by
+            # the live-server check; the route is registered on the module-level
+            # app rather than inside build_api, so it cannot be reached from an
+            # isolated one.)
+            issue = client.post(f"/tracking/api/v1/tracking-items/{item_id}/qr", headers=headers)
+            assert issue.status_code == 422, issue.text
+            assert issue.json()["error"]["code"] == "TRACKING_VALIDATION_ERROR"
+
+            # Completing the product is the recovery path, and it must work.
+            patched = client.patch(f"/api/v1/products/{product.json()['internal_id']}",
+                                   headers={**headers, "X-Actor": "test"},
+                                   json={"part_name": "Trục S45C", "expected_updated_at": product.json()["updated_at"]})
+            assert patched.status_code == 200, patched.text
+
+            after = client.post(f"/tracking/api/v1/tracking-items/{item_id}/qr", headers=headers)
+            assert after.status_code == 200, after.text
+            payload = json.loads(after.json()["payload"])
+            assert payload["product_name"] == "Trục S45C"
+            assert payload["customer_name"] == "Công ty Biên"
+    finally:
+        runtime.dispose()
 
 
 def test_the_catalog_reads_the_customer_name_from_the_customer_record():
