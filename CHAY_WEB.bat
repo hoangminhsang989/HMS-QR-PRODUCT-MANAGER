@@ -17,10 +17,50 @@ if not errorlevel 1 (
   exit /b 0
 )
 
+REM The mobile app signs in, so the server needs a token-signing secret and an
+REM administrator account. Both are generated once and kept on disk: a secret
+REM that changed between restarts would invalidate every token already issued,
+REM and a regenerated password would lock the operator out mid-shift.
+if not exist "%DATA_ROOT%\auth-secret.txt" (
+  python -c "import secrets,pathlib;pathlib.Path(r'%DATA_ROOT%\auth-secret.txt').write_bytes(secrets.token_urlsafe(48).encode())"
+  if errorlevel 1 (
+    echo Khong tao duoc khoa ky token. Xem %DATA_ROOT%
+    pause
+    exit /b 1
+  )
+)
+set /p HMS_QR_AUTH_SECRET=<"%DATA_ROOT%\auth-secret.txt"
+set "HMS_QR_AUTH_SECRET=%HMS_QR_AUTH_SECRET: =%"
+
+if not exist "%DATA_ROOT%\admin-password.txt" (
+  python -c "import secrets,pathlib;pathlib.Path(r'%DATA_ROOT%\admin-password.txt').write_bytes(secrets.token_urlsafe(16).encode())"
+  if errorlevel 1 (
+    echo Khong tao duoc mat khau quan tri. Xem %DATA_ROOT%
+    pause
+    exit /b 1
+  )
+  set "FIRST_RUN=1"
+)
+set /p ADMIN_PASSWORD=<"%DATA_ROOT%\admin-password.txt"
+set "HMS_QR_BOOTSTRAP_ADMIN_USERNAME=admin"
+set "HMS_QR_BOOTSTRAP_ADMIN_PASSWORD=%ADMIN_PASSWORD%"
+
 REM Cross-origin origins are opt-in: drop them in cors-origins.txt, one per line
 REM or comma-separated. Empty or absent means LAN-only, same-origin, as before.
 if exist "%DATA_ROOT%\cors-origins.txt" (
   for /f "usebackq delims=" %%o in ("%DATA_ROOT%\cors-origins.txt") do set "HMS_QR_CORS_ORIGINS=%%o"
+)
+
+if defined FIRST_RUN (
+  echo.
+  echo ============================================================
+  echo  TAI KHOAN QUAN TRI - chi hien mot lan
+  echo    ten dang nhap : admin
+  echo    mat khau      : %ADMIN_PASSWORD%
+  echo  Ghi lai. Muon doi thi xoa admin-password.txt roi chay lai
+  echo  ^(xoa ca database neu muon dat lai toan bo^).
+  echo ============================================================
+  echo.
 )
 
 echo Starting HMS QR Product Manager...
@@ -35,7 +75,7 @@ if exist "%CLOUDFLARED%" (
     echo.
     echo ============================================================
     echo  URL CONG KHAI: nhap dong ben duoi vao app mobile
-    echo  ^(o MAY CHU -^> dan URL -^> LUU ^& KET NOI)
+    echo  ^(o MAY CHU -^> dan URL -^> LUU ^& KET NOI^)
     echo ============================================================
     type "%DATA_ROOT%\tunnel-url.txt"
     echo ============================================================

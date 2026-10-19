@@ -257,3 +257,60 @@ def test_service_worker_precaches_paths_that_actually_exist_on_vercel():
     assert "'/static/manifest.json'" not in worker
     assert "cache.add(asset).catch(" in worker
     assert "cache.addAll(" not in worker
+
+
+LAUNCHER = SOURCE_ROOT / "CHAY_WEB.bat"
+
+
+def _launcher() -> str:
+    return LAUNCHER.read_text(encoding="utf-8")
+
+
+def test_launcher_supplies_the_token_signing_secret():
+    """The page signs in, and login() refuses to issue a token without a secret.
+
+    ``ServerAuthService.login`` raises "Server authentication is not configured"
+    when ``HMS_QR_AUTH_SECRET`` is empty, in every environment - the production
+    guard only adds a length check. A launcher that omits it therefore ships an
+    app whose login can never succeed, which is exactly what CHAY_WEB.bat did.
+    """
+    launcher = _launcher()
+    assert "HMS_QR_AUTH_SECRET" in launcher
+    assert "auth-secret.txt" in launcher
+
+
+def test_launcher_secret_is_persisted_not_regenerated():
+    """A secret regenerated on each start invalidates every issued token.
+
+    The launcher writes the secret to disk once and reuses it, so a restart
+    does not sign operators out mid-shift.
+    """
+    launcher = _launcher()
+    assert r'if not exist "%DATA_ROOT%\auth-secret.txt"' in launcher
+    assert r'set /p HMS_QR_AUTH_SECRET=<"%DATA_ROOT%\auth-secret.txt"' in launcher
+
+
+def test_launcher_supplies_bootstrap_admin_credentials():
+    """bootstrap_admin() reads the username and password from the environment.
+
+    With neither set it raises "Server has no administrator account", and the
+    mobile page has no other way to create the first account - the admin API
+    that creates accounts is itself behind that login.
+    """
+    launcher = _launcher()
+    assert "HMS_QR_BOOTSTRAP_ADMIN_USERNAME" in launcher
+    assert "HMS_QR_BOOTSTRAP_ADMIN_PASSWORD" in launcher
+    assert "admin-password.txt" in launcher
+
+
+def test_launcher_password_is_persisted_and_operator_changeable():
+    """The password is generated once, shown once, and kept where it can be replaced.
+
+    Regenerating it silently on every start would lock the operator out; the
+    launcher therefore writes it to a file the operator can delete to choose a
+    new one.
+    """
+    launcher = _launcher()
+    assert r'if not exist "%DATA_ROOT%\admin-password.txt"' in launcher
+    assert r'set /p ADMIN_PASSWORD=<"%DATA_ROOT%\admin-password.txt"' in launcher
+    assert "FIRST_RUN" in launcher
