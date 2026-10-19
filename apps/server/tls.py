@@ -42,9 +42,17 @@ def tls_is_enabled(root: Path) -> bool:
     return paths["certificate"].is_file() and paths["key"].is_file()
 
 
-def lan_url_scheme() -> str:
-    """Return the scheme the running Server advertises on the LAN."""
+def lan_url_scheme(root: Path | None = None) -> str:
+    """Return the scheme the running Server advertises on the LAN.
 
+    With ``root`` the certificate pair on disk decides, which is the same
+    signal the Server Tool uses when it starts uvicorn with TLS.  Without it
+    the environment of the calling process decides, for code running inside
+    the Server itself.
+    """
+
+    if root is not None:
+        return "https" if tls_is_enabled(root) else "http"
     return "https" if os.environ.get(TLS_CERTIFICATE_ENV) else "http"
 
 

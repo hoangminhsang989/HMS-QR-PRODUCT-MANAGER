@@ -62,7 +62,7 @@ def _sha(path: Path) -> str:
     return h.hexdigest()
 
 def build_release(source_root: str | Path, output_root: str | Path, *, release_id: str,
-                  expected_alembic_head: str = "0005_store_forward", build_timestamp: str | None = None,
+                  expected_engine_migration_head: str = "7", build_timestamp: str | None = None,
                   builder_version: str = "r011-wp1a-r1a-1", files: Iterable[str] | None = None,
                   git_head: str | None = None, git_tree: str | None = None) -> Path:
     source, output = Path(source_root), Path(output_root)
@@ -75,7 +75,7 @@ def build_release(source_root: str | Path, output_root: str | Path, *, release_i
     if not release_id or any(c in release_id for c in "\\/:"):
         raise ArtifactBuildError("invalid release id")
     entries_by_path = _tree_entries(source, head)
-    selected = list(files) if files is not None else [p for p in entries_by_path if p.startswith(("apps/", "packages/", "config/", "migrations/")) or p in {"pyproject.toml", "alembic.ini", "scripts/r011_collect_inventory_readonly.ps1"}]
+    selected = list(files) if files is not None else [p for p in entries_by_path if p.startswith(("apps/", "packages/", "config/", "migrations/")) or p in {"pyproject.toml", "scripts/r011_collect_inventory_readonly.ps1"}]
     selected = sorted(set(selected))
     dest = output / release_id
     if dest.exists():
@@ -94,7 +94,7 @@ def build_release(source_root: str | Path, output_root: str | Path, *, release_i
     inventory_identity = hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
     manifest = {
         "manifest_schema": MANIFEST_SCHEMA, "release_id": release_id, "git_head": head, "git_tree": tree,
-        "expected_alembic_head": expected_alembic_head, "created_at": build_timestamp or datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "expected_engine_migration_head": expected_engine_migration_head, "created_at": build_timestamp or datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "builder_version": builder_version, "artifact_identity": {"algorithm": "sha256", "semantic_input": "canonical-json(files)", "volatile_fields_excluded": ["created_at"], "file_inventory": inventory_identity},
         "source_baseline": {"git_head": head, "git_tree": tree}, "python_runtime": {"requires": ">=3.11", "global_site_packages": False},
         "dependency_identity": {"authority": "pyproject.toml", "file": "pyproject.toml"},
@@ -105,11 +105,11 @@ def build_release(source_root: str | Path, output_root: str | Path, *, release_i
     return dest
 
 def verify_release(artifact_root: str | Path, *, expected_release_id: str | None = None, expected_head: str | None = None,
-                   expected_tree: str | None = None, expected_alembic_head: str | None = None) -> dict:
+                   expected_tree: str | None = None, expected_engine_migration_head: str | None = None) -> dict:
     root = Path(artifact_root); mf = root / "manifest.json"
     try: manifest = json.loads(mf.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc: raise ArtifactBuildError("malformed or truncated manifest") from exc
-    required = {"manifest_schema", "release_id", "git_head", "git_tree", "expected_alembic_head", "created_at", "builder_version", "artifact_identity", "source_baseline", "python_runtime", "dependency_identity", "config_schema_version", "compatibility", "rollback", "files"}
+    required = {"manifest_schema", "release_id", "git_head", "git_tree", "expected_engine_migration_head", "created_at", "builder_version", "artifact_identity", "source_baseline", "python_runtime", "dependency_identity", "config_schema_version", "compatibility", "rollback", "files"}
     if required - set(manifest) or manifest.get("manifest_schema") != MANIFEST_SCHEMA or not isinstance(manifest.get("files"), list):
         raise ArtifactBuildError("unsupported manifest schema")
     if expected_release_id and manifest.get("release_id") != expected_release_id: raise ArtifactBuildError("release id mismatch")
@@ -117,7 +117,7 @@ def verify_release(artifact_root: str | Path, *, expected_release_id: str | None
     if any(not isinstance(manifest.get(k), str) or len(manifest[k]) != 40 for k in ("git_head", "git_tree")): raise ArtifactBuildError("invalid Git identity metadata")
     if expected_head and manifest.get("git_head") != expected_head: raise ArtifactBuildError("Git HEAD mismatch")
     if expected_tree and manifest.get("git_tree") != expected_tree: raise ArtifactBuildError("Git tree mismatch")
-    if expected_alembic_head and manifest.get("expected_alembic_head") != expected_alembic_head: raise ArtifactBuildError("Alembic head mismatch")
+    if expected_engine_migration_head and manifest.get("expected_engine_migration_head") != expected_engine_migration_head: raise ArtifactBuildError("engine migration head mismatch")
     seen = set()
     for e in manifest["files"]:
         rel = e.get("path");

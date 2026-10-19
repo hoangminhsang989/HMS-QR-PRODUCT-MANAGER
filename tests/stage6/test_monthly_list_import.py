@@ -9,7 +9,7 @@ once.
 
 from __future__ import annotations
 
-import sqlite3
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -81,8 +81,16 @@ def _build_workbook(path: Path, image: Path) -> None:
 
 
 def _query(database: Path, sql: str, params: tuple = ()) -> list[tuple]:
-    with sqlite3.connect(database) as connection:
-        return connection.execute(sql, params).fetchall()
+    from packages.excel.monthly_list_import import create_database_runtime_for_shared_sqlite
+
+    runtime = create_database_runtime_for_shared_sqlite(database)
+    try:
+        rows = runtime.database.query(sql, list(params))
+    finally:
+        runtime.dispose()
+    if not rows:
+        return []
+    return [tuple(row.values()) for row in rows]
 
 
 def test_monthly_list_import_is_correct_and_idempotent(tmp_path: Path):
@@ -110,15 +118,15 @@ def test_monthly_list_import_is_correct_and_idempotent(tmp_path: Path):
     )
     assert len(products) == 5
     assert products[0] == (
-        "C-BNTL-260603-R009", "CIT", "Ban nang thuy luc", 5, "EA", "SUS 304", "Ø x 18 x 11.5", "2026-06-03",
+        "C-BNTL-260603-R009", "CIT", "Ban nang thuy luc", 5, "EA", "SUS 304", "Ø x 18 x 11.5", date(2026, 6, 3),
     )
     assert products[1][0] == "C-CTML-260603-R008"
     assert products[2] == (
-        "C-JDN-260603-R007", "CIT", "Jig dap nhiet", 2, "SET", "AL6061", "85 x 55 x 30", "2026-06-03",
+        "C-JDN-260603-R007", "CIT", "Jig dap nhiet", 2, "SET", "AL6061", "85 x 55 x 30", date(2026, 6, 3),
     )
     assert products[3][0] == "C-DND-260604-R008"
     assert products[4][0] == "C-KNK-260604-R007"
-    assert {row[7] for row in products} == {"2026-06-03", "2026-06-04"}
+    assert {row[7] for row in products} == {date(2026, 6, 3), date(2026, 6, 4)}
 
     manifest = _query(database, "SELECT source_file, source_sheet, source_row, image_sha256 FROM excel_monthly_import_rows ORDER BY source_row")
     assert len(manifest) == 5
@@ -128,7 +136,7 @@ def test_monthly_list_import_is_correct_and_idempotent(tmp_path: Path):
     tracking = _query(database, "SELECT tracking_code, quantity, unit, delivery_date, status, qr_public_id, qr_status FROM order_tracking_items ORDER BY tracking_code")
     assert len(tracking) == 5
     assert all(row[0].startswith("ITEM-2026-") for row in tracking)
-    assert all(row[3] in {"2026-06-03", "2026-06-04"} for row in tracking)
+    assert all(row[3] in {date(2026, 6, 3), date(2026, 6, 4)} for row in tracking)
     assert all(row[4] == "NEW" and row[5].startswith("qr_") and row[6] == "ACTIVE" for row in tracking)
     assert _query(database, "SELECT name FROM customers WHERE name = 'CIT'")
     po_numbers = [row[0] for row in _query(database, "SELECT po_number FROM purchase_orders")]
@@ -143,6 +151,6 @@ def test_monthly_list_import_is_correct_and_idempotent(tmp_path: Path):
     assert second["images_skipped"] == 1
     assert second["tracking_created"] == 0
     assert second["product_codes_repaired"] == 0
-    assert len(_query(database, "SELECT 1 FROM products")) == 5
-    assert len(_query(database, "SELECT 1 FROM order_tracking_items")) == 5
+    assert len(_query(database, "SELECT internal_id FROM products")) == 5
+    assert len(_query(database, "SELECT internal_id FROM order_tracking_items")) == 5
     assert len(list(storage.rglob("*.png"))) == 1

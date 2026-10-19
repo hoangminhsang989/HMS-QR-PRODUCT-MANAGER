@@ -1,0 +1,68 @@
+# Web app mobile — HMS QR
+
+Giao diện mobile (PWA) của HMS QR. Một thư mục tĩnh thuần, **không build step**:
+Vercel phục vụ đúng như máy chủ LAN phục vụ, cùng một tệp `index.html`.
+
+```
+web/
+  index.html        toàn bộ app: HTML + CSS + JS inline
+  manifest.json     PWA manifest (start_url /tracking/mobile)
+  sw.js             service worker, chỉ cache tài nguyên cục bộ
+  vercel.json       cache header + security header cho Vercel
+  static/           jsqr.min.js (quét QR), icon, favicon
+```
+
+## Vì sao lại tách ra đây
+
+Trước đây trang mobile nằm trong `apps/mobile/web.py` dưới dạng một chuỗi Python,
+với `const api = '/tracking'` viết cứng — nghĩa là nó chỉ chạy được same-origin,
+tức là chỉ khi điện thoại mở trực tiếp từ máy chủ xưởng.
+
+Giờ `web/index.html` là **nguồn duy nhất**. `apps/mobile/web.py` chỉ đọc và trả
+về tệp đó, nên bản chạy trên LAN và bản chạy trên Vercel là byte-identical.
+
+## Địa chỉ máy chủ resolve lúc chạy
+
+`index.html` tự tìm địa chỉ máy chủ theo thứ tự:
+
+1. `localStorage['hms-server-origin']` — đã lưu từ màn KẾT NỐI MÁY CHỦ
+2. `location.origin` — khi trang được chính máy chủ HMS QR serve (path bắt đầu `/tracking/`)
+3. rỗng — bắt buộc mở màn KẾT NỐI MÁY CHỦ
+
+Nhờ vậy đổi URL Cloudflare quick tunnel **không cần redeploy Vercel**: mở app →
+bấm ô MÁY CHỦ → dán URL mới → Lưu.
+
+## Bật cross-origin trên máy chủ
+
+Mặc định máy chủ **không** cho cross-origin — bản chỉ dùng LAN giữ nguyên nguyên
+trạng same-origin. Để frontend Vercel gọi được, đặt biến môi trường trước khi
+khởi động server:
+
+```bat
+set HMS_QR_CORS_ORIGINS=https://ten-app.vercel.app
+```
+
+Nhiều origin thì phân cách bằng dấu phẩy. Không bao giờ dùng `*`.
+
+## Đăng nhập
+
+Trang mobile giờ đăng nhập bằng tài khoản server có sẵn (`/admin-api/api/v1/auth/login`),
+nhận token ký và gửi kèm `Authorization: Bearer …` cho mọi request. Token sống 8
+giờ; hết hạn thì app tự mở lại màn đăng nhập.
+
+Route `/tracking/mobile` **không** yêu cầu auth — chính trang đó chứa form đăng
+nhập, chặn nó thì không còn cách nào đăng nhập.
+
+## Deploy lên Vercel
+
+1. Push repo lên GitHub (đã có sẵn remote).
+2. Vercel → Add New Project → import repo này.
+3. **Root Directory: `web`** — đây là bước dễ sai nhất; để trống sẽ deploy nhầm
+   thư mục gốc của repo Python.
+4. Framework Preset: **Other**. Không có build command, không có output directory.
+5. Deploy. Mỗi lần push `main` sau đó Vercel tự deploy lại.
+
+## Chạy cục bộ
+
+Không cần gì đặc biệt — mở `web/index.html` bằng Live Server, hoặc để chính máy
+chủ HMS QR serve tại `http://<ip>:8010/tracking/mobile`.

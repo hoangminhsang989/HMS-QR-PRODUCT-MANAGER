@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+import os
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from config.environments import AppConfig, Environment, load_config
@@ -86,6 +88,34 @@ def require_sqlite_legacy_endpoint(config: AppConfig) -> None:
         )
 
 
+def cors_origins_from_environment() -> tuple[str, ...]:
+    """Read the cross-origin allowlist from ``HMS_QR_CORS_ORIGINS``.
+
+    Empty by default: a LAN-only deployment stays same-origin, exactly as before.
+    Set the variable to the Vercel deployment origin (comma-separated for several)
+    to let that frontend call this server through the tunnel.
+    """
+
+    raw = os.environ.get("HMS_QR_CORS_ORIGINS", "")
+    return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
+
+
+def apply_cors(api: FastAPI) -> None:
+    """Allow only explicitly configured origins; never a wildcard."""
+
+    origins = cors_origins_from_environment()
+    if not origins:
+        return
+    api.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(origins),
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Actor"],
+        max_age=600,
+    )
+
+
 def build_api(
     service: ProductService | None = None,
     *,
@@ -93,6 +123,7 @@ def build_api(
     database_runtime: DatabaseRuntime | None = None,
 ) -> FastAPI:
     api = FastAPI(title="HMS QR Product Manager", version="1.0")
+    apply_cors(api)
     if service is None:
         config = app_config or load_config()
         runtime = database_runtime or create_database_runtime(config)
@@ -290,6 +321,10 @@ def build_tracking_api(service:TrackingService|None=None,*,app_config:AppConfig|
     async def require_tracking_access(request: Request, authorization: Annotated[str | None, Header()] = None) -> None:
         if auth is None:
             return
+        # The page itself must stay reachable: it carries the login form, so
+        # gating it behind authentication would leave no way to sign in.
+        if request.url.path.rstrip("/").endswith("/mobile"):
+            return
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(401, detail={"code": "AUTHENTICATION_REQUIRED", "message": "Cần đăng nhập."})
         try:
@@ -299,9 +334,9 @@ def build_tracking_api(service:TrackingService|None=None,*,app_config:AppConfig|
         if request.method not in {"GET", "HEAD", "OPTIONS"} and principal["role"] not in {UserRole.ADMIN.value, UserRole.EDITOR.value}:
             raise HTTPException(403, detail={"code": "TRACKING_WRITE_FORBIDDEN", "message": "Tài khoản chỉ có quyền xem theo dõi."})
 
+    workflow_repo=WorkflowRepository(service.repo.database);qc_service=QcService(workflow_repo);packing_service=PackingService(workflow_repo);delivery_service=DeliveryService(workflow_repo);general_service=GeneralReportService(workflow_repo);history_service=TrackingHistoryService(workflow_repo,service.repo)
     if auth is not None:
         api.router.dependencies.append(Depends(require_tracking_access))
-    workflow_repo=WorkflowRepository(service.repo.engine,getattr(service.repo,"Session",None));qc_service=QcService(workflow_repo);packing_service=PackingService(workflow_repo);delivery_service=DeliveryService(workflow_repo);general_service=GeneralReportService(workflow_repo);history_service=TrackingHistoryService(workflow_repo,service.repo)
     _existing_types={mt.code for mt in service.repo.list_machining_types()}
     for order,(code,name) in enumerate((("BLANK","TẠO PHÔI"),("TURN","TIỆN"),("MILL","PHAY"),("WIRE","CẮT DÂY"),("GRIND","MÀI"),("HEAT","NHIỆT LUYỆN"),("OTHER","KHÁC")),1):
         if code not in _existing_types:service.repo.add_machining_type(MachiningType(uuid4(),code,name,True,order))
@@ -566,57 +601,69 @@ async def excel_paste_import(req: ExcelPasteRequest):
 @app.get("/api/v1/qr-catalog")
 def qr_catalog(search: str | None = None, limit: int = 150):
     require_sqlite_legacy_endpoint(SERVER_APP_CONFIG)
-    import sqlite3
     from packages.qr.payload import QrPayload
     from packages.qr.service import QRService
 
-    db = sqlite_path(SERVER_APP_CONFIG.database_url)
-    conn = sqlite3.connect(db)
-    conn.row_factory = sqlite3.Row
-    query = """
-        SELECT t.internal_id, t.tracking_code, t.quantity, t.unit, t.status, t.delivery_date,
-               p.part_name, p.product_code, p.company, p.material, p.size, p.surface_treatment
-        FROM order_tracking_items t
-        JOIN products p ON t.product_id = p.internal_id
-    """
-    params = []
+    # The engine's join merges rows by column name, and both tables carry
+    # ``internal_id``, so the joined table's value would overwrite the tracking
+    # item's. The lookup is therefore resolved in Python, as in the portal.
+    database = SERVER_DATABASE_RUNTIME.database
+    items = database.query(
+        "SELECT internal_id, tracking_code, quantity, unit, status, delivery_date, product_id"
+        " FROM order_tracking_items"
+    )
+    products = {
+        row["internal_id"]: row
+        for row in database.query(
+            "SELECT internal_id, part_name, product_code, company, material, size,"
+            " surface_treatment FROM products"
+        )
+    }
     if search:
-        query += " WHERE t.tracking_code LIKE ? OR p.part_name LIKE ? OR p.product_code LIKE ? OR p.company LIKE ?"
-        s = f"%{search.strip()}%"
-        params.extend([s, s, s, s])
-    query += " ORDER BY t.rowid DESC LIMIT ?"
-    params.append(limit)
+        term = f"%{search.strip()}%"
+        lowered = term.lower()
+        items = [
+            item
+            for item in items
+            if lowered in str(item["tracking_code"] or "").lower()
+            or lowered in str(products.get(item["product_id"], {}).get("part_name") or "").lower()
+            or lowered in str(products.get(item["product_id"], {}).get("product_code") or "").lower()
+            or lowered in str(products.get(item["product_id"], {}).get("company") or "").lower()
+        ]
+    # ``ORDER BY rowid`` is a no-op on the engine, so newest-first is restored here.
+    items = list(reversed(items))[:limit]
 
-    rows = conn.execute(query, params).fetchall()
     qr_svc = QRService()
-    items = []
-    for r in rows:
-        p = QrPayload(r["part_name"], r["company"], r["product_code"], r["tracking_code"])
+    catalog = []
+    for item in items:
+        product = products.get(item["product_id"])
+        if product is None:
+            continue
+        p = QrPayload(product["part_name"], product["company"], product["product_code"], item["tracking_code"])
         uri, enc = qr_svc.data_uri(p)
-        raw_qty = r["quantity"]
+        raw_qty = item["quantity"]
         try:
             fq = float(raw_qty)
             clean_qty = str(int(fq)) if fq.is_integer() else f"{fq:g}"
         except Exception:
             clean_qty = str(raw_qty)
-        items.append({
-            "internal_id": r["internal_id"],
-            "tracking_code": r["tracking_code"],
-            "product_code": r["product_code"],
-            "part_name": r["part_name"],
-            "company": r["company"],
+        catalog.append({
+            "internal_id": item["internal_id"],
+            "tracking_code": item["tracking_code"],
+            "product_code": product["product_code"],
+            "part_name": product["part_name"],
+            "company": product["company"],
             "quantity": clean_qty,
-            "unit": r["unit"],
-            "material": r["material"] or "",
-            "size": r["size"] or "",
-            "surface_treatment": r["surface_treatment"] or "",
-            "delivery_date": str(r["delivery_date"] or ""),
-            "status": r["status"],
+            "unit": item["unit"],
+            "material": product["material"] or "",
+            "size": product["size"] or "",
+            "surface_treatment": product["surface_treatment"] or "",
+            "delivery_date": str(item["delivery_date"] or ""),
+            "status": item["status"],
             "qr_data_uri": uri,
             "qr_payload": enc,
         })
-    conn.close()
-    return {"total": len(items), "items": items}
+    return {"total": len(catalog), "items": catalog}
 
 @app.get("/api/v1/export/excel")
 def export_excel():

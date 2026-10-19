@@ -229,9 +229,8 @@ def test_retry_backoff_manual_retry_and_status_metrics(store_forward_env):
 def test_reconciler_queues_ready_file_missing_job_without_deleting_data(store_forward_env):
     env = store_forward_env
     item = _upload(env)
-    from packages.persistence.store_forward_models import ArchiveTransferJobORM
-    with env["queue_repository"].Session.begin() as session:
-        session.query(ArchiveTransferJobORM).delete()
+    with env["queue_repository"].database.transaction() as transaction:
+        transaction.execute("DELETE FROM archive_transfer_jobs")
     result = env["transfer"].reconcile()
     assert result["orphan_ready_files_queued"] == 1
     assert env["transfer"].status(item.managed_file.file_id).state is ArchiveTransferState.TRANSFER_QUEUED
@@ -241,12 +240,12 @@ def test_reconciler_queues_ready_file_missing_job_without_deleting_data(store_fo
 def test_crash_after_local_complete_before_queue_is_reconciled(store_forward_env):
     env = store_forward_env
     item = _upload(env, name="crash-b.pdf")
-    from packages.persistence.store_forward_models import ArchiveTransferJobORM
-    from packages.persistence.storage_models import ManagedFileORM
-    with env["queue_repository"].Session.begin() as session:
-        session.query(ArchiveTransferJobORM).delete()
-        row = session.get(ManagedFileORM, str(item.managed_file.file_id))
-        row.status = "PENDING"
+    with env["queue_repository"].database.transaction() as transaction:
+        transaction.execute("DELETE FROM archive_transfer_jobs")
+        transaction.execute(
+            "UPDATE managed_files SET status = ? WHERE internal_id = ?",
+            ["PENDING", str(item.managed_file.file_id)],
+        )
     result = env["transfer"].reconcile()
     assert result["local_uploads_recovered"] == 1
     assert env["managed_repository"].get(item.managed_file.file_id).status.value == "READY"
@@ -257,16 +256,16 @@ def test_crash_after_local_complete_before_queue_is_reconciled(store_forward_env
 def test_crash_with_complete_local_upload_temp_is_published_and_queued(store_forward_env):
     env = store_forward_env
     item = _upload(env, name="crash-a.pdf")
-    from packages.persistence.store_forward_models import ArchiveTransferJobORM
-    from packages.persistence.storage_models import ManagedFileORM
     target = env["local_root"] / Path(*item.managed_file.storage_key.split("/"))
     interrupted = target.parent / f".{target.name}.crash.uploading"
     interrupted.write_bytes(target.read_bytes())
     target.unlink()
-    with env["queue_repository"].Session.begin() as session:
-        session.query(ArchiveTransferJobORM).delete()
-        row = session.get(ManagedFileORM, str(item.managed_file.file_id))
-        row.status = "PENDING"
+    with env["queue_repository"].database.transaction() as transaction:
+        transaction.execute("DELETE FROM archive_transfer_jobs")
+        transaction.execute(
+            "UPDATE managed_files SET status = ? WHERE internal_id = ?",
+            ["PENDING", str(item.managed_file.file_id)],
+        )
     result = env["transfer"].reconcile()
     assert result["local_uploads_recovered"] == 1
     assert target.exists() and not interrupted.exists()

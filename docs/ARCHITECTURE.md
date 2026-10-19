@@ -6,27 +6,28 @@ The system is split into three clients/services:
 - Desktop client: production management, CAM preparation, QR operations, QC, and history.
 - Mobile web/PWA: identity, QR scan, server-backed reporting, and status updates.
 
-PostgreSQL is the live database on Machine A. NAS is a LAN-only object/file/archive
-store reached by the server; clients never mount or access NAS directly.
+The embedded SQL engine (`packages/sqlengine`) is the live database on Machine A; it
+runs inside the server process and needs no external database service. NAS is a
+LAN-only object/file/archive store reached by the server; clients never mount or
+access NAS directly.
 
 ## Stage 1 Product Master slice
 
 The first vertical slice is layered as Domain → Repository → Application
 Service → versioned FastAPI → PySide6 desktop presentation. The SQLite adapter
-is restricted to the DEV/test profile and uses the external test workspace;
-PostgreSQL remains the production target. Product attachments use a
+is restricted to the DEV/test profile and uses the external test workspace; the
+same engine is the production target. Product attachments use a
 `StorageReference` behind a server-owned `StorageService`, so clients never
 receive a NAS path. Excel import/export is isolated in `packages/excel` and is
 usable by the desktop layer without placing workbook logic in UI widgets.
 
 ## Stage 2 Customer + PO + Production Run
 
-R004 adds normalized SQLAlchemy 2.x persistence for Customer, PurchaseOrder,
+R004 adds normalized persistence for Customer, PurchaseOrder,
 PurchaseOrderLine, DeliveryScheduleEntry, and ProductionRun. Product remains
 the master reference; PO Line owns ordered quantity and Production Run owns
-planned/completed manufacturing quantities. SQLite is DEV/test only, Alembic
-provides the baseline migration shape, and PostgreSQL on Machine A remains the
-production target.
+planned/completed manufacturing quantities. The engine's versioned migration
+runner (`migrations/engine/`) owns the schema; see ADR-015.
 
 ## Stage 3 tracking, QR, and process reporting
 

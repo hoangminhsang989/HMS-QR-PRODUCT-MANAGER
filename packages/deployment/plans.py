@@ -45,9 +45,9 @@ class PostgreSQLPlan:
     database: str = "<resolved-database>"
     application_role: str = "<resolved-application-role>"
     secret_ref: str = "ref:service/database"
-    alembic_head: str = "0005_store_forward"
+    engine_migration_head: str = "7"
     backup_required: bool = True
-    readiness_commands: tuple[str, ...] = ("database-connectivity-probe", "alembic-current")
+    readiness_commands: tuple[str, ...] = ("database-connectivity-probe", "engine-migration-current")
 
 @dataclass(frozen=True)
 class FirewallPlan:

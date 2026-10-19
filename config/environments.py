@@ -7,8 +7,7 @@ from enum import StrEnum
 import os
 from pathlib import Path
 
-from sqlalchemy.engine import make_url
-
+from config.dburl import make_url
 from config.paths import require_external_runtime_root, require_test_root, validate_external_runtime_path
 
 

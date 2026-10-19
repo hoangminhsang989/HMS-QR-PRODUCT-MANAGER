@@ -13,13 +13,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from fastapi.testclient import TestClient
 from PySide6.QtWidgets import QApplication
-from sqlalchemy import select
 
 from apps.desktop.file_panels import AdminStoragePanel, ProductFilesPanel
 from apps.server.files import build_files_api
 from config.environments import Environment, load_config
 from packages.domain.store_forward import ArchiveTransferState, StorageConfiguration
-from packages.persistence.store_forward_models import ArchiveTransferJobORM
 from packages.storage.service import StorageUnavailable
 
 
@@ -48,18 +46,22 @@ def _set_state(
     lease_expires_at: datetime | None = None,
     error_code: str | None = None,
 ) -> None:
-    with env["queue_repository"].Session.begin() as session:
-        row = session.scalar(select(ArchiveTransferJobORM).where(
-            ArchiveTransferJobORM.managed_file_id == str(item.managed_file.file_id)
-        ))
-        assert row is not None
-        row.state = state.value
-        row.remote_verified_at = remote_verified_at
-        row.grace_expires_at = grace_expires_at
-        row.lease_token = lease_token
-        row.lease_expires_at = lease_expires_at
-        row.last_error_code = error_code
-        row.last_error_summary = "preserve this error" if error_code else None
+    with env["queue_repository"].database.transaction() as transaction:
+        transaction.execute(
+            "UPDATE archive_transfer_jobs SET state = ?, remote_verified_at = ?, "
+            "grace_expires_at = ?, lease_token = ?, lease_expires_at = ?, "
+            "last_error_code = ?, last_error_summary = ? WHERE managed_file_id = ?",
+            [
+                state.value,
+                remote_verified_at,
+                grace_expires_at,
+                lease_token,
+                lease_expires_at,
+                error_code,
+                "preserve this error" if error_code else None,
+                str(item.managed_file.file_id),
+            ],
+        )
 
 
 def _snapshot(job) -> tuple[object, ...]:

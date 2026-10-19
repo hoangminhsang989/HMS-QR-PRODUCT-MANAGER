@@ -1,10 +1,10 @@
 ﻿# HMS QR Product Manager — Current State
 
 Current Stage: STAGE_6_MACHINE_A_SERVER_DEPLOYMENT_FOUNDATION
-Current WP: R011 Gate C selected; fresh execution authority required
-Current Revision: R011-D2 post-remote-delivery state reconciliation
+Current WP: Engine cutover complete; mobile web app extracted for Vercel deployment
+Current Revision: ADR-015 engine cutover (SQLAlchemy/Alembic/PostgreSQL removed)
 Current Branch: main
-Current Verdict: R011_D2_REMOTE_DELIVERY_COMPLETE_GATE_C_FROZEN_NOT_EXECUTED
+Current Verdict: ENGINE_CUTOVER_COMPLETE_743_PASSED_D2_SUBPROCESS_FLAKE_ONLY_MOBILE_WEB_ON_VERCEL_READY
 
 R011 D2 remediation, two fresh independent committed-byte reviews, canonical
 fast-forward integration, post-integration runtime-fixture reconciliation,
@@ -122,9 +122,37 @@ MOBILE_CAMERA_REAL_DEVICE_PASS_NOT_YET_EXECUTED
 PRODUCTION_WEB_HOSTING_NOT_YET_DEPLOYED
 ```
 
-Production PostgreSQL integration is closed by R010. Machine A production
-deployment remains a separate open gap. The next exact action requires fresh
-authority for
+Production PostgreSQL integration is closed by R010 and then removed entirely by
+ADR-015 (2026-10-18): the embedded SQL engine `packages/sqlengine` is now the
+only persistence path, `requirements.txt` and `pyproject.toml` declare no
+third-party runtime dependencies, the ORM model modules and the Alembic
+machinery are deleted, and the Server Tool one-click setup creates a local
+SQLite database file and applies the seven engine migrations in-process.
+Machine A production deployment remains a separate open gap.
+
+The engine cutover initially left the working tree at 696 passed / 7 failed /
+19 errors, where every failure and error was the R011-WP1A D2 gate refusing two
+legitimately changed pinned blobs (`packages/deployment/artifact.py` and
+`plans.py`, whose `expected_alembic_head` fields became
+`expected_engine_migration_head`). With LO's approval the frozen bundle was
+re-blessed: four pinned values in
+`packages/deployment/os_trusted_one_shot.py` changed and nothing else - the two
+`TRUSTED_BUNDLE_FILES` entries, `TRUSTED_BUNDLE_SHA256`, and
+`TRUST_MANIFEST_SHA256`. The working tree now stands at **720 passed / 2 failed**
+in 946.11s, where both failures are the documented private-embeddable
+`python.exe` subprocess load flake (`0xC0000135 STATUS_DLL_NOT_FOUND` under disk
+load); each passes when run alone, and the failing test varies between runs. The
+28 historical skips are gone because the isolated-PostgreSQL-runtime skip
+conditions no longer apply.
+
+`apps/server/portal.py`, the last raw-`sqlite3` consumer, was migrated onto the
+engine in the same tranche. Its joins are resolved in Python rather than in one
+joined statement, because the engine's join merges rows by column name and would
+overwrite `quantity`/`notes`/`status` with the joined table's values; the
+coalesce, case-when and `||` expressions the old SQL used are likewise rebuilt
+in Python. `tests/stage6/test_portal_engine_reads.py` pins that behaviour.
+
+The next exact action requires fresh authority for
 `R011_GATE_C_MACHINE_A_READ_ONLY_CURRENT_STATE_INVENTORY_AND_D2_PREFLIGHT`.
 
 Latest authority: R011 D2 post-remote-delivery project-state/roadmap reconciliation and next Machine A gate selection (external task attachment)
@@ -481,3 +509,34 @@ begin R010 without that separate authority.
 - Self-signed TLS for phone cameras: getUserMedia requires a secure context, so http://LAN-IP was blocked. New apps/server/tls.py generates an RSA-2048 self-signed certificate (SAN: localhost + hostname + private LAN IPv4 addresses, 10-year validity) locally with the bundled cryptography wheel (cryptography-50.0.2, cffi-2.1.1, pycparser-3.11 added to installer/wheels; cryptography>=43.0.0 added to requirements.txt). The Server runs uvicorn with --ssl-certfile/--ssl-keyfile; packages/application/lan_transport.py lan_urlopen trusts the local certificate on https LAN URLs; discovery, admin, portal, and mobile URLs switch to https when TLS is enabled; the Server Tool has a new "BẬT HTTPS CAMERA" button and the 1-click flow creates the certificate automatically. Phones trust the certificate once through the browser warning.
 - Verification: full regression on the current worktree 654 passed / 28 skipped / 0 failed (28 skips are the isolated PostgreSQL runtimes, not configured). New tests: tests/stage6/test_sqlite_lan_concurrency.py, tests/stage6/test_offline_assets.py, tests/stage6/test_lan_tls.py (includes a real HTTPS round-trip against the locally generated certificate).
 - Committed 2026-10-17 as `4ef368b` on main (29 files, +1,110/-92), together with the hosting prep and the portal.py portability fix. Worktree clean; main is ahead of origin by 1 and the push awaits LO direction.
+
+# 2026-10-19 Engine cutover finished - mojibake repair, test rewrites, last consumers
+## State
+- Vietnamese mojibake in `apps/server/tool.py` fully repaired: 0 U+FFFD, 0 `/6` labels, 10 `/7` labels. Four repair scripts were tried; only line-number replacement with explicit indentation worked (skeleton matching matched 0 lines, and two earlier attempts silently dropped indentation). `python -c "import apps.server.tool"` verified clean. L1651 also repaired (PostgreSQL wording -> database wording).
+- `tests/stage6/test_server_tool.py` rewritten for engine backups: new `_seed_engine_database()` helper using `connect(engine_dir_for(...))`; the 6 backup/restore/inventory/integrity tests now assert on `.engine` directories; imports updated (removed `sqlite3`, added `ENGINE_BACKUP_SUFFIX`, `engine_dir_for`, `from packages.sqlengine import connect`). 52 passed.
+- `packages/persistence/sqlite_product_repository.py` migrated to engine: schema bootstrap via `schema.has_table()` / `has_column()` instead of `CREATE TABLE IF NOT EXISTS`; sequence row seeded read-then-insert; `next_sequence()` does read-modify-write inside `database.transaction()` because the engine's `UPDATE ... SET` only accepts literals; indexes dropped entirely (the engine has no `CREATE INDEX` and scans in Python anyway); rows are dicts, not `sqlite3.Row`. 113 passed across test_repository.py + test_api.py + test_desktop.py + test_excel.py.
+- `apps/server/app.py` `/api/v1/qr-catalog` migrated: two flat SELECTs plus a Python product lookup dict. The join was not portable - `Executor._joined_rows` merges by column *name*, so `SELECT t.internal_id ... JOIN products p` returned `'p1'` (the product's id) instead of `'t1'`. Search filtering and `items = list(reversed(items))[:limit]` rebuilt in Python because the engine silently ignores `ORDER BY rowid`.
+- `packages/excel/export_report.py` migrated: all stats via `database.scalar("SELECT COUNT(*) ...")`; status histogram counted in Python; activity log rebuilt from flat SELECTs plus lookup dicts for `machining_types` / `order_tracking_items` / `products`; coalesce/case-when rebuilt in Python.
+- `packages/excel/factory_adapter.py` `import_factory_items_to_db()` migrated: maps `db_path` -> `engine_path()`, whole import wrapped in one `database.transaction()`, `conn.commit()` / `conn.close()` removed.
+- Zero raw `sqlite3` remaining anywhere in the tree (verified by `git grep -nE 'import sqlite3|sqlite3\.'`).
+- Full suite: **726 passed / 1 failed** in 558.90s. The single failure is the known flake `test_d2_19_private_runtime_ctypes_black_box`, which passes alone (1 passed in 71.14s). pytest-qt teardown crash `0x8001010d` is a harmless Windows artifact that fires after all tests pass. (Later runs in the same session showed 744/1 and 743/2 - always the same D2 subprocess flake family, always passing alone.)
+- Adding `web/` and editing `apps/` does NOT affect the D2 gate: `build_deployment_bundle()` only bundles `TRUSTED_BUNDLE_FILES`, all under `packages/deployment/` + `config/paths.py`.
+
+# 2026-10-19 Mobile web app extracted for Vercel + GitHub deployment
+## State
+- LO requirement: "Tận dụng .vercel.app và github để tạo web app mobile" - a phone must reach the app from anywhere on the Internet, not only inside the factory LAN.
+- Architecture: static frontend on Vercel (GitHub push -> auto-deploy) + the HMS QR server stays on the factory machine (the engine is single-writer and file-based, so it cannot be sharded across serverless functions) exposed through a Cloudflare Tunnel. `CHAY_WEB.bat` already launched `cloudflared tunnel --url http://localhost:8000` as a quick tunnel.
+- Gaps found before any code: the API root was hardcoded (`const api = '/tracking'`), there was zero CORS support, and the mobile UI had no login screen at all.
+- Defaults chosen after LO said "tiếp tục" twice instead of answering: quick tunnel (free, no domain); API base URL is runtime-configurable so a new tunnel URL never needs a Vercel redeploy; frontend is plain static HTML/CSS/JS with no build step; lives in `web/` at the repo root.
+- `web/index.html` extracted from the old `MOBILE_HTML` Python string (47,311 bytes -> 56,446 after patches, 1,210+ lines) and is now the **single source of truth**. `apps/mobile/web.py` was rewritten to just read and return it, with a 503 fallback page if the file is missing. LAN and Vercel now serve byte-identical HTML.
+- API origin resolves at runtime in this order: `localStorage['hms-server-origin']` (set from the new connection screen) -> `location.origin` when the page is served by the HMS QR server itself -> empty, which forces the connection screen. All 5 hardcoded absolute fetches patched; zero `fetch('/api` / `fetch('/files` remain.
+- Connection + login UI added: header pills, a connection modal (server origin input), and a login modal. An authenticated `fetch` wrapper is installed once and injects `Authorization: Bearer <token>` from `localStorage['hms-access-token']`, handling 401 by clearing the token and reopening the login form. Login endpoint is `POST {origin}/admin-api/api/v1/auth/login`; the response is **flat** (`{access_token, token_type, role, username}`), not nested under `account`. Tokens live 8 hours.
+- CORS added to the server as **opt-in** via `HMS_QR_CORS_ORIGINS` (comma-separated). Empty by default, so a LAN-only deployment keeps its original same-origin behaviour. Never a wildcard. Verified: allowed origin -> 200 preflight with correct `access-control-allow-origin` / `-methods` / `-headers`; disallowed origin -> 400 with no allow-origin header.
+- `/tracking/mobile` is now auth-exempt (it carries the login form; gating it would leave no way to log in). `/tracking/api/v1/*` still returns 401 without a token.
+- `web/` deployment assets: `index.html`, `manifest.json`, `sw.js`, `vercel.json` (cleanUrls, immutable cache headers for `/static/(.*)`, `Service-Worker-Allowed: /`, nosniff), `static/{jsqr.min.js, favicon.png, icon-192.png, icon-512.png}`.
+- Two Vercel-specific bugs found and fixed: (1) `web/manifest.json` needed `start_url: "/"` because Vercel serves `web/` at the root, while the LAN copy keeps `/tracking/mobile`; (2) `web/sw.js` precached `/static/manifest.json`, which 404s on Vercel, and `cache.addAll` aborts the entire install when one asset fails - so offline support was silently dead. The Vercel worker now precaches `/manifest.json` and caches each asset individually with `cache.add(asset).catch(...)`.
+- `CHAY_WEB.bat` improved: reads optional `HMS_QR_CORS_ORIGINS` from `D:\HMS-QR-DATA\cors-origins.txt`, passes `--logfile` to cloudflared, and polls the new `apps/server/tunnel_url.py` helper to write the assigned `*.trycloudflare.com` hostname to `D:\HMS-QR-DATA\tunnel-url.txt` and print it, instead of letting it scroll past in a console window.
+- New tests: `tests/stage6/test_mobile_web_deployment.py` (12 tests - page reachable unauthenticated, no hardcoded origin, API still 401, CORS off by default, CORS allows only the configured origin, login reachable cross-origin, Vercel assets exist, vercel.json cache rules, manifest start_url per root, service worker precaches only paths that exist), `tests/stage6/test_tunnel_url.py` (6 tests). `tests/stage6/test_offline_assets.py` updated to pin `web/` and the no-hardcoded-origin rule; `tests/stage6/test_files_api_ui.py` updated to read `MOBILE_PAGE_PATH` instead of the removed `MOBILE_HTML`.
+- Verification: full suite **743 passed / 2 failed** in 824.78s. Both failures are `tests/stage6/test_r011_d2_os_trusted_one_shot.py` private-embeddable-`python.exe` subprocess tests (`test_d2_20`, `test_d2_21`), both exiting `3221225477` = `0xC0000005 STATUS_ACCESS_VIOLATION` under full-suite disk load. Both pass when run alone (`test_d2_20` 1 passed; `test_d2_21` 1 passed in 61.19s). This is the documented flake family `test_d2_19`-`test_d2_22`; the exact failing subset varies run to run (an earlier run in this same session showed 744 passed / 1 failed with only `test_d2_19`). Zero non-D2 failures. Mobile/tunnel/offline/assets slice: 28 passed.
+- All text files normalized to CRLF to match `core.autocrlf=true`; zero U+FFFD anywhere. `web/static/jsqr.min.js` is byte-identical to the checksum-pinned `apps/static/jsqr.min.js` (130,594 bytes, SHA-256 32214c74...).
+- NOT done (needs LO): commit, push to GitHub, and the one-time Vercel project setup (Root Directory must be `web`, Framework Preset `Other`, no build command). `vercel` CLI and `gh` CLI are not installed, so the deploy step needs LO's Vercel login.

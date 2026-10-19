@@ -2,7 +2,7 @@
 
 ## ADR-001 — Live database on Machine A
 
-Status: Accepted
+Status: Superseded by ADR-015 on 2026-10-18
 Date: 2026-08-13
 
 Decision: Keep the live PostgreSQL database on Machine A. Use NAS only for files,
@@ -32,7 +32,8 @@ dedicated test workspace.
 
 ## ADR-007 — R004 normalized persistence
 
-Status: Accepted for R004
+Status: Superseded by ADR-015 on 2026-10-18 (the normalized shape survives;
+the SQLAlchemy 2.x ORM and Alembic tooling it chose do not)
 
 Decision: Normalize Customer, PO, PO Line, Delivery Schedule, and Production
 Run using SQLAlchemy 2.x models with explicit foreign keys. Product remains the
@@ -117,3 +118,36 @@ Consequences: Managed-file availability and archive progress are separate;
 local capacity is admission-controlled; archive retries are bounded and
 idempotent; configuration changes do not rewrite existing jobs; archive is not
 backup; real NAS acceptance remains a production gap.
+
+## ADR-015 — Embedded SQL engine replaces SQLAlchemy, Alembic, and PostgreSQL
+Status: Accepted
+Date: 2026-10-18
+Decision: Drop SQLAlchemy, Alembic, psycopg, and the PostgreSQL 17 production
+target. Persistence moves to `packages/sqlengine`, a purpose-built in-process
+SQL engine with zero dependencies outside the Python standard library. The
+engine owns a tokenizer, recursive-descent parser, executor, copy-on-write
+transaction layer, journal/snapshot storage with crash recovery and compaction,
+and a versioned migration runner that replaces Alembic. The seven Alembic
+migrations were converted to `migrations/engine/`; their indexes were dropped
+because the engine scans rows in memory and needs none for correctness.
+Reason: The application never needed a network database. Every query it issues
+is a single-writer, single-process, indexed-by-nothing lookup over a few
+thousand rows. PostgreSQL bought row locking, concurrent writers, and a SQL
+dialect the app does not use, at the cost of an external service, an installer,
+a role/database provisioning step, a second failure domain, and three
+third-party dependencies. The embedded engine removes all of it and keeps the
+schema contract the application actually depends on.
+Consequences: The R004 normalized shape (Customer, PO, PO Line, Delivery
+Schedule, Production Run, Tracking, managed files, store-and-forward) is
+preserved exactly; the schema-parity gate
+`tests/stage1/test_sqlengine_schema_parity.py` freezes the ORM contract it was
+cut over from as a literal so any future migration that changes a column name,
+type, nullability, primary key, unique constraint, or foreign key must update
+that file deliberately. `requirements.txt` and `pyproject.toml` declare no
+third-party runtime dependencies. The Server Tool one-click setup no longer
+installs or provisions PostgreSQL; it creates the local SQLite database file
+and applies the engine migrations in-process. Concurrency tests drive a real
+two-thread overlap through `Transaction.execute` instead of relying on
+PostgreSQL row locks. R011 WP1A's frozen D2 bundle still pins the pre-cutover
+`packages/deployment/artifact.py` and `plans.py` bytes and must be re-blessed
+under fresh gate authority before Gate C.

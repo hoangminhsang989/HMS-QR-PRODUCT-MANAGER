@@ -39,25 +39,25 @@ TRUSTED_STAGE0_PATH = _REPOSITORY_ROOT / "scripts" / "r011_d2_stage0.ps1"
 TRUSTED_PAYLOAD_PATH = _REPOSITORY_ROOT / "scripts" / "r011_d2_protected_payload.ps1"
 TRUSTED_STAGE0_SHA256 = "766cd212793056aab413d1f425a1adb696d39001e5ef0863685c37ee82b98c27"
 TRUSTED_PAYLOAD_SHA256 = "9a499a48573f57b8cca0a63cb5b3043c7d940c42c160debfae87251db61a7e53"
-TRUSTED_BUNDLE_SHA256 = "2e8d699cd83d1362976dd21c580aad6e33e7f904b6eae471b5c267c318b853af"
+TRUSTED_BUNDLE_SHA256 = "f27f18b2c234535ab432ab880d3deba0db6f70fc308ba51615f9d856e4410646"
 TRUSTED_BUNDLE_FILES: Final[Mapping[str, str]] = MappingProxyType(
     {
         "config/paths.py": "bd684afb40cb3601a89250c9f771c4169b3ffe3a6fa07e7d0d4225564a8aee7b",
         "packages/deployment/__init__.py": "2ab2ffdb4ef62448e4a2a57b0a00cd87921c8168bc5a77aba6c86b9911ac05e5",
-        "packages/deployment/artifact.py": "ffa9beb40bb50095fb49cc8c1cb0e769a24a3c80df58553cfff630d0f5d3e84f",
+        "packages/deployment/artifact.py": "2e72ef1b8ca06b22319bfb334e7491e4737dcd2b08d9b7755841b45ea6dd3ef1",
         "packages/deployment/configuration.py": "b2db2db58081c18286a641b17a7a82fd5410317c84f70d722276b40b4509a3ee",
         "packages/deployment/evidence.py": "a4b3c8389a47fbac38ff92b4974c366b974b684a2b90ede62af92eff6c9f6de2",
         "packages/deployment/inventory.py": "8feb2fa272580ece1385194db74fe9e30cd260d45da155a21cc52b523545d89e",
         "packages/deployment/layout.py": "90fae12917e70c2a81cc9d8a404e36eaa7ddf515be392d4bd11ad0353b32cd7f",
         "packages/deployment/lifecycle.py": "fa00e6690ece64d9f84edde505847902de7f5502e409cb16825f2add09b0ecc6",
         "packages/deployment/mutation.py": "49694b808fd9ec3fede6ae12ebfa99bd1eb8040e02ca8730a5b6e86aa4c8051d",
-        "packages/deployment/plans.py": "b38d6d8feae8d45e47e318ee4c7f5dbc66476904592bbfe405245f8bac5ea126",
+        "packages/deployment/plans.py": "26e3e76bda78e44c3cd2569bafa7e5380007a5b0ff006124c9e2b51c6d44172f",
         "packages/deployment/preflight.py": "27bfe436939b97be9ab9c51725742644135253c31e2ca95cde39292807a19dda",
         "packages/deployment/provisioning.py": "e7c6b4ed2c5d9c6210bbbcf1b6ec471efe4b7e5379a0257e9796e6f9a88c58a4",
         "packages/deployment/secret_store.py": "b2b4b63cbfe4e49a327b6ba21623007fa241e83dba7aaa7cf15543a5c24ee087",
     }
 )
-TRUST_MANIFEST_SHA256 = "a531187b8d600c2d8ec001615f5a3e028ccb37ad64965aefd04aa09472a091ea"
+TRUST_MANIFEST_SHA256 = "187f4cd41f5073d0865d013a84faf46862edde957547e27f6f9009abab923a00"
 PROVISIONER_ARGUMENTS = (
     "-B", "-m", "packages.deployment.provisioning", "--target-root", "{target_root}",
     "--service-account", "{service_account}", "--roles", *REQUIRED_ROLES, "--apply",

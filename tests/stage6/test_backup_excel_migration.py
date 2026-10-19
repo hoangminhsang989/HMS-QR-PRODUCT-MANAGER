@@ -1,14 +1,10 @@
 import base64
 from copy import copy
 import hashlib
-import os
 from pathlib import Path
-import subprocess
-import sys
 
 from openpyxl import Workbook, load_workbook
 import pytest
-from sqlalchemy import inspect
 
 from config.paths import require_test_root
 from packages.backup import BackupRetentionPolicy, BackupService, RestoreVerifier
@@ -17,6 +13,8 @@ from packages.excel.template_adapter import (
     TemplateImagePlacement,
     TemplatePreservingExporter,
 )
+from packages.sqlengine import Database
+from packages.sqlengine.migrations import load_migration_modules, run_migrations
 
 
 PDF = b"%PDF-1.7\nbackup test\n%%EOF"
@@ -120,31 +118,18 @@ def test_excel_template_copy_preserves_source_and_bounded_template_features(tmp_
     assert not (Path.cwd() / "forbidden-output.xlsx").exists()
 
 
-def test_fresh_and_upgrade_path_alembic_include_stage6_tables(tmp_path: Path):
-    for name, start in (("fresh.sqlite", None), ("upgrade.sqlite", "0003_qc_packing_delivery")):
-        database = tmp_path / name
-        if start:
-            _run_clean_alembic(database, "upgrade", start)
-        _run_clean_alembic(database, "upgrade", "head")
-        from sqlalchemy import create_engine
-        tables = set(inspect(create_engine(f"sqlite:///{database.as_posix()}")).get_table_names())
-        assert {"managed_files", "product_file_relations"} <= tables
+def test_fresh_and_upgrade_path_engine_migrations_include_stage6_tables(tmp_path: Path):
+    from config.paths import SOURCE_ROOT
 
-
-def _run_clean_alembic(database: Path, operation: str, revision: str) -> None:
-    code = (
-        "import sys; "
-        "from alembic.config import Config; "
-        "from alembic import command; "
-        "cfg=Config('alembic.ini'); "
-        "cfg.set_main_option('sqlalchemy.url', 'sqlite:///' + sys.argv[1]); "
-        f"command.{operation}(cfg, sys.argv[2])"
-    )
-    environment = os.environ.copy()
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    subprocess.run(
-        [sys.executable, "-B", "-c", code, database.as_posix(), revision],
-        cwd=Path.cwd(),
-        env=environment,
-        check=True,
-    )
+    migrations = load_migration_modules(SOURCE_ROOT / "migrations" / "engine")
+    for name, start in (("fresh", None), ("upgrade", 3)):
+        database = Database(tmp_path / f"{name}-engine")
+        try:
+            if start is not None:
+                partial = [item for item in migrations if item[0] <= start]
+                run_migrations(database, partial, now=lambda: "2026-01-01T00:00:00+00:00")
+            run_migrations(database, migrations, now=lambda: "2026-01-01T00:00:00+00:00")
+            tables = set(database.schema.tables)
+            assert {"managed_files", "product_file_relations"} <= tables
+        finally:
+            database.close()

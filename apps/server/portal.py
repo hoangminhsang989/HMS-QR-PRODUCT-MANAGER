@@ -17,8 +17,10 @@ from apps.server.tls import lan_url_scheme
 
 from apps.design_tokens import WEB_CSS_VARS
 from config.paths import PathConfigurationError, require_test_root
+from packages.persistence.database import engine_path
 from packages.qr.payload import QrPayload
 from packages.qr.service import QRService
+from packages.sqlengine import Database, connect
 
 
 def _resolve_db_path() -> Path:
@@ -40,6 +42,26 @@ def _resolve_db_path() -> Path:
         return require_test_root() / "db" / "stage1_r002_dev.sqlite"
     except PathConfigurationError:
         return Path("stage1_r002_dev.sqlite")
+
+
+def _resolve_engine() -> Database | None:
+    """Open the engine database that backs the configured SQLite path.
+
+    The portal is a read-only dashboard, so it never creates a database: when
+    the engine directory is absent the caller falls back to its empty state.
+    """
+
+    db_path = _resolve_db_path()
+    try:
+        engine_dir = engine_path(f"sqlite:///{db_path.as_posix()}")
+    except Exception:
+        return None
+    if not engine_dir.is_dir():
+        return None
+    try:
+        return connect(engine_dir)
+    except Exception:
+        return None
 
 
 def get_public_tunnel_url() -> str | None:
@@ -83,60 +105,109 @@ def format_qty(val) -> str:
 
 
 def get_live_events() -> list[dict]:
-    db_path = _resolve_db_path()
-    if not db_path.is_file():
+    """Recent process and workflow events for the portal live feed.
+
+    The engine's join merges rows by column name, so a table that shares a
+    column with the driving table (``quantity``, ``notes``, ``status``) would
+    have its value overwritten by the joined table. The lookups are therefore
+    resolved in Python instead of in one joined statement.
+    """
+
+    db = _resolve_engine()
+    if db is None:
         return []
     try:
-        import sqlite3
-        conn = sqlite3.connect(db_path.as_posix())
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        reports = cur.execute("""
-            SELECT r.server_timestamp, r.actor_display_name_snapshot as actor,
-                   coalesce(m.display_name, 'Gia công') as action,
-                   case when r.attempt_number is not null then 'Lần ' || r.attempt_number else 'Đã xong' end as detail,
-                   r.quantity, r.notes, p.part_name, t.tracking_code, 'PROCESS' as category
-            FROM process_report_events r
-            LEFT JOIN machining_types m ON r.machining_type_id = m.internal_id
-            LEFT JOIN order_tracking_items t ON r.tracking_item_id = t.internal_id
-            LEFT JOIN products p ON t.product_id = p.internal_id
-            ORDER BY r.server_timestamp DESC
-            LIMIT 25
-        """).fetchall()
-        workflows = cur.execute("""
-            SELECT w.server_timestamp, w.actor_display_name_snapshot as actor,
-                   w.event_type as action, 'Quy trình QC/Giao' as detail,
-                   w.quantity, w.notes, p.part_name, t.tracking_code, 'WORKFLOW' as category
-            FROM tracking_workflow_events w
-            LEFT JOIN order_tracking_items t ON w.tracking_item_id = t.internal_id
-            LEFT JOIN products p ON t.product_id = p.internal_id
-            ORDER BY w.server_timestamp DESC
-            LIMIT 25
-        """).fetchall()
-        combined = []
-        for item in sorted([dict(r) for r in reports] + [dict(w) for w in workflows], key=lambda x: str(x["server_timestamp"]), reverse=True)[:20]:
-            item["quantity"] = format_qty(item.get("quantity"))
-            combined.append(item)
-        conn.close()
-        return combined
+        reports = db.query(
+            "SELECT server_timestamp, actor_display_name_snapshot, machining_type_id,"
+            " attempt_number, quantity, notes, tracking_item_id"
+            " FROM process_report_events"
+            " ORDER BY server_timestamp DESC LIMIT 25"
+        )
+        workflows = db.query(
+            "SELECT server_timestamp, actor_display_name_snapshot, event_type,"
+            " quantity, notes, tracking_item_id"
+            " FROM tracking_workflow_events"
+            " ORDER BY server_timestamp DESC LIMIT 25"
+        )
+        if not reports and not workflows:
+            return []
+        machining = {
+            row["internal_id"]: row["display_name"]
+            for row in db.query("SELECT internal_id, display_name FROM machining_types")
+        }
+        tracking = {
+            row["internal_id"]: row
+            for row in db.query(
+                "SELECT internal_id, tracking_code, product_id FROM order_tracking_items"
+            )
+        }
+        products = {
+            row["internal_id"]: row["part_name"]
+            for row in db.query("SELECT internal_id, part_name FROM products")
+        }
+
+        def _product_name(tracking_item_id) -> str | None:
+            item = tracking.get(tracking_item_id) or {}
+            return products.get(item.get("product_id"))
+
+        def _tracking_code(tracking_item_id) -> str | None:
+            item = tracking.get(tracking_item_id) or {}
+            return item.get("tracking_code")
+
+        combined: list[dict] = []
+        for row in reports:
+            attempt = row["attempt_number"]
+            combined.append(
+                {
+                    "server_timestamp": row["server_timestamp"],
+                    "actor": row["actor_display_name_snapshot"],
+                    "action": machining.get(row["machining_type_id"]) or "Gia công",
+                    "detail": f"Lần {attempt}" if attempt is not None else "Đã xong",
+                    "quantity": format_qty(row["quantity"]),
+                    "notes": row["notes"],
+                    "part_name": _product_name(row["tracking_item_id"]),
+                    "tracking_code": _tracking_code(row["tracking_item_id"]),
+                    "category": "PROCESS",
+                }
+            )
+        for row in workflows:
+            combined.append(
+                {
+                    "server_timestamp": row["server_timestamp"],
+                    "actor": row["actor_display_name_snapshot"],
+                    "action": row["event_type"],
+                    "detail": "Quy trình QC/Giao",
+                    "quantity": format_qty(row["quantity"]),
+                    "notes": row["notes"],
+                    "part_name": _product_name(row["tracking_item_id"]),
+                    "tracking_code": _tracking_code(row["tracking_item_id"]),
+                    "category": "WORKFLOW",
+                }
+            )
+        combined.sort(key=lambda item: str(item["server_timestamp"]), reverse=True)
+        return combined[:20]
     except Exception:
         return []
+    finally:
+        db.close()
 
 
 def get_stats() -> dict[str, int]:
-    db_path = _resolve_db_path()
-    if not db_path.is_file():
+    """Portal counters. ``GROUP BY`` is not part of the engine, so the status
+    histogram is counted in Python from one column scan."""
+
+    db = _resolve_engine()
+    if db is None:
         return {"products": 0, "pos": 0, "tracking": 0, "operators": 0, "machining": 7, "in_prod": 0, "qc": 0, "packed": 0, "deliv": 0}
     try:
-        import sqlite3
-        conn = sqlite3.connect(db_path.as_posix())
-        cur = conn.cursor()
-        prods = cur.execute("SELECT count(*) FROM products").fetchone()[0]
-        pos = cur.execute("SELECT count(*) FROM purchase_orders").fetchone()[0]
-        tracking = cur.execute("SELECT count(*) FROM order_tracking_items").fetchone()[0]
-        ops = cur.execute("SELECT count(*) FROM operators").fetchone()[0]
-        sc = dict(cur.execute("SELECT status, count(*) FROM order_tracking_items GROUP BY status").fetchall())
-        conn.close()
+        prods = db.scalar("SELECT count(*) FROM products") or 0
+        pos = db.scalar("SELECT count(*) FROM purchase_orders") or 0
+        tracking = db.scalar("SELECT count(*) FROM order_tracking_items") or 0
+        ops = db.scalar("SELECT count(*) FROM operators") or 0
+        sc: dict[str, int] = {}
+        for row in db.query("SELECT status FROM order_tracking_items"):
+            status = row["status"]
+            sc[status] = sc.get(status, 0) + 1
         return {
             "products": prods, "pos": pos, "tracking": tracking, "operators": ops, "machining": 7,
             "in_prod": sc.get("IN_PRODUCTION", 0),
@@ -146,6 +217,8 @@ def get_stats() -> dict[str, int]:
         }
     except Exception:
         return {"products": 76, "pos": 75, "tracking": 76, "operators": 3, "machining": 7, "in_prod": 75, "qc": 1, "packed": 0, "deliv": 0}
+    finally:
+        db.close()
 
 
 _SS_JS = r"""

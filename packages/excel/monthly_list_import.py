@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import sqlite3
 import unicodedata
 from datetime import date
 from pathlib import Path
@@ -15,12 +14,12 @@ from openpyxl import load_workbook
 
 from packages.application.product_service import ProductService
 from packages.domain.product import ProductStatus
+from packages.domain.tracking import utc_now
 from packages.excel.factory_adapter import _extract_from_rows
 from packages.persistence.database import create_database_runtime
 from packages.persistence.managed_file_repository import ManagedFileRepository
 from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
 from packages.persistence.sqlalchemy_repository import Stage2Repository
-from packages.persistence import tracking_models as _tracking_models
 from packages.storage.managed_files import ManagedFileService
 from packages.storage.service import FilesystemStorage
 
@@ -64,18 +63,24 @@ def _row_images(sheet) -> dict[int, list[bytes]]:
     return images
 
 
+def create_database_runtime_for_shared_sqlite(database_path: Path):
+    from config.environments import AppConfig, Environment
+
+    return create_database_runtime(
+        AppConfig(Environment.DEV, f"sqlite:///{database_path.as_posix()}", "local", None)
+    )
+
+
 def _ensure_manifest(database_path: Path) -> None:
-    with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            """CREATE TABLE IF NOT EXISTS excel_monthly_import_rows (
-                source_file TEXT NOT NULL,
-                source_sheet TEXT NOT NULL,
-                source_row INTEGER NOT NULL,
-                product_id TEXT NOT NULL,
-                image_sha256 TEXT,
-                PRIMARY KEY (source_file, source_sheet, source_row)
-            )"""
+    runtime = create_database_runtime_for_shared_sqlite(database_path)
+    if not runtime.database.schema.has_table("excel_monthly_import_rows"):
+        runtime.database.execute(
+            "CREATE TABLE excel_monthly_import_rows ("
+            "source_file TEXT NOT NULL, source_sheet TEXT NOT NULL,"
+            " source_row INTEGER NOT NULL, product_id TEXT NOT NULL,"
+            " image_sha256 TEXT, PRIMARY KEY (source_file, source_sheet, source_row))"
         )
+    runtime.dispose()
 
 
 def sync_product_tracking(database_path: Path, *, actor: str = "excel-import") -> dict[str, int]:
@@ -83,62 +88,74 @@ def sync_product_tracking(database_path: Path, *, actor: str = "excel-import") -
     created = 0
     runtime = create_database_runtime_for_shared_sqlite(database_path)
     Stage2Repository(runtime).create_schema()
+    database = runtime.database
+    now = utc_now().isoformat()
+    tracked = {
+        row["product_id"]
+        for row in database.query("SELECT product_id FROM order_tracking_items")
+    }
+    rows = [
+        row for row in database.query(
+            "SELECT internal_id, product_code, company, quantity, unit, delivery_schedule"
+            " FROM products WHERE delivery_schedule IS NOT NULL"
+            " ORDER BY delivery_schedule, product_code"
+        )
+        if row["internal_id"] not in tracked
+    ]
+    sequence = database.query("SELECT COUNT(*) FROM order_tracking_items")[0]["count"]
+    for row in rows:
+        product_id, product_code, company = row["internal_id"], row["product_code"], row["company"]
+        quantity, unit, delivery_date = row["quantity"], row["unit"], row["delivery_schedule"]
+        customer = database.query(
+            "SELECT internal_id FROM customers WHERE name = ?", [company]
+        )
+        if customer:
+            customer_id = customer[0]["internal_id"]
+        else:
+            customer_id = str(uuid4())
+            customer_code = f"XLS-{hashlib.sha1(company.encode()).hexdigest()[:12].upper()}"
+            database.execute(
+                "INSERT INTO customers (internal_id, customer_code, name, active,"
+                " created_at, updated_at, created_by, updated_by)"
+                " VALUES (?, ?, ?, 1, ?, ?, ?, ?)",
+                [customer_id, customer_code, company, now, now, actor, actor],
+            )
+        po_id, line_id, tracking_id = str(uuid4()), str(uuid4()), str(uuid4())
+        sequence += 1
+        # A PO row remains as the tracking relation, but its user-facing
+        # identifier is the product code rather than a separate XLS code.
+        po_number = product_code
+        database.execute(
+            "INSERT INTO purchase_orders (internal_id, po_number, internal_order_code,"
+            " customer_id, po_date, requested_delivery_date, status, notes, created_at,"
+            " updated_at, created_by, updated_by)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED', 'Tu tao tu Excel monthly list',"
+            " ?, ?, ?, ?)",
+            [po_id, po_number, product_code, customer_id, delivery_date, delivery_date,
+             now, now, actor, actor],
+        )
+        database.execute(
+            "INSERT INTO purchase_order_lines (internal_id, po_id, product_id, line_number,"
+            " ordered_quantity, unit) VALUES (?, ?, ?, 1, ?, ?)",
+            [line_id, po_id, product_id, quantity, unit],
+        )
+        qr_public_id = f"qr_{uuid4().hex}"
+        database.execute(
+            "INSERT INTO order_tracking_items (internal_id, tracking_code, purchase_order_id,"
+            " purchase_order_line_id, product_id, customer_id, quantity, unit, delivery_date,"
+            " status, qr_public_id, qr_status, created_at, updated_at, created_by, updated_by)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, 'ACTIVE', ?, ?, ?, ?)",
+            [tracking_id, f"ITEM-2026-{sequence:06d}", po_id, line_id, product_id, customer_id,
+             quantity, unit, delivery_date, qr_public_id, now, now, actor, actor],
+        )
+        database.execute(
+            "INSERT INTO tracking_audit_events (internal_id, tracking_item_id, event_type,"
+            " new_value, actor, reason, server_timestamp)"
+            " VALUES (?, ?, 'QR_ISSUED', ?, ?, 'Tu tao tu Excel monthly list', ?)",
+            [str(uuid4()), tracking_id, qr_public_id, actor, now],
+        )
+        created += 1
     runtime.dispose()
-    with sqlite3.connect(database_path) as connection:
-        rows = connection.execute(
-            """SELECT p.internal_id, p.product_code, p.company, p.quantity, p.unit, p.delivery_schedule
-               FROM products p
-               LEFT JOIN order_tracking_items t ON t.product_id = p.internal_id
-               WHERE t.internal_id IS NULL AND p.delivery_schedule IS NOT NULL
-               ORDER BY p.delivery_schedule, p.product_code"""
-        ).fetchall()
-        sequence = connection.execute("SELECT COUNT(1) FROM order_tracking_items").fetchone()[0]
-        for product_id, product_code, company, quantity, unit, delivery_date in rows:
-            customer = connection.execute(
-                "SELECT internal_id FROM customers WHERE name = ?", (company,)
-            ).fetchone()
-            if customer:
-                customer_id = customer[0]
-            else:
-                customer_id = str(uuid4())
-                customer_code = f"XLS-{hashlib.sha1(company.encode()).hexdigest()[:12].upper()}"
-                connection.execute(
-                    """INSERT INTO customers (internal_id, customer_code, name, active, created_at, updated_at, created_by, updated_by)
-                       VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)""",
-                    (customer_id, customer_code, company, actor, actor),
-                )
-            po_id, line_id, tracking_id = str(uuid4()), str(uuid4()), str(uuid4())
-            sequence += 1
-            # A PO row remains as the tracking relation, but its user-facing
-            # identifier is the product code rather than a separate XLS code.
-            po_number = product_code
-            connection.execute(
-                """INSERT INTO purchase_orders (internal_id, po_number, internal_order_code, customer_id, po_date,
-                   requested_delivery_date, status, notes, created_at, updated_at, created_by, updated_by)
-                   VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED', 'Tự tạo từ Excel monthly list', CURRENT_TIMESTAMP,
-                   CURRENT_TIMESTAMP, ?, ?)""",
-                (po_id, po_number, product_code, customer_id, delivery_date, delivery_date, actor, actor),
-            )
-            connection.execute(
-                """INSERT INTO purchase_order_lines (internal_id, po_id, product_id, line_number, ordered_quantity, unit)
-                   VALUES (?, ?, ?, 1, ?, ?)""",
-                (line_id, po_id, product_id, quantity, unit),
-            )
-            qr_public_id = f"qr_{uuid4().hex}"
-            connection.execute(
-                """INSERT INTO order_tracking_items (internal_id, tracking_code, purchase_order_id, purchase_order_line_id,
-                   product_id, customer_id, quantity, unit, delivery_date, status, qr_public_id, qr_status, created_at,
-                   updated_at, created_by, updated_by)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)""",
-                (tracking_id, f"ITEM-2026-{sequence:06d}", po_id, line_id, product_id, customer_id, quantity, unit,
-                 delivery_date, qr_public_id, actor, actor),
-            )
-            connection.execute(
-                """INSERT INTO tracking_audit_events (internal_id, tracking_item_id, event_type, new_value, actor, reason,
-                   server_timestamp) VALUES (?, ?, 'QR_ISSUED', ?, ?, 'Tự tạo từ Excel monthly list', CURRENT_TIMESTAMP)""",
-                (str(uuid4()), tracking_id, qr_public_id, actor),
-            )
-            created += 1
     return {"tracking_created": created}
 
 
@@ -148,6 +165,7 @@ def import_monthly_lists(
     """Import three 2026 monthly lists idempotently, matching pictures by Excel row."""
     database_path = Path(database_path)
     storage_root = Path(storage_root)
+    _ensure_manifest(database_path)
     runtime = create_database_runtime_for_shared_sqlite(database_path)
     Stage2Repository(runtime).create_schema()
     service = ProductService(SqlAlchemyProductRepository(runtime))
@@ -155,7 +173,8 @@ def import_monthly_lists(
     files = ManagedFileService(
         ManagedFileRepository(runtime), FilesystemStorage(storage_root, create_root=False)
     )
-    _ensure_manifest(database_path)
+    database = runtime.database
+    now = utc_now().isoformat()
     totals = {"products_created": 0, "products_existing": 0, "images_imported": 0, "images_skipped": 0, "rows_skipped": 0}
 
     for path in excel_paths:
@@ -171,34 +190,35 @@ def import_monthly_lists(
                 rows = [list(row) for row in sheet.iter_rows(values_only=True)]
                 for item in _extract_from_rows(rows, sheet_name=sheet.title):
                     source_row = int(item["row_index"])
-                    with sqlite3.connect(database_path) as connection:
-                        existing = connection.execute(
-                            "SELECT product_id, image_sha256 FROM excel_monthly_import_rows "
-                            "WHERE source_file = ? AND source_sheet = ? AND source_row = ?",
-                            (path.name, sheet.title, source_row),
-                        ).fetchone()
+                    existing = database.query(
+                        "SELECT product_id, image_sha256 FROM excel_monthly_import_rows "
+                        "WHERE source_file = ? AND source_sheet = ? AND source_row = ?",
+                        [path.name, sheet.title, source_row],
+                    )
                     if existing:
-                        product_id, prior_image_sha = existing
+                        product_id = existing[0]["product_id"]
+                        prior_image_sha = existing[0]["image_sha256"]
                         # Reconcile every source-controlled field on re-import so a
                         # corrected workbook updates both the product and its tracking.
-                        with sqlite3.connect(database_path) as connection:
-                            connection.execute(
-                                """UPDATE products SET company = ?, part_name = ?, quantity = ?, unit = ?, material = ?, requester = ?,
-                                   surface_treatment = ?, outsourced = ?, size = ?, notes = ?, delivery_schedule = ?,
-                                   updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE internal_id = ?""",
-                                (item["company"], item["part_name"], str(item["quantity"]), item["unit"],
-                                 item["material"] or None, item["requester"] or None, item["surface_treatment"] or None,
-                                 int(bool(item["outsourced"])), item["size"] or None, item["notes"] or None,
-                                 scheduled.isoformat(), actor, product_id),
-                            )
-                            connection.execute(
-                                "UPDATE order_tracking_items SET quantity = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE product_id = ?",
-                                (str(item["quantity"]), actor, product_id),
-                            )
-                            connection.execute(
-                                "UPDATE purchase_order_lines SET ordered_quantity = ? WHERE product_id = ?",
-                                (str(item["quantity"]), product_id),
-                            )
+                        database.execute(
+                            "UPDATE products SET company = ?, part_name = ?, quantity = ?,"
+                            " unit = ?, material = ?, requester = ?, surface_treatment = ?,"
+                            " outsourced = ?, size = ?, notes = ?, delivery_schedule = ?,"
+                            " updated_at = ?, updated_by = ? WHERE internal_id = ?",
+                            [item["company"], item["part_name"], str(item["quantity"]), item["unit"],
+                             item["material"] or None, item["requester"] or None, item["surface_treatment"] or None,
+                             int(bool(item["outsourced"])), item["size"] or None, item["notes"] or None,
+                             scheduled.isoformat(), now, actor, product_id],
+                        )
+                        database.execute(
+                            "UPDATE order_tracking_items SET quantity = ?, updated_at = ?,"
+                            " updated_by = ? WHERE product_id = ?",
+                            [str(item["quantity"]), now, actor, product_id],
+                        )
+                        database.execute(
+                            "UPDATE purchase_order_lines SET ordered_quantity = ? WHERE product_id = ?",
+                            [str(item["quantity"]), product_id],
+                        )
                         totals["products_existing"] += 1
                     else:
                         product = service.create_product(
@@ -217,12 +237,11 @@ def import_monthly_lists(
                             status=ProductStatus.NEW,
                         )
                         product_id, prior_image_sha = str(product.internal_id), None
-                        with sqlite3.connect(database_path) as connection:
-                            connection.execute(
-                                "INSERT INTO excel_monthly_import_rows "
-                                "(source_file, source_sheet, source_row, product_id) VALUES (?, ?, ?, ?)",
-                                (path.name, sheet.title, source_row, product_id),
-                            )
+                        database.execute(
+                            "INSERT INTO excel_monthly_import_rows "
+                            "(source_file, source_sheet, source_row, product_id) VALUES (?, ?, ?, ?)",
+                            [path.name, sheet.title, source_row, product_id],
+                        )
                         totals["products_created"] += 1
 
                     row_images = images.get(source_row, [])
@@ -241,12 +260,11 @@ def import_monthly_lists(
                         actor=actor,
                         make_primary=True,
                     )
-                    with sqlite3.connect(database_path) as connection:
-                        connection.execute(
-                            "UPDATE excel_monthly_import_rows SET image_sha256 = ? "
-                            "WHERE source_file = ? AND source_sheet = ? AND source_row = ?",
-                            (digest, path.name, sheet.title, source_row),
-                        )
+                    database.execute(
+                        "UPDATE excel_monthly_import_rows SET image_sha256 = ? "
+                        "WHERE source_file = ? AND source_sheet = ? AND source_row = ?",
+                        [digest, path.name, sheet.title, source_row],
+                    )
                     totals["images_imported"] += 1
         finally:
             workbook.close()
@@ -264,64 +282,74 @@ def repair_imported_product_codes(database_path: Path) -> int:
         words = re.findall(r"[A-Z0-9]+", normalized.encode("ascii", "ignore").decode("ascii").upper())
         return "".join(word[0] for word in words) or "NO"
 
-    with sqlite3.connect(database_path) as connection:
-        rows = connection.execute(
-            """SELECT m.product_id, m.source_row, p.product_code, p.company, p.part_name, p.delivery_schedule
-               FROM excel_monthly_import_rows m
-               JOIN products p ON p.internal_id = m.product_id
-               ORDER BY p.delivery_schedule, m.source_file, m.source_sheet, m.source_row"""
-        ).fetchall()
-        replacements: list[tuple[str, str, str]] = []
-        for product_id, source_row, current_code, company, part_name, delivery_schedule in rows:
-            delivery_date = date.fromisoformat(delivery_schedule)
-            expected_code = f"{initials(company)}-{initials(part_name)}-{delivery_date:%y%m%d}-R{source_row:03d}"
-            if current_code != expected_code:
-                replacements.append((product_id, current_code, expected_code))
-        duplicate_codes = {code for _product_id, _old_code, code in replacements
-                           if sum(candidate == code for _id, _old, candidate in replacements) > 1}
-        if duplicate_codes:
-            raise ValueError(f"Mã sản phẩm bị trùng theo dữ liệu Excel: {', '.join(sorted(duplicate_codes))}")
-        # Move through unique temporary values so existing suffixes can safely swap.
-        for product_id, _current_code, _expected_code in replacements:
-            connection.execute(
-                "UPDATE products SET product_code = ? WHERE internal_id = ?",
-                (f"TMP-PRODUCT-{product_id}", product_id),
-            )
-        for product_id, _old_code, expected_code in replacements:
-            connection.execute(
-                "UPDATE products SET product_code = ?, updated_at = CURRENT_TIMESTAMP, updated_by = 'excel-code-repair' WHERE internal_id = ?",
-                (expected_code, product_id),
-            )
-        po_rows = connection.execute(
-            """SELECT DISTINCT po.internal_id, p.product_code
-               FROM excel_monthly_import_rows m
-               JOIN products p ON p.internal_id = m.product_id
-               JOIN purchase_order_lines line ON line.product_id = p.internal_id
-               JOIN purchase_orders po ON po.internal_id = line.po_id"""
-        ).fetchall()
-        po_ids = {po_id for po_id, _product_code in po_rows}
-        target_codes = [product_code for _po_id, product_code in po_rows]
-        if len(target_codes) != len(set(target_codes)):
-            raise ValueError("Không thể đồng bộ mã đơn: một mã sản phẩm có nhiều PO import.")
-        for po_id, _product_code in po_rows:
-            connection.execute(
-                "UPDATE purchase_orders SET po_number = ? WHERE internal_id = ?",
-                (f"TMP-PO-{po_id}", po_id),
-            )
-        for po_id, product_code in po_rows:
-            connection.execute(
-                "UPDATE purchase_orders SET po_number = ?, internal_order_code = ?, updated_at = CURRENT_TIMESTAMP, updated_by = 'excel-code-repair' WHERE internal_id = ?",
-                (product_code, product_code, po_id),
-            )
-        return len(replacements)
-
-
-def create_database_runtime_for_shared_sqlite(database_path: Path):
-    from config.environments import AppConfig, Environment
-
-    return create_database_runtime(
-        AppConfig(Environment.DEV, f"sqlite:///{database_path.as_posix()}", "local", None)
+    runtime = create_database_runtime_for_shared_sqlite(database_path)
+    database = runtime.database
+    now = utc_now().isoformat()
+    rows = database.query(
+        "SELECT m.product_id, m.source_row, p.product_code, p.company, p.part_name,"
+        " p.delivery_schedule FROM excel_monthly_import_rows m"
+        " JOIN products p ON p.internal_id = m.product_id"
+        " ORDER BY p.delivery_schedule, m.source_file, m.source_sheet, m.source_row"
     )
+    replacements: list[tuple[str, str, str]] = []
+    for row in rows:
+        product_id, source_row = row["product_id"], row["source_row"]
+        current_code, company = row["product_code"], row["company"]
+        part_name, delivery_schedule = row["part_name"], row["delivery_schedule"]
+        delivery_date = date.fromisoformat(str(delivery_schedule))
+        expected_code = f"{initials(company)}-{initials(part_name)}-{delivery_date:%y%m%d}-R{source_row:03d}"
+        if current_code != expected_code:
+            replacements.append((product_id, current_code, expected_code))
+    duplicate_codes = {code for _product_id, _old_code, code in replacements
+                       if sum(candidate == code for _id, _old, candidate in replacements) > 1}
+    if duplicate_codes:
+        raise ValueError(f"Mã sản phẩm bị trùng theo dữ liệu Excel: {', '.join(sorted(duplicate_codes))}")
+    # Move through unique temporary values so existing suffixes can safely swap.
+    for product_id, _current_code, _expected_code in replacements:
+        database.execute(
+            "UPDATE products SET product_code = ? WHERE internal_id = ?",
+            [f"TMP-PRODUCT-{product_id}", product_id],
+        )
+    for product_id, _old_code, expected_code in replacements:
+        database.execute(
+            "UPDATE products SET product_code = ?, updated_at = ?,"
+            " updated_by = 'excel-code-repair' WHERE internal_id = ?",
+            [expected_code, now, product_id],
+        )
+    po_rows = []
+    lines = database.query(
+        "SELECT po_id, product_id FROM purchase_order_lines"
+    )
+    current_codes = {
+        row["internal_id"]: row["product_code"]
+        for row in database.query("SELECT internal_id, product_code FROM products")
+    }
+    po_by_product: dict[str, list[str]] = {}
+    for line in lines:
+        po_by_product.setdefault(line["product_id"], []).append(line["po_id"])
+    for product_id, po_ids_for_product in po_by_product.items():
+        code = current_codes.get(product_id)
+        if code is None:
+            continue
+        for po_id in po_ids_for_product:
+            po_rows.append({"internal_id": po_id, "product_code": code})
+    po_ids = {row["internal_id"] for row in po_rows}
+    target_codes = [row["product_code"] for row in po_rows]
+    if len(target_codes) != len(set(target_codes)):
+        raise ValueError("Không thể đồng bộ mã đơn: một mã sản phẩm có nhiều PO import.")
+    for row in po_rows:
+        database.execute(
+            "UPDATE purchase_orders SET po_number = ? WHERE internal_id = ?",
+            [f"TMP-PO-{row['internal_id']}", row["internal_id"]],
+        )
+    for row in po_rows:
+        database.execute(
+            "UPDATE purchase_orders SET po_number = ?, internal_order_code = ?,"
+            " updated_at = ?, updated_by = 'excel-code-repair' WHERE internal_id = ?",
+            [row["product_code"], row["product_code"], now, row["internal_id"]],
+        )
+    runtime.dispose()
+    return len(replacements)
 
 
 def main() -> None:

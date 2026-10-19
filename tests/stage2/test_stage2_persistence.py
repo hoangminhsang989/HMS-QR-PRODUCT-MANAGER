@@ -1,17 +1,26 @@
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timezone
+from uuid import UUID
+
 from packages.application.stage2_service import Stage2Service
-from packages.persistence.sqlalchemy_repository import Stage2Repository
-from packages.persistence.sqlalchemy_models import Base, ProductORM
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from packages.domain.product import Product, ProductStatus
 from packages.domain.stage2 import Stage2ValidationError
+from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+from packages.persistence.sqlalchemy_repository import Stage2Repository
+
 
 def test_sqlalchemy_sqlite_relationships_and_overallocation(tmp_path: Path):
-    repo=Stage2Repository(f"sqlite:///{(tmp_path/'stage2.sqlite').as_posix()}"); repo.create_schema()
-    product_id="00000000-0000-0000-0000-000000000001"
-    with Session(repo.engine) as s:
-        s.add(ProductORM(internal_id=product_id,product_code="SP-1",company="HMS",part_name="Plate",quantity=100,unit="pcs",status="NEW")); s.commit()
+    repo = Stage2Repository(f"sqlite:///{(tmp_path / 'stage2.sqlite').as_posix()}")
+    repo.create_schema()
+    product_id = "00000000-0000-0000-0000-000000000001"
+    now = datetime.now(timezone.utc)
+    SqlAlchemyProductRepository(repo.database).create(Product(
+        internal_id=UUID(product_id), product_code="SP-1", company="HMS",
+        part_name="Plate", quantity=100, unit="pcs", material=None, requester=None,
+        surface_treatment=None, outsourced=False, size=None, notes=None,
+        delivery_schedule=None, status=ProductStatus.NEW, created_at=now,
+        updated_at=now, created_by="seed", updated_by="seed",
+    ))
     svc=Stage2Service(repo); customer=svc.create_customer(actor="u",name="HMS")
     po=svc.create_po(actor="u",po_number="PO-1",customer_id=customer.internal_id,po_date=date(2026,8,1))
     line=svc.add_line(po_id=po.internal_id,product_id=product_id,line_number=1,ordered_quantity=100,unit="pcs")

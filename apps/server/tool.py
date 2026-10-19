@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import ipaddress
-import hashlib
 import os
 import secrets
 import shutil
 import socket
-import sqlite3
 import subprocess
 import sys
 from datetime import datetime
@@ -42,15 +40,6 @@ CRITICAL_DISK_BYTES = 1 * 1024**3
 DEFAULT_DATA_ROOT = Path("D:/HMS-QR-PROD")
 SETTINGS_PATH = DEFAULT_DATA_ROOT / "server-tool-settings.json"
 SECRETS_PATH = DEFAULT_DATA_ROOT / "server-tool-secrets.json"
-POSTGRESQL_WINGET_ID = "PostgreSQL.PostgreSQL.17"
-POSTGRESQL_INSTALLER_NAME = "postgresql-17.11-4-windows-x64.exe"
-POSTGRESQL_INSTALLER_SHA256 = "c9828fd3a4daebbeeace19bec2de5f38d73c047fce47278148b525cfbe28a5e4"
-POSTGRESQL_INSTALL_ROOT = Path("C:/Program Files/PostgreSQL/17")
-POSTGRESQL_DATA_ROOT = DEFAULT_DATA_ROOT / "postgresql"
-POSTGRESQL_PORT = 5432
-POSTGRESQL_SERVICE = "postgresql-x64-17"
-PRODUCTION_DATABASE = "hms_qr"
-PRODUCTION_DATABASE_USER = "hms_qr_app"
 DEFAULT_ADMIN_PASSWORD = "admin"
 AUTO_START_TASK_NAME = "HMS QR Server (Current User)"
 
@@ -169,9 +158,6 @@ def create_production_secrets(path: Path = SECRETS_PATH) -> None:
     except (OSError, json.JSONDecodeError):
         stored = {}
     required = {
-        "database_mode": "standalone",
-        "postgres_password": secrets.token_urlsafe(32),
-        "database_password": secrets.token_urlsafe(32),
         "auth_secret": secrets.token_urlsafe(48),
         "admin_password": DEFAULT_ADMIN_PASSWORD,
     }
@@ -194,21 +180,24 @@ def production_paths(root: Path = DEFAULT_DATA_ROOT) -> dict[str, Path]:
         "logs": root / "logs",
         "database": root / "database",
         "tls": root / "tls",
-        "postgresql": root / "postgresql",
     }
 
 
 PRODUCTION_DATABASE_FILE_NAME = "hms_qr.sqlite"
+ENGINE_BACKUP_SUFFIX = ".engine"
 
 
-def production_database_mode(secrets_path: Path = SECRETS_PATH) -> str:
-    """Return 'standalone' (SQLite, default) or 'postgresql' for this machine."""
+def engine_dir_for(database: Path) -> Path:
+    """Map a configured SQLite path onto the engine database directory.
 
-    try:
-        mode = load_server_secret("database_mode", secrets_path)
-    except ValueError:
-        return "standalone"
-    return "postgresql" if mode == "postgresql" else "standalone"
+    The engine keeps its data in ``<name>-engine`` (``snapshot.json`` plus
+    ``journal.log``); the ``.sqlite`` path itself is only the configured
+    address and is never read or written by the engine.
+    """
+
+    from packages.persistence.database import engine_path
+
+    return engine_path(f"sqlite:///{database.as_posix()}")
 
 
 def production_database_file(root: Path = DEFAULT_DATA_ROOT) -> Path:
@@ -218,62 +207,9 @@ def production_database_file(root: Path = DEFAULT_DATA_ROOT) -> Path:
 
 
 def production_database_url(root: Path = DEFAULT_DATA_ROOT, secrets_path: Path = SECRETS_PATH) -> str:
-    """Build the production database URL; standalone SQLite needs no external server."""
+    """Build the production database URL; the embedded engine needs no external server."""
 
-    if production_database_mode(secrets_path) == "postgresql":
-        database_password = load_server_secret("database_password", secrets_path)
-        return (
-            f"postgresql+psycopg://{PRODUCTION_DATABASE_USER}:{database_password}"
-            f"@127.0.0.1:{POSTGRESQL_PORT}/{PRODUCTION_DATABASE}"
-        )
     return f"sqlite:///{production_database_file(root).as_posix()}"
-
-
-def postgresql_unattended_options(*, data_root: Path, superpassword: str) -> str:
-    """Build EDB's short-lived option file so database credentials never enter argv."""
-    return "\n".join((
-        "mode=unattended",
-        "unattendedmodeui=minimal",
-        f"prefix={POSTGRESQL_INSTALL_ROOT}",
-        f"datadir={data_root}",
-        f"serverport={POSTGRESQL_PORT}",
-        f"servicename={POSTGRESQL_SERVICE}",
-        f"superpassword={superpassword}",
-        "",
-    ))
-
-
-def postgresql_unattended_command(installer: Path, option_file: Path) -> list[str]:
-    return [str(installer), "--optionfile", str(option_file)]
-
-
-def restrict_option_file_to_current_user(option_file: Path) -> None:
-    """Remove inherited access from the temporary installer secret file."""
-    environment = os.environ.copy()
-    environment["HMS_QR_OPTION_FILE"] = str(option_file)
-    script = (
-        "$user = [Security.Principal.WindowsIdentity]::GetCurrent().Name; "
-        "& icacls $env:HMS_QR_OPTION_FILE /inheritance:r /grant:r \"$user`:(F)\" | Out-Null; "
-        "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
-    )
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", script], env=environment,
-        capture_output=True, text=True, check=False,
-    )
-    if result.returncode:
-        raise RuntimeError("Không thể giới hạn quyền truy cập file cài đặt PostgreSQL tạm thời.")
-
-
-def run_postgresql_offline_installer(installer: Path, option_file: Path, options: str) -> subprocess.CompletedProcess[str]:
-    option_file.write_text(options, encoding="utf-8")
-    try:
-        restrict_option_file_to_current_user(option_file)
-        return subprocess.run(
-            postgresql_unattended_command(installer, option_file),
-            capture_output=True, text=True, check=False,
-        )
-    finally:
-        option_file.unlink(missing_ok=True)
 
 
 def production_server_environment(root: Path = DEFAULT_DATA_ROOT, secrets_path: Path = SECRETS_PATH) -> dict[str, str]:
@@ -300,41 +236,6 @@ def production_setup_requirements(source_root: Path | None = None) -> list[str]:
     if not list((source / "installer" / "wheels").glob("*.whl")):
         missing.append("Python offline wheels")
     return missing
-
-
-def postgresql_backup_path(backup_root: Path, *, now: datetime | None = None) -> Path:
-    backup_root = _validated_root(str(backup_root))
-    timestamp = (now or datetime.now()).strftime("%Y%m%d_%H%M%S_%f")
-    return backup_root / f"hms_qr_{timestamp}.dump"
-
-
-def latest_postgresql_backup(backup_root: Path) -> Path | None:
-    try:
-        return max(backup_root.glob("hms_qr_*.dump"), key=lambda item: item.name)
-    except (OSError, ValueError):
-        return None
-
-
-def postgresql_backup_inventory(backup_root: Path) -> str:
-    try:
-        backups = list(backup_root.glob("hms_qr_*.dump"))
-        total_bytes = sum(item.stat().st_size for item in backups)
-    except OSError:
-        return "KHÔNG ĐỌC ĐƯỢC"
-    return f"{len(backups)} file ({total_bytes / 1024**2:.1f} MB)"
-
-
-def production_postgresql_is_installed() -> bool:
-    return (POSTGRESQL_INSTALL_ROOT / "bin" / "pg_dump.exe").is_file()
-
-
-def postgresql_restore_command(backup: Path) -> list[str]:
-    """Build a destructive restore command only after caller verifies the custom dump."""
-    return [
-        str(POSTGRESQL_INSTALL_ROOT / "bin" / "pg_restore.exe"), "-h", "127.0.0.1",
-        "-p", str(POSTGRESQL_PORT), "-U", PRODUCTION_DATABASE_USER, "-d", PRODUCTION_DATABASE,
-        "--clean", "--if-exists", "--exit-on-error", str(backup),
-    ]
 
 
 def current_user_autostart_command(source_root: Path | None = None) -> list[str]:
@@ -367,27 +268,40 @@ def set_current_user_autostart(enabled: bool, source_root: Path | None = None) -
 
 
 def backup_sqlite(database: Path, backup_root: Path) -> Path:
-    if not database.is_file():
-        raise ValueError("Chưa có database SQLite để sao lưu.")
+    """Copy the engine database that backs ``database`` into one backup directory.
+
+    The snapshot is copied before the journal: the snapshot is replaced
+    atomically, so a commit landing between the two copies leaves a journal that
+    is newer than the snapshot, which is exactly the pair the engine replays on
+    open. The reverse order could replay records the snapshot already contains.
+    """
+
+    from packages.sqlengine.storage import JOURNAL_NAME, SNAPSHOT_NAME
+
+    engine_dir = engine_dir_for(database)
+    if not engine_dir.is_dir():
+        raise ValueError("Chưa có database engine để sao lưu.")
     backup_root = _validated_root(str(backup_root))
-    target = backup_root / f"hms_qr_{datetime.now():%Y%m%d_%H%M%S_%f}.sqlite"
+    stamp = f"{datetime.now():%Y%m%d_%H%M%S_%f}"
+    target = backup_root / f"hms_qr_{stamp}{ENGINE_BACKUP_SUFFIX}"
     sequence = 1
     while target.exists():
-        target = backup_root / f"hms_qr_{datetime.now():%Y%m%d_%H%M%S_%f}_{sequence}.sqlite"
+        target = backup_root / f"hms_qr_{stamp}_{sequence}{ENGINE_BACKUP_SUFFIX}"
         sequence += 1
-    source = sqlite3.connect(database)
-    destination = sqlite3.connect(target)
-    try:
-        source.backup(destination)
-    finally:
-        destination.close()
-        source.close()
+    target.mkdir(parents=True)
+    for name in (SNAPSHOT_NAME, JOURNAL_NAME):
+        source = engine_dir / name
+        if source.is_file():
+            shutil.copy2(source, target / name)
     return target
 
 
 def latest_sqlite_backup(backup_root: Path) -> Path | None:
     try:
-        return max(backup_root.glob("hms_qr_*.sqlite"), key=lambda item: item.stat().st_mtime)
+        return max(
+            backup_root.glob(f"hms_qr_*{ENGINE_BACKUP_SUFFIX}"),
+            key=lambda item: item.stat().st_mtime,
+        )
     except (OSError, ValueError):
         return None
 
@@ -405,11 +319,13 @@ def backup_freshness(backup: Path | None, *, now: datetime | None = None) -> str
 
 def backup_inventory(backup_root: Path) -> str:
     try:
-        backups = list(backup_root.glob("hms_qr_*.sqlite"))
-        total_bytes = sum(item.stat().st_size for item in backups)
+        backups = list(backup_root.glob(f"hms_qr_*{ENGINE_BACKUP_SUFFIX}"))
+        total_bytes = sum(
+            item.stat().st_size for backup in backups for item in backup.rglob("*") if item.is_file()
+        )
     except OSError:
         return "KHÔNG ĐỌC ĐƯỢC"
-    return f"{len(backups)} file ({total_bytes / 1024**2:.1f} MB)"
+    return f"{len(backups)} bản ({total_bytes / 1024**2:.1f} MB)"
 
 
 def backup_integrity_inventory(backup_root: Path) -> str:
@@ -419,7 +335,7 @@ def backup_integrity_inventory(backup_root: Path) -> str:
 
 def backup_integrity_details(backup_root: Path) -> tuple[str, list[str]]:
     try:
-        backups = sorted(backup_root.glob("hms_qr_*.sqlite"))
+        backups = sorted(backup_root.glob(f"hms_qr_*{ENGINE_BACKUP_SUFFIX}"))
     except OSError:
         return "KHÔNG ĐỌC ĐƯỢC", []
     valid = 0
@@ -428,7 +344,7 @@ def backup_integrity_details(backup_root: Path) -> tuple[str, list[str]]:
         try:
             check_sqlite_backup(backup)
             valid += 1
-        except (OSError, ValueError, sqlite3.Error):
+        except (OSError, ValueError):
             invalid.append(backup.name)
     return f"{valid} hợp lệ, {len(invalid)} lỗi", invalid
 
@@ -451,31 +367,53 @@ def locations_are_saved(data_root: str, backup_root: str, settings: dict[str, st
 
 
 def check_sqlite_backup(backup: Path) -> str:
-    if not backup.is_file():
-        raise ValueError("Không tìm thấy file backup SQLite để kiểm tra.")
-    # URI read-only prevents an operational check from ever modifying the backup.
-    connection = sqlite3.connect(f"{backup.resolve().as_uri()}?mode=ro", uri=True)
+    """Load a backup with the engine itself; a check never writes to the backup.
+
+    ``Storage.exists()`` is consulted first so an empty directory is reported as
+    an invalid backup instead of being silently initialized into a new database.
+    """
+
+    from packages.sqlengine import connect
+    from packages.sqlengine.errors import EngineError
+    from packages.sqlengine.storage import Storage
+
+    if not backup.is_dir():
+        raise ValueError("Không tìm thấy backup engine để kiểm tra.")
+    if not Storage(backup).exists():
+        raise ValueError("Backup không hợp lệ: không có dữ liệu engine.")
     try:
-        result = connection.execute("PRAGMA quick_check").fetchone()
+        database = connect(backup)
+    except (OSError, EngineError) as exc:
+        raise ValueError(f"Backup không hợp lệ: {exc}") from None
+    try:
+        readiness = database.readiness()
+        tables = len(database.schema.tables)
     finally:
-        connection.close()
-    if result != ("ok",):
-        raise ValueError(f"Backup không hợp lệ: {result[0] if result else 'không có kết quả kiểm tra'}")
-    return f"BACKUP HỢP LỆ: {backup.name}"
+        database.close()
+    if readiness.get("state") != "READY":
+        raise ValueError("Backup không hợp lệ: engine không sẵn sàng.")
+    if not tables:
+        raise ValueError("Backup không hợp lệ: chưa có bảng nào.")
+    return f"BACKUP HỢP LỆ: {backup.name} ({tables} bảng)"
 
 
 def restore_sqlite_database(database: Path, backup: Path, safety_root: Path) -> Path | None:
-    """Replace a stopped local SQLite runtime only after source and copy validation."""
+    """Replace a stopped engine runtime only after source and copy validation."""
     check_sqlite_backup(backup)
-    safety_backup = backup_sqlite(database, safety_root) if database.is_file() else None
-    temporary = database.with_name(f"{database.stem}.restore-{datetime.now():%Y%m%d%H%M%S%f}.tmp")
+    engine_dir = engine_dir_for(database)
+    safety_backup = backup_sqlite(database, safety_root) if engine_dir.is_dir() else None
+    temporary = engine_dir.with_name(
+        f"{engine_dir.name}.restore-{datetime.now():%Y%m%d%H%M%S%f}.tmp"
+    )
     try:
-        shutil.copy2(backup, temporary)
+        shutil.copytree(backup, temporary)
         check_sqlite_backup(temporary)
-        os.replace(temporary, database)
+        if engine_dir.exists():
+            shutil.rmtree(engine_dir)
+        os.replace(temporary, engine_dir)
     finally:
         if temporary.exists():
-            temporary.unlink()
+            shutil.rmtree(temporary, ignore_errors=True)
     return safety_backup
 
 
@@ -484,20 +422,6 @@ def _is_windows_admin() -> bool:
         ["powershell", "-NoProfile", "-Command", "([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"],
         capture_output=True, text=True, check=False,
     ).stdout.strip().casefold() == "true"
-
-
-def postgresql_offline_installer_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "installer" / "postgresql" / POSTGRESQL_INSTALLER_NAME
-
-
-def verified_postgresql_offline_installer(path: Path | None = None) -> Path:
-    installer = path or postgresql_offline_installer_path()
-    if not installer.is_file():
-        raise ValueError("Không tìm thấy bộ cài PostgreSQL offline trong gói HMS QR.")
-    digest = hashlib.sha256(installer.read_bytes()).hexdigest()
-    if digest != POSTGRESQL_INSTALLER_SHA256:
-        raise ValueError("Bộ cài PostgreSQL offline không khớp checksum đã xác minh.")
-    return installer
 
 
 def firewall_private_status() -> str:
@@ -773,8 +697,6 @@ class ServerToolWindow(QMainWindow):
         self.firewall_button.setObjectName("primaryButton")
         self.repair_lan_button = QPushButton("TỰ SỬA PROFILE PRIVATE + FIREWALL")
         self.repair_lan_button.setObjectName("primaryButton")
-        self.install_postgresql_button = QPushButton("CÀI POSTGRESQL 17")
-        self.install_postgresql_button.setObjectName("outlineButton")
         self.enable_tls_button = QPushButton("BẬT HTTPS CAMERA")
         self.enable_tls_button.setObjectName("outlineButton")
         self.setup_production_button = QPushButton("THIẾT LẬP SERVER 1 CLICK")
@@ -806,7 +728,7 @@ class ServerToolWindow(QMainWindow):
         lan_grid.addWidget(self.lan_address, 0, 1)
         lan_grid.addWidget(self.firewall_button, 1, 0, 1, 2)
         lan_grid.addWidget(self.repair_lan_button, 2, 0, 1, 2)
-        lan_grid.addWidget(self.install_postgresql_button, 3, 0); lan_grid.addWidget(self.enable_tls_button, 3, 1)
+        lan_grid.addWidget(self.enable_tls_button, 3, 0, 1, 2)
         lan_grid.addWidget(self.setup_production_button, 4, 0, 1, 2)
         lan_grid.addWidget(self.setup_progress, 5, 0, 1, 2)
         lan_grid.addWidget(self.check_firewall_button, 6, 0)
@@ -1080,7 +1002,7 @@ class ServerToolWindow(QMainWindow):
         self.account_status_filter.currentTextChanged.connect(self.apply_account_filters)
         self.firewall_button.clicked.connect(self.open_firewall)
         self.repair_lan_button.clicked.connect(self.repair_private_lan)
-        self.install_postgresql_button.clicked.connect(self.install_postgresql); self.enable_tls_button.clicked.connect(self.enable_lan_tls)
+        self.enable_tls_button.clicked.connect(self.enable_lan_tls)
         self.setup_production_button.clicked.connect(self.setup_production_server)
         self.apply_ip_button.clicked.connect(self.apply_static_ip)
         choose_data.clicked.connect(lambda: self.choose_directory(self.data_root))
@@ -1156,7 +1078,7 @@ class ServerToolWindow(QMainWindow):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
                 probe.connect(("8.8.8.8", 80))
-                return f"{lan_url_scheme()}://{probe.getsockname()[0]}:{LAN_PORT}"
+                return f"{lan_url_scheme(DEFAULT_DATA_ROOT)}://{probe.getsockname()[0]}:{LAN_PORT}"
         except OSError:
             return "Không xác định được IP LAN"
 
@@ -1254,34 +1176,12 @@ class ServerToolWindow(QMainWindow):
     def _current_database_file(self) -> Path:
         """Return the database this Tool manages: standalone production SQLite or DEV SQLite."""
         production = production_database_file()
-        if production.is_file():
+        if engine_dir_for(production).is_dir():
             return production
         return Path(self._settings["data_root"]) / "hms_qr_test.sqlite"
 
     def backup_database(self) -> None:
         try:
-            pg_dump = POSTGRESQL_INSTALL_ROOT / "bin" / "pg_dump.exe"
-            if pg_dump.is_file():
-                target = postgresql_backup_path(Path(self._settings["backup_root"]))
-                environment = os.environ.copy()
-                environment["PGPASSWORD"] = load_server_secret("database_password")
-                result = subprocess.run(
-                    [str(pg_dump), "-h", "127.0.0.1", "-p", str(POSTGRESQL_PORT), "-U", PRODUCTION_DATABASE_USER, "-d", PRODUCTION_DATABASE, "-Fc", "-f", str(target)],
-                    env=environment, capture_output=True, text=True, check=False,
-                )
-                if result.returncode or not target.is_file() or not target.stat().st_size:
-                    target.unlink(missing_ok=True)
-                    raise RuntimeError("PostgreSQL backup không hoàn tất.")
-                pg_restore = POSTGRESQL_INSTALL_ROOT / "bin" / "pg_restore.exe"
-                verified = subprocess.run([str(pg_restore), "-l", str(target)], capture_output=True, text=True, check=False)
-                if verified.returncode:
-                    target.unlink(missing_ok=True)
-                    raise RuntimeError("PostgreSQL backup không thể kiểm tra.")
-                self.overview_backup.setText(target.name)
-                self.overview_backup_freshness.setText(backup_freshness(target))
-                self.append_activity(f"SAO LƯU POSTGRESQL: Đã tạo và kiểm tra {target.name}")
-                QMessageBox.information(self, "Sao lưu đã xác minh", f"Đã tạo PostgreSQL backup: {target.name}")
-                return
             database = self._current_database_file()
             target = backup_sqlite(database, Path(self._settings["backup_root"]))
             verification = check_sqlite_backup(target)
@@ -1289,27 +1189,23 @@ class ServerToolWindow(QMainWindow):
             self.overview_backup_freshness.setText(backup_freshness(target))
             self.append_activity(f"SAO LƯU: Đã tạo {target.name}\n{verification}")
             QMessageBox.information(self, "Sao lưu đã xác minh", f"Đã tạo backup: {target.name}\n{verification}")
-        except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             QMessageBox.warning(self, "Backup chưa được xác minh", str(exc))
-
     def restore_database(self) -> None:
-        if production_postgresql_is_installed():
-            self.restore_postgresql_database()
-            return
         if self._server_listening() and (not self._server_process or self._server_process.state() == QProcess.ProcessState.NotRunning):
             QMessageBox.warning(self, "Không thể khôi phục", "Server hiện do process bên ngoài Tool quản lý. Hãy dừng Server đó và thực hiện restore theo runbook.")
             return
         backup_root = Path(self._settings["backup_root"]).resolve(strict=False)
-        selected, _ = QFileDialog.getOpenFileName(self, "Chọn SQLite backup để khôi phục", str(backup_root), "HMS QR SQLite backup (hms_qr_*.sqlite)")
+        selected, _ = QFileDialog.getOpenFileName(self, "Chọn backup engine để khôi phục", str(backup_root), f"HMS QR engine backup (hms_qr_*{ENGINE_BACKUP_SUFFIX})")
         if not selected:
             return
         backup = Path(selected).resolve(strict=False)
-        if backup.parent != backup_root or not backup.match("hms_qr_*.sqlite"):
+        if backup.parent != backup_root or not backup.match(f"hms_qr_*{ENGINE_BACKUP_SUFFIX}"):
             QMessageBox.warning(self, "Backup không hợp lệ", "Chỉ được khôi phục snapshot HMS QR trong thư mục Backup đã cấu hình.")
             return
         try:
             check_sqlite_backup(backup)
-        except (OSError, ValueError, sqlite3.Error) as exc:
+        except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Backup không hợp lệ", str(exc))
             return
         warning = f"Khôi phục '{backup.name}' sẽ thay database hiện tại. Tool sẽ tạo safety backup trước khi thay thế và khởi động lại Server do Tool quản lý. Tiếp tục?"
@@ -1323,51 +1219,9 @@ class ServerToolWindow(QMainWindow):
             safety_backup = restore_sqlite_database(database, backup, backup_root)
             self.append_activity(f"KHÔI PHỤC SQLITE: Đã dùng {backup.name}\nSAFETY BACKUP: {safety_backup.name if safety_backup else 'Không có database trước đó'}")
             QMessageBox.information(self, "Khôi phục hoàn tất", "Database đã được thay thế từ backup đã xác minh.")
-        except (OSError, ValueError, sqlite3.Error) as exc:
+        except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Khôi phục không hoàn tất", str(exc))
             return
-        finally:
-            if owned_server_running:
-                self.start_server()
-
-    def restore_postgresql_database(self) -> None:
-        if self._server_listening() and (not self._server_process or self._server_process.state() == QProcess.ProcessState.NotRunning):
-            QMessageBox.warning(self, "Không thể khôi phục", "Server hiện do process bên ngoài Tool quản lý. Hãy dừng Server đó trước khi khôi phục.")
-            return
-        backup_root = Path(self._settings["backup_root"]).resolve(strict=False)
-        selected, _ = QFileDialog.getOpenFileName(self, "Chọn PostgreSQL backup để khôi phục", str(backup_root), "HMS QR PostgreSQL backup (hms_qr_*.dump)")
-        if not selected:
-            return
-        backup = Path(selected).resolve(strict=False)
-        if backup.parent != backup_root or not backup.match("hms_qr_*.dump"):
-            QMessageBox.warning(self, "Backup không hợp lệ", "Chỉ được khôi phục dump HMS QR trong thư mục Backup đã cấu hình.")
-            return
-        pg_restore = POSTGRESQL_INSTALL_ROOT / "bin" / "pg_restore.exe"
-        verified = subprocess.run([str(pg_restore), "-l", str(backup)], capture_output=True, text=True, check=False)
-        if verified.returncode:
-            QMessageBox.warning(self, "Backup không hợp lệ", "Không thể kiểm tra PostgreSQL dump đã chọn.")
-            return
-        warning = f"Khôi phục '{backup.name}' sẽ thay toàn bộ database PostgreSQL hiện tại. Tool tạo safety dump trước khi thay thế. Tiếp tục?"
-        if QMessageBox.question(self, "Xác nhận khôi phục PostgreSQL", warning) != QMessageBox.StandardButton.Yes:
-            return
-        owned_server_running = bool(self._server_process and self._server_process.state() != QProcess.ProcessState.NotRunning)
-        if owned_server_running:
-            self.stop_server()
-        try:
-            safety = postgresql_backup_path(backup_root)
-            environment = os.environ.copy()
-            environment["PGPASSWORD"] = load_server_secret("database_password")
-            dumped = subprocess.run([str(POSTGRESQL_INSTALL_ROOT / "bin" / "pg_dump.exe"), "-h", "127.0.0.1", "-p", str(POSTGRESQL_PORT), "-U", PRODUCTION_DATABASE_USER, "-d", PRODUCTION_DATABASE, "-Fc", "-f", str(safety)], env=environment, capture_output=True, text=True, check=False)
-            if dumped.returncode or not safety.is_file() or not safety.stat().st_size:
-                safety.unlink(missing_ok=True)
-                raise RuntimeError("Không tạo được safety backup PostgreSQL.")
-            restored = subprocess.run(postgresql_restore_command(backup), env=environment, capture_output=True, text=True, check=False)
-            if restored.returncode:
-                raise RuntimeError("Khôi phục PostgreSQL không hoàn tất. Safety backup vẫn được giữ lại.")
-            self.append_activity(f"KHÔI PHỤC POSTGRESQL: Đã dùng {backup.name}\nSAFETY BACKUP: {safety.name}")
-            QMessageBox.information(self, "Khôi phục hoàn tất", "PostgreSQL đã được khôi phục từ backup đã xác minh.")
-        except (OSError, RuntimeError, ValueError) as exc:
-            QMessageBox.warning(self, "Khôi phục không hoàn tất", str(exc))
         finally:
             if owned_server_running:
                 self.start_server()
@@ -1381,7 +1235,7 @@ class ServerToolWindow(QMainWindow):
             message = check_sqlite_backup(backup)
             self.overview_backup.setText(backup.name)
             QMessageBox.information(self, "Kiểm tra backup", message)
-        except (OSError, ValueError, sqlite3.Error) as exc:
+        except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Backup không hợp lệ", str(exc))
 
     def check_disk_space(self) -> None:
@@ -1582,30 +1436,6 @@ class ServerToolWindow(QMainWindow):
         self.append_activity("TỰ SỬA LAN: Đã đặt profile Private và đảm bảo rule TCP 8010 / UDP 8011.")
         QMessageBox.information(self, "Đã tự sửa kết nối LAN", "Đã áp dụng profile Private và Firewall HMS QR. Chạy lại kiểm tra từ Máy 2.")
 
-    def install_postgresql(self) -> None:
-        if not _is_windows_admin():
-            QMessageBox.warning(self, "Cần quyền Administrator", "Hãy mở HMS QR Server Tool bằng Run as administrator để cài PostgreSQL.")
-            return
-        message = (
-            "Tool sẽ mở installer PostgreSQL 17 chính thức qua Windows Package Manager.\n\n"
-            "Bạn phải tự đặt mật khẩu database và thư mục dữ liệu trong installer. Tool không lưu mật khẩu, "
-            "không mở cổng PostgreSQL ra LAN, và không thay đổi Firewall.\n\nTiếp tục cài đặt?"
-        )
-        if QMessageBox.question(self, "Cài PostgreSQL 17", message) != QMessageBox.StandardButton.Yes:
-            return
-        try:
-            installer = verified_postgresql_offline_installer()
-            subprocess.Popen([str(installer)])
-        except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "Không thể mở installer", f"Không thể chạy Windows Package Manager: {exc}")
-            return
-        self.append_activity("POSTGRESQL: Đã mở installer PostgreSQL 17 offline đã xác minh.")
-        QMessageBox.information(
-            self,
-            "Installer PostgreSQL đã mở",
-            "Hoàn tất installer PostgreSQL offline, sau đó dùng bước thiết lập Server để tạo cấu hình và chạy migration.",
-        )
-
     def setup_production_server(self) -> None:
         if not _is_windows_admin():
             QMessageBox.warning(self, "Cần quyền Administrator", "Mở HMS QR Server Tool bằng Run as administrator để thiết lập Server production.")
@@ -1614,45 +1444,24 @@ class ServerToolWindow(QMainWindow):
             self,
             "Thiết lập Server 1 Click",
             "Tool sẽ tạo data local tại D:\\HMS-QR-PROD, dùng database SQLite nhúng sẵn (không cần cài thêm phần mềm), "
-            "mở Firewall Private TCP 8010 và sinh tài khoản admin. Không có mật khẩu nào được ghi vào log. Tiếp tục?",
+"mở Firewall Private TCP 8010 và sinh tài khoản admin. Không có mật khẩu nào được ghi vào log. Tiếp tục?",
         ) != QMessageBox.StandardButton.Yes:
             return
         self.setup_production_button.setEnabled(False)
         try:
-            self._set_setup_progress(1, "1/6 Kiểm tra gói cài đặt offline...")
+            self._set_setup_progress(1, "1/7 Kiểm tra gói cài đặt offline...")
             missing = production_setup_requirements()
             if missing:
                 raise ValueError("Release offline chưa đầy đủ: " + ", ".join(missing) + ".")
             paths = production_paths()
-            self._set_setup_progress(2, "2/6 Tạo thư mục local...")
+            self._set_setup_progress(2, "2/7 Tạo thư mục local...")
             for folder in paths.values():
                 _validated_root(str(folder))
-            self._set_setup_progress(2, "2/6 Bảo vệ bí mật Server bằng Windows DPAPI...")
+            self._set_setup_progress(2, "2/7 Bảo vệ bí mật Server bằng Windows DPAPI...")
             create_production_secrets()
-            if production_database_mode() == "postgresql":
-                installer = verified_postgresql_offline_installer()
-                psql = POSTGRESQL_INSTALL_ROOT / "bin" / "psql.exe"
-                if not psql.is_file():
-                    self._set_setup_progress(3, "3/7 Đang cài PostgreSQL 17 offline...")
-                    option_file = paths["root"] / "postgresql-install-options.conf"
-                    result = run_postgresql_offline_installer(
-                        installer,
-                        option_file,
-                        postgresql_unattended_options(
-                            data_root=paths["postgresql"],
-                            superpassword=load_server_secret("postgres_password"),
-                        ),
-                    )
-                    if result.returncode:
-                        raise RuntimeError("Cài PostgreSQL offline không hoàn tất.")
-                else:
-                    self._set_setup_progress(3, "3/7 PostgreSQL 17 đã sẵn sàng.")
-                self._set_setup_progress(4, "4/7 Tạo database PostgreSQL local-only...")
-                self._provision_production_database(psql)
-            else:
-                self._set_setup_progress(3, "3/7 Database SQLite nhúng sẵn sàng...")
-                self._set_setup_progress(4, "4/7 Khởi tạo database SQLite local...")
-                self._create_standalone_database(paths["database"])
+            self._set_setup_progress(3, "3/7 Database SQLite nhúng sẵn sàng...")
+            self._set_setup_progress(4, "4/7 Khởi tạo database SQLite local...")
+            self._create_standalone_database(paths["database"])
             self._set_setup_progress(5, "5/7 Cập nhật database schema...")
             self._run_production_migrations()
             self._set_setup_progress(6, "6/7 Tạo chứng chỉ TLS cho camera điện thoại...")
@@ -1665,6 +1474,9 @@ class ServerToolWindow(QMainWindow):
             self._settings = load_tool_settings()
             self._set_setup_progress(7, "7/7 Đang khởi động HMS QR Server...")
             self.start_server()
+            self.lan_address.setText(self._lan_address())
+            self.server_url.setText(self._lan_address())
+            self.overview_lan.setText(self._lan_address())
             self.setup_progress.setFormat("Hoàn tất thiết lập Server")
             self.append_activity("THIẾT LẬP: Production Server local đã được cấu hình. Tài khoản admin được lưu DPAPI.")
             QMessageBox.information(self, "Thiết lập hoàn tất", "Server đang khởi động. Dùng nút XEM MẬT KHẨU ADMIN ĐÃ LƯU để đăng nhập lần đầu.")
@@ -1675,7 +1487,6 @@ class ServerToolWindow(QMainWindow):
             QMessageBox.warning(self, "Thiết lập chưa hoàn tất", f"Thiết lập dừng ở bước {self.setup_progress.value()}/7 ({type(exc).__name__}). Không có mật khẩu nào được hiển thị; xem Nhật ký hoạt động để xử lý tiếp.")
         finally:
             self.setup_production_button.setEnabled(True)
-
     def _lan_ip_addresses(self) -> list[str]:
         """Collect this machine's IPv4 addresses for the certificate SAN list."""
 
@@ -1700,6 +1511,9 @@ class ServerToolWindow(QMainWindow):
             QMessageBox.warning(self, "Chưa bật được HTTPS", f"{type(exc).__name__}: {exc}")
             return
         self.append_activity(f"HTTPS CAMERA: Đã tạo chứng chỉ tự ký {paths['certificate'].name}.")
+        self.lan_address.setText(self._lan_address())
+        self.server_url.setText(self._lan_address())
+        self.overview_lan.setText(self._lan_address())
         QMessageBox.information(
             self,
             "Đã bật HTTPS cho camera",
@@ -1712,11 +1526,17 @@ class ServerToolWindow(QMainWindow):
 
     @staticmethod
     def _create_standalone_database(database_root: Path) -> None:
-        """Create the embedded SQLite database file; no external database server is installed."""
+        """Create the embedded engine database directory; no external server is installed.
+
+        Touching the ``.sqlite`` file here would make the engine's own
+        ``mkdir`` fail on the next step, because the engine stores its data in a
+        directory named after that path.
+        """
+
         database_root.mkdir(parents=True, exist_ok=True)
-        database = database_root / PRODUCTION_DATABASE_FILE_NAME
-        if not database.is_file():
-            database.touch()
+        engine_dir_for(database_root / PRODUCTION_DATABASE_FILE_NAME).mkdir(
+            parents=True, exist_ok=True
+        )
 
     def _set_setup_progress(self, value: int, text: str) -> None:
         self.setup_progress.setValue(value)
@@ -1724,47 +1544,19 @@ class ServerToolWindow(QMainWindow):
         self.status_label.setText(text)
         QApplication.processEvents()
 
-    def _provision_production_database(self, psql: Path) -> None:
-        if not psql.is_file():
-            raise RuntimeError("Không tìm thấy PostgreSQL command-line tools sau khi cài đặt.")
-        environment = os.environ.copy()
-        environment["PGPASSWORD"] = load_server_secret("postgres_password")
-        app_password = load_server_secret("database_password").replace("'", "''")
-        role_sql = (
-            "DO $$ BEGIN "
-            f"IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{PRODUCTION_DATABASE_USER}') THEN "
-            f"CREATE ROLE {PRODUCTION_DATABASE_USER} LOGIN PASSWORD '{app_password}'; "
-            f"ELSE ALTER ROLE {PRODUCTION_DATABASE_USER} LOGIN PASSWORD '{app_password}'; END IF; END $$;"
-        )
-        command = [str(psql), "-v", "ON_ERROR_STOP=1", "-h", "127.0.0.1", "-p", str(POSTGRESQL_PORT), "-U", "postgres", "-d", "postgres"]
-        if subprocess.run(command, input=role_sql, env=environment, capture_output=True, text=True, check=False).returncode:
-            raise RuntimeError("Không thể tạo application role PostgreSQL.")
-        exists = subprocess.run([str(psql), "-v", "ON_ERROR_STOP=1", "-h", "127.0.0.1", "-p", str(POSTGRESQL_PORT), "-U", "postgres", "-d", "postgres", "-tAc", f"SELECT 1 FROM pg_database WHERE datname = '{PRODUCTION_DATABASE}'"], env=environment, capture_output=True, text=True, check=False)
-        if exists.returncode:
-            raise RuntimeError("Không thể kiểm tra PostgreSQL database.")
-        if exists.stdout.strip() != "1":
-            created = subprocess.run([str(psql), "-v", "ON_ERROR_STOP=1", "-h", "127.0.0.1", "-p", str(POSTGRESQL_PORT), "-U", "postgres", "-d", "postgres", "-c", f"CREATE DATABASE {PRODUCTION_DATABASE} OWNER {PRODUCTION_DATABASE_USER}"], env=environment, capture_output=True, text=True, check=False)
-            if created.returncode:
-                raise RuntimeError("Không thể tạo HMS QR PostgreSQL database.")
-        listener = subprocess.run(
-            [str(psql), "-h", "127.0.0.1", "-p", str(POSTGRESQL_PORT), "-U", "postgres", "-d", "postgres", "-tAc", "SHOW listen_addresses"],
-            env=environment, capture_output=True, text=True, check=False,
-        )
-        if listener.returncode:
-            raise RuntimeError("Không thể kiểm tra PostgreSQL listener.")
-        if listener.stdout.strip() != "127.0.0.1":
-            if subprocess.run(command, input="ALTER SYSTEM SET listen_addresses = '127.0.0.1';", env=environment, capture_output=True, text=True, check=False).returncode:
-                raise RuntimeError("Không thể khóa PostgreSQL về localhost.")
-            restarted = subprocess.run(["powershell", "-NoProfile", "-Command", f"Restart-Service -Name '{POSTGRESQL_SERVICE}' -ErrorAction Stop"], capture_output=True, text=True, check=False)
-            if restarted.returncode:
-                raise RuntimeError("Không thể khởi động lại PostgreSQL sau khi khóa localhost.")
-
     def _run_production_migrations(self) -> None:
-        environment = os.environ.copy()
-        environment.update(production_server_environment())
-        subprocess.run(["py", "-3.14", "-m", "alembic", "upgrade", "head"], cwd=Path(__file__).resolve().parents[2], env=environment, check=True, capture_output=True, text=True)
+        """Apply the engine migrations in-process; no external migration tool is needed."""
+        from config.paths import SOURCE_ROOT
+        from packages.sqlengine import connect
+        from packages.sqlengine.migrations import load_migration_modules, run_migrations
 
-    @staticmethod
+        engine_dir = engine_dir_for(production_database_file())
+        engine_dir.parent.mkdir(parents=True, exist_ok=True)
+        database = connect(engine_dir)
+        try:
+            run_migrations(database, load_migration_modules(SOURCE_ROOT / "migrations" / "engine"))
+        finally:
+            database.close()
     def _open_production_firewall() -> None:
         command = (
             f"if (-not (Get-NetFirewallRule -DisplayName 'HMS QR Server TCP {LAN_PORT}' -ErrorAction SilentlyContinue)) "
@@ -1829,8 +1621,8 @@ class ServerToolWindow(QMainWindow):
         process = QProcess(self)
         process.setProgram("py")
         arguments = ["-3.14", "-m", "uvicorn", "apps.server.app:app", "--host", "0.0.0.0", "--port", str(LAN_PORT)]
-        if tls_is_enabled():
-            paths = production_tls_paths()
+        if tls_is_enabled(DEFAULT_DATA_ROOT):
+            paths = production_tls_paths(DEFAULT_DATA_ROOT)
             arguments += ["--ssl-certfile", str(paths["certificate"]), "--ssl-keyfile", str(paths["key"])]
         process.setArguments(arguments)
         process.setWorkingDirectory(str(__import__("pathlib").Path(__file__).resolve().parents[2]))
@@ -1856,7 +1648,7 @@ class ServerToolWindow(QMainWindow):
         if QMessageBox.question(
             self,
             "Khởi động lại HMS QR Server",
-            "Tool sẽ dừng đúng process HMS QR đang nghe cổng 8010 rồi khởi động bản Server hiện tại. Không thay đổi PostgreSQL hoặc dữ liệu. Tiếp tục?",
+            "Tool sẽ dừng đúng process HMS QR đang nghe cổng 8010 rồi khởi động bản Server hiện tại. Không thay đổi database hoặc dữ liệu. Tiếp tục?",
         ) != QMessageBox.StandardButton.Yes:
             return
         try:
@@ -1900,13 +1692,13 @@ class ServerToolWindow(QMainWindow):
         self.overview_lan.setText(self._lan_address())
         self.overview_data.setText(Path(self._settings["data_root"]).name or self._settings["data_root"])
         backup_root = Path(self._settings["backup_root"])
-        latest_backup = latest_postgresql_backup(backup_root) or latest_sqlite_backup(backup_root)
+        latest_backup = latest_sqlite_backup(backup_root)
         self.overview_backup.setText(
             latest_backup.name if latest_backup else "CHƯA CÓ BACKUP"
         )
         self.overview_backup_freshness.setText(backup_freshness(latest_backup))
         self.overview_disk.setText(disk_space_status(Path(self._settings["data_root"])))
-        self.overview_inventory.setText(postgresql_backup_inventory(backup_root) if latest_postgresql_backup(backup_root) else backup_inventory(backup_root))
+        self.overview_inventory.setText(backup_inventory(backup_root))
         try:
             database = _request("/health/readiness/database")
             self.status_label.setText("SERVER SẴN SÀNG")

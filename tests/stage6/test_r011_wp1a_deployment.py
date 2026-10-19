@@ -61,7 +61,7 @@ def test_artifact_identity_schema_and_manifest_negatives(tmp_path):
     manifest_path = a / "manifest.json"; original = manifest_path.read_text(encoding="utf-8"); manifest = json.loads(original)
     with pytest.raises(ArtifactBuildError): verify_release(a, expected_head="0" * 40)
     with pytest.raises(ArtifactBuildError): verify_release(a, expected_tree="0" * 40)
-    with pytest.raises(ArtifactBuildError): verify_release(a, expected_alembic_head="wrong")
+    with pytest.raises(ArtifactBuildError): verify_release(a, expected_engine_migration_head="wrong")
     manifest["manifest_schema"] = "unsupported"; manifest_path.write_text(json.dumps(manifest))
     with pytest.raises(ArtifactBuildError): verify_release(a)
     manifest_path.write_text("{")

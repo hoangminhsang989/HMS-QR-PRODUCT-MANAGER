@@ -1,4 +1,4 @@
-"""R010R2 production database configuration and PostgreSQL runtime acceptance."""
+"""R010R2 production database configuration and runtime acceptance."""
 
 from __future__ import annotations
 
@@ -7,17 +7,14 @@ from decimal import Decimal
 import os
 from pathlib import Path
 import subprocess
-import time
 from uuid import uuid4
 
-from alembic import command
-from alembic.config import Config
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import func, select, text
 
 from apps.server.app import build_api
 from apps.server.files import require_production_storage_ready
+from config.dburl import make_url
 from config.environments import (
     AppConfig,
     DATABASE_URL_ENV,
@@ -28,6 +25,7 @@ from config.environments import (
     validate_database_url,
 )
 from packages.persistence.database import (
+    DatabaseRuntime,
     DatabaseUnavailableError,
     create_database_runtime,
     redacted_database_url,
@@ -36,7 +34,6 @@ from packages.persistence.database import (
     sqlite_path,
 )
 from packages.persistence.managed_file_repository import ManagedFileRepository
-from packages.persistence.sqlalchemy_models import ProductORM
 from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
 from packages.persistence.sqlalchemy_repository import Stage2Repository
 from packages.persistence.store_forward_repository import StoreForwardRepository
@@ -45,34 +42,32 @@ from packages.persistence.workflow_repository import WorkflowRepository
 from packages.application.server_auth import ServerAuthService, UserRole
 
 
-def _postgresql_url() -> str:
-    value = (
-        os.environ.get("HMS_QR_R010R2_POSTGRESQL_URL", "").strip()
-        or os.environ.get("HMS_QR_R010M1_POSTGRESQL_URL", "").strip()
+LEGACY_POSTGRESQL_URL = "postgresql+psycopg://user:password@localhost/hms_qr"
+
+
+def _prod_runtime(database):
+    """A real PROD runtime over an existing engine database."""
+
+    return DatabaseRuntime(
+        AppConfig(Environment.PROD, LEGACY_POSTGRESQL_URL, "nas"),
+        database,
+        getattr(database, "path", None),
     )
-    if not value:
-        pytest.skip("isolated R010R2 PostgreSQL runtime is not configured")
-    return value
 
 
-def _reset_and_upgrade(url: str) -> None:
-    runtime = create_database_runtime(AppConfig(Environment.PROD, url, "test"))
-    with runtime.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-        connection.exec_driver_sql("DROP SCHEMA IF EXISTS public CASCADE")
-        connection.exec_driver_sql("CREATE SCHEMA public")
-    runtime.dispose()
-    config = Config("alembic.ini")
-    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
-    command.upgrade(config, "head")
-
-
-@pytest.fixture(scope="module")
-def pg_runtime():
-    url = _postgresql_url()
-    _reset_and_upgrade(url)
-    runtime = create_database_runtime(AppConfig(Environment.PROD, url, "configured"))
-    yield runtime
-    runtime.dispose()
+def _stamp(database, versions: list[tuple[int, str]]) -> None:
+    with database.transaction() as transaction:
+        if not database.schema.has_table("_hms_migrations"):
+            transaction.execute(
+                "CREATE TABLE _hms_migrations ("
+                "version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
+            )
+        transaction.execute("DELETE FROM _hms_migrations")
+        for version, name in versions:
+            transaction.execute(
+                "INSERT INTO _hms_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                [version, name, "2026-01-01T00:00:00+00:00"],
+            )
 
 
 def test_staging_and_prod_database_configuration_fail_closed(monkeypatch):
@@ -114,24 +109,30 @@ def test_environment_failure_never_silently_downgrades_to_dev(monkeypatch):
         load_config()
 
 
-def test_valid_prod_config_is_secret_safe_and_never_a_path(monkeypatch):
-    url = _postgresql_url()
+def test_valid_prod_config_is_secret_safe_and_never_a_path(monkeypatch, tmp_path):
+    url = f"sqlite:///{(tmp_path / 'prod.sqlite').as_posix()}"
     monkeypatch.setenv(DATABASE_URL_ENV, url)
     monkeypatch.setenv("HMS_QR_STORAGE_ROOT", "C:/hms-qr-production-storage")
     config = load_config(Environment.PROD)
-    password = __import__("sqlalchemy").engine.make_url(url).password
     assert config.environment is Environment.PROD
     assert config.database_url == url
-    assert password not in repr(config)
-    assert password not in redacted_database_url(url)
+    assert "password" not in repr(config)
+    assert "password" not in redacted_database_url(url)
+    assert sqlite_path(url) == (tmp_path / "prod.sqlite").resolve()
+
+    legacy = LEGACY_POSTGRESQL_URL
+    password = make_url(legacy).password
+    assert password
+    assert password not in repr(AppConfig(Environment.PROD, legacy, "nas"))
+    assert password not in redacted_database_url(legacy)
     with pytest.raises(DatabaseConfigurationError):
-        sqlite_path(url)
+        sqlite_path(legacy)
 
 
 def test_production_storage_root_must_be_ready_for_file_publication(tmp_path):
     missing = AppConfig(
         Environment.PROD,
-        "postgresql+psycopg://user:password@localhost/hms_qr",
+        LEGACY_POSTGRESQL_URL,
         "nas",
         str(tmp_path / "missing-storage"),
     )
@@ -142,7 +143,7 @@ def test_production_storage_root_must_be_ready_for_file_publication(tmp_path):
     ready_root.mkdir()
     ready = AppConfig(
         Environment.PROD,
-        "postgresql+psycopg://user:password@localhost/hms_qr",
+        LEGACY_POSTGRESQL_URL,
         "nas",
         str(ready_root),
     )
@@ -150,211 +151,219 @@ def test_production_storage_root_must_be_ready_for_file_publication(tmp_path):
     assert not tuple(ready_root.rglob("*.probe"))
 
 
-def test_production_database_schema_must_match_deployed_alembic_head(tmp_path):
-    config = AppConfig(
-        Environment.DEV, f"sqlite:///{(tmp_path / 'schema.sqlite').as_posix()}", "local"
-    )
-    local = create_database_runtime(config)
-    production = type(local)(
-        AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas"),
-        local.engine,
-        local.session_factory,
-    )
+def test_production_database_schema_must_match_deployed_engine_head(tmp_path):
+    from packages.sqlengine import Database
+
     with pytest.raises(DatabaseUnavailableError, match="schema is unavailable or uninitialized"):
-        require_database_schema_current(production)
+        database = Database(tmp_path / "schema-empty-engine")
+        try:
+            require_database_schema_current(_prod_runtime(database))
+        finally:
+            database.close()
 
-    local = create_database_runtime(config)
-    with local.engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
-        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0001_stage2_baseline')"))
-    production = type(local)(
-        AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas"),
-        local.engine,
-        local.session_factory,
-    )
-    with pytest.raises(DatabaseUnavailableError, match="not at the deployed migration revision"):
-        require_database_schema_current(production)
+    database = Database(tmp_path / "schema-stale-engine")
+    try:
+        _stamp(database, [(1, "0001_stage2_baseline")])
+        with pytest.raises(DatabaseUnavailableError, match="not at the deployed migration revision"):
+            require_database_schema_current(_prod_runtime(database))
+    finally:
+        database.close()
 
-    local = create_database_runtime(config)
-    with local.engine.begin() as connection:
-        connection.execute(text("DELETE FROM alembic_version"))
-        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0007_server_accounts')"))
-    production = type(local)(
-        AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas"),
-        local.engine,
-        local.session_factory,
-    )
-    require_database_schema_current(production)
-    production.dispose()
+    database = Database(tmp_path / "schema-current-engine")
+    try:
+        _stamp(database, [(7, "0007_server_accounts")])
+        require_database_schema_current(_prod_runtime(database))
+    finally:
+        database.close()
 
 
 def test_production_readiness_reports_stale_schema_without_hiding_database_state(tmp_path):
-    config = AppConfig(
-        Environment.DEV, f"sqlite:///{(tmp_path / 'readiness.sqlite').as_posix()}", "local"
-    )
-    local = create_database_runtime(config)
-    with local.engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
-        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0001_stage2_baseline')"))
-    runtime = type(local)(
-        AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas"),
-        local.engine,
-        local.session_factory,
-    )
-    client = TestClient(build_api(app_config=runtime.config, database_runtime=runtime))
-    response = client.get("/health/readiness/database")
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "DATABASE_SCHEMA_UNAVAILABLE"
-    runtime.dispose()
+    from packages.sqlengine import Database
 
-
-def test_tracked_psycopg_dependency_is_canonical_metadata():
-    metadata = Path("pyproject.toml").read_text(encoding="utf-8")
-    assert "psycopg[binary]" in metadata
-    assert "postgres:latest" not in metadata
-
-
-def test_shared_engine_session_pool_and_readiness(pg_runtime):
-    assert pg_runtime.readiness() == {"state": "READY", "database": "prod"}
-    pool = pg_runtime.engine.pool
-    assert pool.size() == 5
-    assert pool._max_overflow == 5
-    assert pool._timeout == 30
-    assert pool._pre_ping is True
-
-    repositories = (
-        Stage2Repository(pg_runtime),
-        TrackingRepository(pg_runtime),
-        WorkflowRepository(pg_runtime),
-        ManagedFileRepository(pg_runtime),
-        StoreForwardRepository(pg_runtime),
-        SqlAlchemyProductRepository(pg_runtime),
-    )
-    assert all(repository.engine is pg_runtime.engine for repository in repositories)
-    assert all(repository.Session is pg_runtime.session_factory for repository in repositories)
-
-
-def test_session_scope_rolls_back_and_releases_on_exception(pg_runtime):
-    marker = f"R010R2-ROLLBACK-{uuid4().hex[:8]}"
-    now = datetime.now(timezone.utc)
-    with pytest.raises(RuntimeError, match="injected"):
-        with session_scope(pg_runtime) as session:
-            session.add(ProductORM(
-                internal_id=str(uuid4()), product_code=marker, company="HMS",
-                part_name="Rollback", quantity=Decimal("1.0000"), unit="pcs",
-                material=None, requester=None, surface_treatment=None,
-                outsourced=False, size=None, notes=None, delivery_schedule=None,
-                status="NEW", created_at=now, updated_at=now,
-                created_by="test", updated_by="test",
-            ))
-            raise RuntimeError("injected transaction failure")
-    with pg_runtime.session_factory() as session:
-        assert session.scalar(select(func.count()).select_from(ProductORM).where(
-            ProductORM.product_code == marker
-        )) == 0
-
-
-def test_product_master_postgresql_api_and_type_utc_round_trip(pg_runtime, monkeypatch):
-    code = f"R010R2-PG-{uuid4().hex[:8].upper()}"
-    config = AppConfig(Environment.PROD, _postgresql_url(), "configured")
-    username = f"r010r2-editor-{uuid4().hex[:8]}"
-    monkeypatch.setenv("HMS_QR_AUTH_SECRET", "r010r2-postgresql-acceptance-token-secret")
-    auth = ServerAuthService(pg_runtime)
-    auth.create_account(username, "acceptance-password", UserRole.EDITOR.value)
-    token = auth.login(username, "acceptance-password")["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    with TestClient(build_api(app_config=config, database_runtime=pg_runtime)) as client:
-        created = client.post(
-            "/api/v1/products",
-            headers=headers,
-            json={
-                "product_code": code,
-                "company": "HMS",
-                "part_name": "PostgreSQL Plate",
-                "quantity": "12.3400",
-                "unit": "pcs",
-                "outsourced": True,
-            },
-        )
-        assert created.status_code == 201
-        body = created.json()
-        fetched = client.get(f"/api/v1/products/{body['internal_id']}")
-        assert fetched.status_code == 200
-        patched = client.patch(
-            f"/api/v1/products/{body['internal_id']}",
-            headers=headers,
-            json={"status": "IN_PROGRESS", "expected_updated_at": body["updated_at"]},
-        )
-        assert patched.status_code == 200
-        assert client.get("/api/v1/products", headers=headers, params={"search": code}).json()["total"] == 1
-        readiness = client.get("/health/readiness/database")
-        assert readiness.status_code == 200
-        assert readiness.json()["state"] == "READY"
-
-    repository = SqlAlchemyProductRepository(pg_runtime)
-    product = repository.get_by_code(code)
-    assert product.quantity == Decimal("12.3400")
-    assert product.outsourced is True
-    assert product.created_at.utcoffset().total_seconds() == 0
-    assert product.updated_at.utcoffset().total_seconds() == 0
-
-
-def test_two_editor_sessions_receive_product_conflict_for_stale_postgresql_write(pg_runtime, monkeypatch):
-    config = AppConfig(Environment.PROD, _postgresql_url(), "configured")
-    monkeypatch.setenv("HMS_QR_AUTH_SECRET", "r010r2-postgresql-acceptance-token-secret")
-    auth = ServerAuthService(pg_runtime)
-    tokens = []
-    for label in ("one", "two"):
-        username = f"r010r2-conflict-{label}-{uuid4().hex[:8]}"
-        auth.create_account(username, "acceptance-password", UserRole.EDITOR.value)
-        tokens.append(auth.login(username, "acceptance-password")["access_token"])
-    first_headers, second_headers = ({"Authorization": f"Bearer {token}"} for token in tokens)
-    with TestClient(build_api(app_config=config, database_runtime=pg_runtime)) as client:
-        created = client.post("/api/v1/products", headers=first_headers, json={
-            "product_code": f"R010R2-CONFLICT-{uuid4().hex[:8].upper()}", "company": "HMS",
-            "part_name": "Concurrent Plate", "quantity": "1", "unit": "pcs", "outsourced": False,
-        })
-        assert created.status_code == 201
-        product = created.json()
-        first_loaded = client.get(f"/api/v1/products/{product['internal_id']}", headers=first_headers).json()
-        second_loaded = client.get(f"/api/v1/products/{product['internal_id']}", headers=second_headers).json()
-        first_write = client.patch(f"/api/v1/products/{product['internal_id']}", headers=first_headers, json={
-            "notes": "editor one", "expected_updated_at": first_loaded["updated_at"],
-        })
-        stale_write = client.patch(f"/api/v1/products/{product['internal_id']}", headers=second_headers, json={
-            "notes": "editor two", "expected_updated_at": second_loaded["updated_at"],
-        })
-    assert first_write.status_code == 200
-    assert stale_write.status_code == 409
-    assert stale_write.json()["error"]["code"] == "PRODUCT_CONFLICT"
-
-
-def test_real_runtime_outage_and_pool_recovery(pg_runtime):
-    container = os.environ.get("HMS_QR_R010R2_CONTAINER", "").strip()
-    if not container:
-        pytest.skip("dedicated R010R2 container identity is not configured")
+    database = Database(tmp_path / "readiness-engine")
     try:
-        stopped = subprocess.run(
-            ["docker", "stop", "--time", "5", container],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        assert stopped.returncode == 0
-        assert pg_runtime.readiness()["state"] == "UNAVAILABLE"
+        _stamp(database, [(1, "0001_stage2_baseline")])
+        runtime = _prod_runtime(database)
+        client = TestClient(build_api(app_config=runtime.config, database_runtime=runtime))
+        response = client.get("/health/readiness/database")
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "DATABASE_SCHEMA_UNAVAILABLE"
     finally:
-        started = subprocess.run(
-            ["docker", "start", container],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        assert started.returncode == 0
+        database.close()
 
-    for _ in range(30):
-        if pg_runtime.readiness()["state"] == "READY":
-            break
-        time.sleep(1)
-    assert pg_runtime.readiness()["state"] == "READY"
-    with pg_runtime.engine.connect() as connection:
-        assert connection.exec_driver_sql("SELECT 1").scalar_one() == 1
+
+def test_engine_runtime_has_no_external_database_dependency():
+    """The engine is in-process: no driver, no pool, no network database."""
+
+    metadata = Path("pyproject.toml").read_text(encoding="utf-8")
+    for forbidden in ("sqlalchemy", "alembic", "psycopg"):
+        assert forbidden not in metadata
+    requirements = Path("requirements.txt").read_text(encoding="utf-8")
+    for forbidden in ("sqlalchemy", "alembic", "psycopg"):
+        assert forbidden not in requirements
+
+
+def test_shared_engine_is_one_database_for_every_repository(tmp_path):
+    from packages.sqlengine import Database
+    from packages.sqlengine.migrations import load_migration_modules, run_migrations
+    from config.paths import SOURCE_ROOT
+
+    database = Database(tmp_path / "shared-engine")
+    try:
+        run_migrations(
+            database,
+            load_migration_modules(SOURCE_ROOT / "migrations" / "engine"),
+            now=lambda: "2026-01-01T00:00:00+00:00",
+        )
+        runtime = _prod_runtime(database)
+        repositories = (
+            Stage2Repository(runtime),
+            TrackingRepository(runtime),
+            WorkflowRepository(runtime),
+            ManagedFileRepository(runtime),
+            StoreForwardRepository(runtime),
+            SqlAlchemyProductRepository(runtime),
+        )
+        assert all(repository.database is database for repository in repositories)
+        assert database.readiness()["state"] == "READY"
+    finally:
+        database.close()
+
+
+def test_session_scope_rolls_back_and_releases_on_exception(tmp_path):
+    from packages.sqlengine import Database
+    from packages.sqlengine.migrations import load_migration_modules, run_migrations
+    from config.paths import SOURCE_ROOT
+
+    database = Database(tmp_path / "rollback-engine")
+    try:
+        run_migrations(
+            database,
+            load_migration_modules(SOURCE_ROOT / "migrations" / "engine"),
+            now=lambda: "2026-01-01T00:00:00+00:00",
+        )
+        marker = f"R010R2-ROLLBACK-{uuid4().hex[:8]}"
+        now = datetime.now(timezone.utc).isoformat()
+        with pytest.raises(RuntimeError, match="injected"):
+            with session_scope(_prod_runtime(database)) as transaction:
+                transaction.execute(
+                    "INSERT INTO products (internal_id, product_code, company, part_name, "
+                    "quantity, unit, outsourced, status, created_at, updated_at, "
+                    "created_by, updated_by) VALUES (?, ?, 'HMS', 'Rollback', ?, 'pcs', 0, "
+                    "'NEW', ?, ?, 'test', 'test')",
+                    [str(uuid4()), marker, Decimal("1.0000"), now, now],
+                )
+                raise RuntimeError("injected transaction failure")
+        assert database.query(
+            "SELECT internal_id FROM products WHERE product_code = ?", [marker]
+        ) == []
+    finally:
+        database.close()
+
+
+def test_product_master_engine_api_and_type_round_trip(tmp_path, monkeypatch):
+    from packages.sqlengine import Database
+    from packages.sqlengine.migrations import load_migration_modules, run_migrations
+    from config.paths import SOURCE_ROOT
+
+    database = Database(tmp_path / "product-engine")
+    try:
+        run_migrations(
+            database,
+            load_migration_modules(SOURCE_ROOT / "migrations" / "engine"),
+            now=lambda: "2026-01-01T00:00:00+00:00",
+        )
+        code = f"R010R2-ENGINE-{uuid4().hex[:8].upper()}"
+        monkeypatch.setenv("HMS_QR_AUTH_SECRET", "r010r2-engine-acceptance-token-secret")
+        runtime = _prod_runtime(database)
+        auth = ServerAuthService(runtime)
+        username = f"r010r2-editor-{uuid4().hex[:8]}"
+        auth.create_account(username, "acceptance-password", UserRole.EDITOR.value)
+        token = auth.login(username, "acceptance-password")["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        with TestClient(build_api(app_config=runtime.config, database_runtime=runtime)) as client:
+            created = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "product_code": code,
+                    "company": "HMS",
+                    "part_name": "Engine Plate",
+                    "quantity": "12.3400",
+                    "unit": "pcs",
+                    "outsourced": True,
+                },
+            )
+            assert created.status_code == 201
+            body = created.json()
+            assert client.get(f"/api/v1/products/{body['internal_id']}").status_code == 200
+            patched = client.patch(
+                f"/api/v1/products/{body['internal_id']}",
+                headers=headers,
+                json={"status": "IN_PROGRESS", "expected_updated_at": body["updated_at"]},
+            )
+            assert patched.status_code == 200
+            assert client.get(
+                "/api/v1/products", headers=headers, params={"search": code}
+            ).json()["total"] == 1
+            assert client.get("/health/readiness/database").status_code == 200
+
+        repository = SqlAlchemyProductRepository(runtime)
+        product = repository.get_by_code(code)
+        assert product.quantity == Decimal("12.3400")
+        assert product.outsourced is True
+        assert product.created_at.utcoffset().total_seconds() == 0
+        assert product.updated_at.utcoffset().total_seconds() == 0
+    finally:
+        database.close()
+
+
+def test_two_editor_sessions_receive_product_conflict_for_stale_engine_write(tmp_path, monkeypatch):
+    from packages.sqlengine import Database
+    from packages.sqlengine.migrations import load_migration_modules, run_migrations
+    from config.paths import SOURCE_ROOT
+
+    database = Database(tmp_path / "conflict-engine")
+    try:
+        run_migrations(
+            database,
+            load_migration_modules(SOURCE_ROOT / "migrations" / "engine"),
+            now=lambda: "2026-01-01T00:00:00+00:00",
+        )
+        monkeypatch.setenv("HMS_QR_AUTH_SECRET", "r010r2-engine-conflict-token-secret")
+        runtime = _prod_runtime(database)
+        auth = ServerAuthService(runtime)
+        tokens = []
+        for label in ("one", "two"):
+            username = f"r010r2-conflict-{label}-{uuid4().hex[:8]}"
+            auth.create_account(username, "acceptance-password", UserRole.EDITOR.value)
+            tokens.append(auth.login(username, "acceptance-password")["access_token"])
+        first_headers, second_headers = ({"Authorization": f"Bearer {token}"} for token in tokens)
+        with TestClient(build_api(app_config=runtime.config, database_runtime=runtime)) as client:
+            created = client.post("/api/v1/products", headers=first_headers, json={
+                "product_code": f"R010R2-CONFLICT-{uuid4().hex[:8].upper()}", "company": "HMS",
+                "part_name": "Concurrent Plate", "quantity": "1", "unit": "pcs", "outsourced": False,
+            })
+            assert created.status_code == 201
+            product = created.json()
+            first_loaded = client.get(
+                f"/api/v1/products/{product['internal_id']}", headers=first_headers
+            ).json()
+            second_loaded = client.get(
+                f"/api/v1/products/{product['internal_id']}", headers=second_headers
+            ).json()
+            first_write = client.patch(
+                f"/api/v1/products/{product['internal_id']}", headers=first_headers, json={
+                    "notes": "editor one", "expected_updated_at": first_loaded["updated_at"],
+                }
+            )
+            stale_write = client.patch(
+                f"/api/v1/products/{product['internal_id']}", headers=second_headers, json={
+                    "notes": "editor two", "expected_updated_at": second_loaded["updated_at"],
+                }
+            )
+        assert first_write.status_code == 200
+        assert stale_write.status_code == 409
+        assert stale_write.json()["error"]["code"] == "PRODUCT_CONFLICT"
+    finally:
+        database.close()

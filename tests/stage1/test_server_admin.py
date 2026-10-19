@@ -5,7 +5,7 @@ from apps.server.admin import admin_page, build_admin_api
 from config.environments import AppConfig, Environment
 from packages.application.server_auth import AuthenticationError, ServerAuthService
 from packages.persistence.database import create_database_runtime
-from packages.persistence.sqlalchemy_models import Base
+from packages.persistence.sqlalchemy_repository import Stage2Repository
 
 
 def test_server_admin_bootstraps_accounts_and_restricts_admin_routes(tmp_path, monkeypatch):
@@ -14,7 +14,7 @@ def test_server_admin_bootstraps_accounts_and_restricts_admin_routes(tmp_path, m
     monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
     config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'admin.sqlite').as_posix()}", "local")
     runtime = create_database_runtime(config)
-    Base.metadata.create_all(runtime.engine)
+    Stage2Repository(runtime).create_schema()
     client = TestClient(build_admin_api(config, runtime))
     denied = client.get("/api/v1/admin/accounts")
     login = client.post("/api/v1/auth/login", json={"username": "server-admin", "password": "secure-password-123"})
@@ -40,7 +40,7 @@ def test_server_admin_allows_empty_password_only_when_explicitly_enabled(tmp_pat
     monkeypatch.setenv("HMS_QR_ALLOW_EMPTY_PASSWORDS", "true")
     config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'empty-password.sqlite').as_posix()}", "local")
     runtime = create_database_runtime(config)
-    Base.metadata.create_all(runtime.engine)
+    Stage2Repository(runtime).create_schema()
     client = TestClient(build_admin_api(config, runtime))
     login = client.post("/api/v1/auth/login", json={"username": "server-admin", "password": ""})
     assert login.status_code == 200
@@ -53,7 +53,7 @@ def test_server_admin_accepts_three_character_passwords(tmp_path, monkeypatch):
     monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
     config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'short-password.sqlite').as_posix()}", "local")
     runtime = create_database_runtime(config)
-    Base.metadata.create_all(runtime.engine)
+    Stage2Repository(runtime).create_schema()
     client = TestClient(build_admin_api(config, runtime))
     assert client.post("/api/v1/auth/login", json={"username": "server-admin", "password": "abc"}).status_code == 200
     runtime.dispose()
@@ -78,7 +78,7 @@ def test_first_production_account_requires_bootstrap_credentials(tmp_path, monke
         Environment.DEV, f"sqlite:///{(tmp_path / 'bootstrap.sqlite').as_posix()}", "local"
     )
     local = create_database_runtime(config)
-    Base.metadata.create_all(local.engine)
+    Stage2Repository(local).create_schema()
     runtime = type(local)(
         AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas"),
         local.engine,
@@ -99,7 +99,7 @@ def test_existing_bearer_token_uses_current_account_state(tmp_path, monkeypatch)
     monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
     config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'sessions.sqlite').as_posix()}", "local")
     runtime = create_database_runtime(config)
-    Base.metadata.create_all(runtime.engine)
+    Stage2Repository(runtime).create_schema()
     auth = ServerAuthService(runtime)
     account = auth.create_account("lan-editor", "secure-password-123", "EDITOR")
     token = auth.login("lan-editor", "secure-password-123")["access_token"]
@@ -116,7 +116,7 @@ def test_last_active_administrator_cannot_be_disabled_or_demoted(tmp_path, monke
     monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
     config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'admins.sqlite').as_posix()}", "local")
     runtime = create_database_runtime(config)
-    Base.metadata.create_all(runtime.engine)
+    Stage2Repository(runtime).create_schema()
     auth = ServerAuthService(runtime)
     first = auth.create_account("admin-one", "secure-password-123", "ADMIN")
     with pytest.raises(ValueError, match="quản trị viên cuối cùng"):
@@ -132,7 +132,7 @@ def test_administrator_can_reset_account_password_without_exposing_it(tmp_path, 
     monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
     config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'password-reset.sqlite').as_posix()}", "local")
     runtime = create_database_runtime(config)
-    Base.metadata.create_all(runtime.engine)
+    Stage2Repository(runtime).create_schema()
     auth = ServerAuthService(runtime)
     account = auth.create_account("lan-editor", "old-password-123", "EDITOR")
 
@@ -149,7 +149,7 @@ def test_administrator_can_rename_account_without_changing_its_internal_identity
     monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
     config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'rename-account.sqlite').as_posix()}", "local")
     runtime = create_database_runtime(config)
-    Base.metadata.create_all(runtime.engine)
+    Stage2Repository(runtime).create_schema()
     auth = ServerAuthService(runtime)
     account = auth.create_account("lan-editor", "secure-password-123", "EDITOR")
 

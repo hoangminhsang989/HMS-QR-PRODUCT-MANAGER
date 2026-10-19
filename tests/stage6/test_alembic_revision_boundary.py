@@ -1,101 +1,123 @@
-from alembic.config import Config
-from alembic.script import ScriptDirectory
-import os
+"""Stage 6 migration boundary: the engine migrations must add the managed-file
+tables at the right version and not before it.
+
+The engine runner has no downgrade step, so the boundary is proven by applying
+a prefix of the migration list and asserting the stage 6 tables are absent,
+then applying the full list and asserting they appear with the exact contract
+the application relies on.
+"""
+
 from pathlib import Path
-import subprocess
-import sys
-from sqlalchemy import create_engine, inspect
+
+from config.paths import SOURCE_ROOT
+from packages.sqlengine import Database
+from packages.sqlengine.migrations import applied_versions, load_migration_modules, run_migrations
+
 
 STAGE6_TABLES = {"managed_files", "product_file_relations"}
 
+STAGE6_CONTRACT = {
+    "managed_files": {
+        "columns": (
+            ("internal_id", "TEXT", False, True),
+            ("original_filename", "TEXT", False, False),
+            ("stored_filename", "TEXT", False, False),
+            ("storage_key", "TEXT", False, False),
+            ("category", "TEXT", False, False),
+            ("media_type", "TEXT", False, False),
+            ("extension", "TEXT", False, False),
+            ("size_bytes", "INTEGER", False, False),
+            ("sha256", "TEXT", False, False),
+            ("status", "TEXT", False, False),
+            ("source", "TEXT", False, False),
+            ("version", "INTEGER", False, False),
+            ("created_at", "DATETIME", False, False),
+            ("created_by", "TEXT", False, False),
+            ("updated_at", "DATETIME", False, False),
+            ("replaced_file_id", "TEXT", True, False),
+            ("archived_at", "DATETIME", True, False),
+            ("archived_by", "TEXT", True, False),
+            ("failure_reason", "TEXT", True, False),
+        ),
+        "foreign_keys": (("replaced_file_id", "managed_files", "internal_id"),),
+        "unique_constraints": (("storage_key",),),
+    },
+    "product_file_relations": {
+        "columns": (
+            ("internal_id", "TEXT", False, True),
+            ("product_id", "TEXT", False, False),
+            ("managed_file_id", "TEXT", False, False),
+            ("kind", "TEXT", False, False),
+            ("attachment_category", "TEXT", True, False),
+            ("is_primary", "BOOLEAN", False, False),
+            ("sort_order", "INTEGER", False, False),
+            ("caption", "TEXT", True, False),
+            ("created_at", "DATETIME", False, False),
+            ("archived_at", "DATETIME", True, False),
+        ),
+        "foreign_keys": (
+            ("managed_file_id", "managed_files", "internal_id"),
+            ("product_id", "products", "internal_id"),
+        ),
+        "unique_constraints": (("managed_file_id",),),
+    },
+}
 
-def _config(database) -> Config:
-    config = Config("alembic.ini")
-    config.set_main_option("sqlalchemy.url", f"sqlite:///{database.as_posix()}")
-    return config
+STAGE6_VERSION = 4
 
 
-def _tables(database) -> set[str]:
-    return set(inspect(create_engine(f"sqlite:///{database.as_posix()}")).get_table_names())
+def _migrations():
+    return load_migration_modules(SOURCE_ROOT / "migrations" / "engine")
 
 
-def _alembic_subprocess(database, operation: str, revision: str) -> None:
-    code = (
-        "import sys; "
-        "from alembic.config import Config; "
-        "from alembic import command; "
-        "cfg=Config('alembic.ini'); "
-        "cfg.set_main_option('sqlalchemy.url', 'sqlite:///' + sys.argv[1]); "
-        f"command.{operation}(cfg, sys.argv[2])"
-    )
-    environment = os.environ.copy()
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    subprocess.run(
-        [sys.executable, "-B", "-c", code, database.as_posix(), revision],
-        cwd=Path.cwd(),
-        env=environment,
-        check=True,
-    )
+def _now() -> str:
+    return "2026-01-01T00:00:00+00:00"
 
 
-def _table_contract(inspector, table_name: str) -> dict[str, object]:
+def _table_contract(database: Database, table_name: str) -> dict[str, object]:
+    table = database.schema.table(table_name)
     return {
         "columns": tuple(
-            (
-                column["name"],
-                str(column["type"]),
-                column["nullable"],
-                column["primary_key"],
-                str(column["default"]),
-            )
-            for column in inspector.get_columns(table_name)
+            (column.name, column.type.name, column.nullable, column.primary_key)
+            for column in table.columns
         ),
-        "foreign_keys": tuple(sorted(
-            (
-                tuple(foreign_key["constrained_columns"]),
-                foreign_key["referred_table"],
-                tuple(foreign_key["referred_columns"]),
+        "foreign_keys": tuple(
+            sorted(
+                (foreign_key.column, foreign_key.target_table, foreign_key.target_column)
+                for foreign_key in table.foreign_keys
             )
-            for foreign_key in inspector.get_foreign_keys(table_name)
-        )),
-        "indexes": tuple(sorted(
-            (tuple(index["column_names"]), index["unique"])
-            for index in inspector.get_indexes(table_name)
-        )),
-        "unique_constraints": tuple(sorted(
-            tuple(constraint["column_names"])
-            for constraint in inspector.get_unique_constraints(table_name)
-        )),
+        ),
+        "unique_constraints": tuple(
+            sorted(tuple(constraint) for constraint in table.unique_constraints)
+        ),
     }
 
 
-def test_0004_revision_boundary_roundtrip_and_schema_equivalence(tmp_path):
-    migration_database = tmp_path / "migration-boundary.sqlite"
-    config = _config(migration_database)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0007_server_accounts"]
+def test_engine_migration_versions_are_ordered_and_unique():
+    migrations = _migrations()
+    versions = [version for version, _, _ in migrations]
+    assert versions == sorted(versions)
+    assert len(set(versions)) == len(versions)
+    assert versions[0] == 1
+    assert versions[-1] == 7
 
-    _alembic_subprocess(migration_database, "upgrade", "0003_qc_packing_delivery")
-    previous_revision_tables = _tables(migration_database)
-    assert STAGE6_TABLES.isdisjoint(previous_revision_tables)
 
-    _alembic_subprocess(migration_database, "upgrade", "head")
-    assert STAGE6_TABLES <= _tables(migration_database)
+def test_stage6_version_boundary_and_schema_contract(tmp_path: Path):
+    migrations = _migrations()
+    database = Database(tmp_path / "boundary-engine")
+    try:
+        prefix = [item for item in migrations if item[0] < STAGE6_VERSION]
+        run_migrations(database, prefix, now=_now)
+        assert applied_versions(database) == {version for version, _, _ in prefix}
+        assert STAGE6_TABLES.isdisjoint(set(database.schema.tables))
 
-    from packages.persistence.sqlalchemy_models import Base
-    from packages.persistence import storage_models  # noqa: F401
+        run_migrations(database, migrations, now=_now)
+        assert applied_versions(database) == {version for version, _, _ in migrations}
+        assert STAGE6_TABLES <= set(database.schema.tables)
+        for table_name in sorted(STAGE6_TABLES):
+            assert _table_contract(database, table_name) == STAGE6_CONTRACT[table_name]
 
-    orm_database = tmp_path / "orm-contract.sqlite"
-    orm_engine = create_engine(f"sqlite:///{orm_database.as_posix()}")
-    Base.metadata.create_all(orm_engine)
-    migration_inspector = inspect(create_engine(f"sqlite:///{migration_database.as_posix()}"))
-    orm_inspector = inspect(orm_engine)
-    for table_name in sorted(STAGE6_TABLES):
-        assert _table_contract(migration_inspector, table_name) == _table_contract(
-            orm_inspector, table_name
-        )
-
-    _alembic_subprocess(migration_database, "downgrade", "0003_qc_packing_delivery")
-    assert _tables(migration_database) == previous_revision_tables
-
-    _alembic_subprocess(migration_database, "upgrade", "head")
-    assert STAGE6_TABLES <= _tables(migration_database)
+        assert run_migrations(database, migrations, now=_now) == []
+        assert applied_versions(database) == {version for version, _, _ in migrations}
+    finally:
+        database.close()

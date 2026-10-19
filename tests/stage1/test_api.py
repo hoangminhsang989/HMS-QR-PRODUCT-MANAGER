@@ -8,7 +8,7 @@ from packages.application.server_auth import ServerAuthService
 from packages.application.product_service import ProductService
 from packages.persistence.database import create_database_runtime
 from packages.persistence.sqlite_product_repository import SQLiteProductRepository
-from packages.persistence.sqlalchemy_models import Base
+from packages.persistence.sqlalchemy_repository import Stage2Repository
 from packages.persistence.tracking_repository import TrackingRepository
 from packages.application.tracking_service import TrackingService
 
@@ -68,7 +68,7 @@ def test_runtime_product_api_requires_account_roles(tmp_path, monkeypatch):
     monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
     config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'roles.sqlite').as_posix()}", "local")
     runtime = create_database_runtime(config)
-    Base.metadata.create_all(runtime.engine)
+    Stage2Repository(runtime).create_schema()
     auth = ServerAuthService(runtime)
     auth.bootstrap_admin()
     auth.create_account("lan-viewer", "viewer-password-123", "VIEWER")
@@ -98,7 +98,7 @@ def test_runtime_tracking_api_requires_lan_account_roles(tmp_path, monkeypatch):
     monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
     config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'tracking-roles.sqlite').as_posix()}", "local")
     runtime = create_database_runtime(config)
-    Base.metadata.create_all(runtime.engine)
+    Stage2Repository(runtime).create_schema()
     auth = ServerAuthService(runtime)
     auth.bootstrap_admin()
     auth.create_account("lan-viewer", "abc", "VIEWER")

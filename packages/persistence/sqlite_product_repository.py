@@ -1,75 +1,113 @@
-"""Portable SQLite adapter for isolated DEV and automated tests."""
+"""Portable engine adapter for isolated DEV and automated tests.
+
+The repository used to open the ``.sqlite`` file directly with ``sqlite3`` and
+express its schema bootstrap as one ``executescript`` of ``CREATE TABLE IF NOT
+EXISTS`` / ``INSERT OR IGNORE`` / ``PRAGMA table_info`` statements. The engine
+supports none of those, so the bootstrap now asks the schema whether each table
+and column already exists before creating it, and the sequence row is seeded with
+a read-then-insert instead of ``INSERT OR IGNORE``.
+"""
 
 from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-import sqlite3
 from uuid import UUID
 
 from packages.domain.product import Product, ProductStatus
 from packages.domain.repository import DuplicateProductCode, ProductNotFound, ProductPage, ProductQuery, ProductRepository
+from packages.sqlengine import connect
+from packages.sqlengine.errors import IntegrityError
 
 
 _COLUMNS = """internal_id, product_code, company, part_name, quantity, unit, material,
 requester, surface_treatment, outsourced, size, notes, delivery_schedule, status,
 created_at, updated_at, created_by, updated_by, outsourced_company"""
 
+_TABLES = (
+    """
+    CREATE TABLE product_code_sequence (
+        singleton INTEGER PRIMARY KEY, value INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE products (
+        internal_id TEXT PRIMARY KEY,
+        product_code TEXT NOT NULL UNIQUE,
+        company TEXT NOT NULL,
+        part_name TEXT NOT NULL,
+        quantity TEXT NOT NULL,
+        unit TEXT NOT NULL,
+        material TEXT, requester TEXT, surface_treatment TEXT,
+        outsourced INTEGER NOT NULL,
+        size TEXT, notes TEXT, delivery_schedule TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        created_by TEXT NOT NULL, updated_by TEXT NOT NULL
+    )
+    """,
+)
+
+_INDEXES = ()
+
 
 class SQLiteProductRepository(ProductRepository):
+    """Product persistence on the in-process HMS SQL engine.
+
+    ``database_path`` is the configured SQLite address; the engine keeps its data
+    in the sibling ``<name>-engine`` directory, exactly as it does in production.
+    """
+
     def __init__(self, database_path: str | Path) -> None:
+        from packages.persistence.database import engine_path
+
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        self._database = connect(engine_path(f"sqlite:///{self.database_path.as_posix()}"))
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def _connect(self):
+        return self._database
 
     def _initialize(self) -> None:
-        with self._connect() as db:
-            db.executescript("""
-                CREATE TABLE IF NOT EXISTS product_code_sequence (
-                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1), value INTEGER NOT NULL
-                );
-                INSERT OR IGNORE INTO product_code_sequence(singleton, value) VALUES (1, 0);
-                CREATE TABLE IF NOT EXISTS products (
-                    internal_id TEXT PRIMARY KEY,
-                    product_code TEXT NOT NULL UNIQUE,
-                    company TEXT NOT NULL,
-                    part_name TEXT NOT NULL,
-                    quantity TEXT NOT NULL,
-                    unit TEXT NOT NULL,
-                    material TEXT, requester TEXT, surface_treatment TEXT,
-                    outsourced INTEGER NOT NULL CHECK(outsourced IN (0,1)),
-                    size TEXT, notes TEXT, delivery_schedule TEXT,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-                    created_by TEXT NOT NULL, updated_by TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS ix_products_status ON products(status);
-                CREATE INDEX IF NOT EXISTS ix_products_search ON products(product_code, part_name, company, material);
-                CREATE INDEX IF NOT EXISTS ix_products_delivery_product_code ON products(delivery_schedule, product_code);
-            """)
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(products)")}
-            if "outsourced_company" not in columns:
-                db.execute("ALTER TABLE products ADD COLUMN outsourced_company TEXT")
+        schema = self._database.schema
+        for statement in _TABLES:
+            table = statement.split("(", 1)[0].split()[-1].strip()
+            if not schema.has_table(table):
+                self._database.execute(statement)
+        products = schema.table("products")
+        if not products.has_column("outsourced_company"):
+            self._database.execute("ALTER TABLE products ADD COLUMN outsourced_company TEXT")
+        if not self._database.query("SELECT value FROM product_code_sequence WHERE singleton = 1"):
+            self._database.execute("INSERT INTO product_code_sequence (singleton, value) VALUES (1, 0)")
+        for statement in _INDEXES:
+            self._database.execute(statement)
 
     def next_sequence(self) -> int:
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            db.execute("UPDATE product_code_sequence SET value = value + 1 WHERE singleton = 1")
-            return int(db.execute("SELECT value FROM product_code_sequence WHERE singleton = 1").fetchone()[0])
+        # The engine's UPDATE takes literals only, so the counter is read,
+        # incremented and written back inside one transaction; the engine
+        # serialises writes on a single lock, so the pair stays atomic.
+        with self._database.transaction() as transaction:
+            rows = transaction.execute("SELECT value FROM product_code_sequence WHERE singleton = 1")
+            current = int(rows[0]["value"]) if rows else 0
+            nxt = current + 1
+            if rows:
+                transaction.execute(
+                    "UPDATE product_code_sequence SET value = ? WHERE singleton = 1", [nxt]
+                )
+            else:
+                transaction.execute(
+                    "INSERT INTO product_code_sequence (singleton, value) VALUES (1, ?)", [nxt]
+                )
+        return nxt
 
     def create(self, product: Product) -> Product:
         values = self._values(product)
         placeholders = ",".join("?" for _ in values)
         try:
-            with self._connect() as db:
-                db.execute(f"INSERT INTO products ({_COLUMNS}) VALUES ({placeholders})", values)
-        except sqlite3.IntegrityError as exc:
+            self._database.execute(f"INSERT INTO products ({_COLUMNS}) VALUES ({placeholders})", list(values))
+        except IntegrityError as exc:
             raise DuplicateProductCode(product.product_code) from exc
         return product
 
@@ -80,22 +118,23 @@ class SQLiteProductRepository(ProductRepository):
         return self._one("product_code = ?", (product_code,))
 
     def _one(self, where: str, values: tuple[object, ...]) -> Product:
-        with self._connect() as db:
-            row = db.execute(f"SELECT {_COLUMNS} FROM products WHERE {where}", values).fetchone()
-        if row is None:
+        rows = self._database.query(f"SELECT {_COLUMNS} FROM products WHERE {where}", list(values))
+        if not rows:
             raise ProductNotFound(str(values[0]))
-        return self._product(row)
+        return self._product(rows[0])
 
     def update(self, product: Product) -> Product:
         assignments = ",".join(f"{column.strip()} = ?" for column in _COLUMNS.split(",") if column.strip() != "internal_id")
         values = self._values(product)
         try:
-            with self._connect() as db:
-                cursor = db.execute(f"UPDATE products SET {assignments} WHERE internal_id = ?", values[1:] + (values[0],))
-                if cursor.rowcount != 1:
-                    raise ProductNotFound(str(product.internal_id))
-        except sqlite3.IntegrityError as exc:
+            cursor = self._database.execute(
+                f"UPDATE products SET {assignments} WHERE internal_id = ?",
+                list(values[1:]) + [values[0]],
+            )
+        except IntegrityError as exc:
             raise DuplicateProductCode(product.product_code) from exc
+        if not cursor.get("updated"):
+            raise ProductNotFound(str(product.internal_id))
         return product
 
     def list(self, query: ProductQuery) -> ProductPage:
@@ -122,12 +161,11 @@ class SQLiteProductRepository(ProductRepository):
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         direction = "DESC" if query.descending else "ASC"
         offset = (query.page - 1) * query.page_size
-        with self._connect() as db:
-            total = int(db.execute(f"SELECT COUNT(*) FROM products{where}", params).fetchone()[0])
-            rows = db.execute(
-                f"SELECT {_COLUMNS} FROM products{where} ORDER BY {query.sort_by} {direction}, internal_id ASC LIMIT ? OFFSET ?",
-                params + [query.page_size, offset],
-            ).fetchall()
+        total = int(self._database.scalar(f"SELECT COUNT(*) FROM products{where}", params) or 0)
+        rows = self._database.query(
+            f"SELECT {_COLUMNS} FROM products{where} ORDER BY {query.sort_by} {direction}, internal_id ASC LIMIT ? OFFSET ?",
+            params + [query.page_size, offset],
+        )
         return ProductPage(tuple(self._product(row) for row in rows), total, query.page, query.page_size)
 
     @staticmethod
@@ -140,7 +178,7 @@ class SQLiteProductRepository(ProductRepository):
                  product.created_by, product.updated_by, product.outsourced_company)
 
     @staticmethod
-    def _product(row: sqlite3.Row) -> Product:
+    def _product(row: dict) -> Product:
         return Product(UUID(row["internal_id"]), row["product_code"], row["company"], row["part_name"],
                        Decimal(row["quantity"]), row["unit"], row["material"], row["requester"],
                         row["surface_treatment"], bool(row["outsourced"]), row["size"], row["notes"],

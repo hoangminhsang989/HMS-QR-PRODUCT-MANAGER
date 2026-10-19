@@ -1,35 +1,15 @@
 import os
 from datetime import date
-from pathlib import Path
-import subprocess
-import sys
 from uuid import uuid4
 
 os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
 
 from fastapi.testclient import TestClient
 from PySide6.QtWidgets import QApplication
-from sqlalchemy import inspect
-from sqlalchemy import text
 
 from apps.desktop.tracking_window import TrackingWindow,WorkflowActionDialog
 from apps.server.app import build_tracking_api
 from packages.domain.workflow import WorkflowEventType
-
-
-def _run_clean_alembic(database: Path, revision: str) -> None:
-    code = (
-        "import sys; from alembic.config import Config; from alembic import command; "
-        "cfg=Config('alembic.ini'); "
-        "cfg.set_main_option('sqlalchemy.url', 'sqlite:///' + sys.argv[1]); "
-        "command.upgrade(cfg, sys.argv[2])"
-    )
-    environment = os.environ.copy()
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    subprocess.run(
-        [sys.executable, "-B", "-c", code, database.as_posix(), revision],
-        cwd=Path.cwd(), env=environment, check=True,
-    )
 
 
 def payload(env,event_type,quantity=None,notes=None,request_id=None):
@@ -81,17 +61,32 @@ def test_desktop_action_uses_application_service(workflow_env,monkeypatch):
 
 
 def test_stage4_fresh_and_upgrade_path_migrations(tmp_path):
-    for name,preupgrade in (("fresh.sqlite",False),("upgrade.sqlite",True)):
-        db=tmp_path/name
-        if preupgrade:
-            _run_clean_alembic(db,"0002_tracking_qr_reporting")
-            from sqlalchemy import create_engine
-            engine=create_engine(f"sqlite:///{db.as_posix()}")
-            with engine.begin() as connection:
-                connection.execute(text("INSERT INTO products (internal_id,product_code,company,part_name,quantity,unit,outsourced,status) VALUES ('00000000-0000-0000-0000-000000000399','KEEP-ME','HMS','Preserved',1,'pcs',0,'NEW')"))
-        _run_clean_alembic(db,"head")
-        from sqlalchemy import create_engine
-        engine=create_engine(f"sqlite:///{db.as_posix()}");tables=set(inspect(engine).get_table_names())
-        assert {"products","customers","purchase_orders","order_tracking_items","process_report_events","tracking_workflow_events"} <= tables
-        if preupgrade:
-            with engine.connect() as connection:assert connection.scalar(text("SELECT product_code FROM products WHERE product_code='KEEP-ME'"))=="KEEP-ME"
+    from config.paths import SOURCE_ROOT
+    from packages.sqlengine import Database
+    from packages.sqlengine.migrations import load_migration_modules, run_migrations
+
+    migrations = load_migration_modules(SOURCE_ROOT / "migrations" / "engine")
+    required = {
+        "products", "customers", "purchase_orders",
+        "order_tracking_items", "process_report_events", "tracking_workflow_events",
+    }
+    for name, preupgrade in (("fresh", False), ("upgrade", True)):
+        database = Database(tmp_path / f"{name}-engine")
+        try:
+            if preupgrade:
+                prefix = [item for item in migrations if item[0] <= 2]
+                run_migrations(database, prefix, now=lambda: "2026-01-01T00:00:00+00:00")
+                database.execute(
+                    "INSERT INTO products (internal_id, product_code, company, part_name, "
+                    "quantity, unit, outsourced, status) "
+                    "VALUES ('00000000-0000-0000-0000-000000000399','KEEP-ME','HMS','Preserved',1,'pcs',0,'NEW')"
+                )
+            run_migrations(database, migrations, now=lambda: "2026-01-01T00:00:00+00:00")
+            assert required <= set(database.schema.tables)
+            if preupgrade:
+                rows = database.query(
+                    "SELECT product_code FROM products WHERE product_code = 'KEEP-ME'"
+                )
+                assert rows[0]["product_code"] == "KEEP-ME"
+        finally:
+            database.close()

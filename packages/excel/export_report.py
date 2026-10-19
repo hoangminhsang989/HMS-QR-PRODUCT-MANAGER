@@ -4,7 +4,6 @@ from __future__ import annotations
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-import sqlite3
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -12,20 +11,31 @@ from openpyxl.utils import get_column_letter
 
 
 def generate_production_excel_report(db_path: str) -> BytesIO:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
+    """Build the production report from the engine database behind ``db_path``.
+
+    The report used to express its lookups as one joined statement using
+    ``GROUP BY``, ``coalesce``, ``||`` and ``case when``. The engine supports none
+    of those, and its join merges rows by column name, so every lookup is now a
+    flat SELECT resolved in Python.
+    """
+    from packages.persistence.database import engine_path
+    from packages.sqlengine import connect
+
+    database = connect(engine_path(f"sqlite:///{Path(db_path).as_posix()}"))
 
     wb = Workbook()
     ws_summary = wb.active
     ws_summary.title = "TỔNG QUAN TIẾN ĐỘ"
 
     # Fetch stats
-    total_prods = cur.execute("SELECT count(*) FROM products").fetchone()[0]
-    total_tracking = cur.execute("SELECT count(*) FROM order_tracking_items").fetchone()[0]
-    status_counts = dict(cur.execute("SELECT status, count(*) FROM order_tracking_items GROUP BY status").fetchall())
-    total_reports = cur.execute("SELECT count(*) FROM process_report_events").fetchone()[0]
-    total_workflows = cur.execute("SELECT count(*) FROM tracking_workflow_events").fetchone()[0]
+    total_prods = int(database.scalar("SELECT COUNT(*) FROM products") or 0)
+    total_tracking = int(database.scalar("SELECT COUNT(*) FROM order_tracking_items") or 0)
+    status_counts: dict[str, int] = {}
+    for row in database.query("SELECT status FROM order_tracking_items"):
+        key = str(row["status"])
+        status_counts[key] = status_counts.get(key, 0) + 1
+    total_reports = int(database.scalar("SELECT COUNT(*) FROM process_report_events") or 0)
+    total_workflows = int(database.scalar("SELECT COUNT(*) FROM tracking_workflow_events") or 0)
 
     # Styles
     title_font = Font(name="Segoe UI", size=16, bold=True, color="1B365D")
@@ -92,14 +102,46 @@ def generate_production_excel_report(db_path: str) -> BytesIO:
         cell.fill = sub_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    items_rows = cur.execute("""
-        SELECT t.tracking_code, p.product_code, p.part_name, p.company,
-               t.quantity, t.unit, p.material, p.size, p.surface_treatment,
-               t.delivery_date, t.status, t.qr_public_id
-        FROM order_tracking_items t
-        JOIN products p ON t.product_id = p.internal_id
-        ORDER BY t.rowid DESC
-    """).fetchall()
+    machining_types = {
+        row["internal_id"]: row["display_name"]
+        for row in database.query("SELECT internal_id, display_name FROM machining_types")
+    }
+    tracking_items = {
+        row["internal_id"]: row
+        for row in database.query("SELECT internal_id, tracking_code, product_id FROM order_tracking_items")
+    }
+    products = {
+        row["internal_id"]: row
+        for row in database.query(
+            "SELECT internal_id, part_name, product_code, company, material, size,"
+            " surface_treatment FROM products"
+        )
+    }
+
+    items_rows = []
+    for item in database.query(
+        "SELECT internal_id, tracking_code, quantity, unit, delivery_date, status,"
+        " qr_public_id, product_id FROM order_tracking_items"
+    ):
+        product = products.get(item["product_id"])
+        if product is None:
+            continue
+        items_rows.append({
+            "tracking_code": item["tracking_code"],
+            "product_code": product.get("product_code"),
+            "part_name": product["part_name"],
+            "company": product.get("company"),
+            "quantity": item["quantity"],
+            "unit": item["unit"],
+            "material": product.get("material"),
+            "size": product.get("size"),
+            "surface_treatment": product.get("surface_treatment"),
+            "delivery_date": item["delivery_date"],
+            "status": item["status"],
+            "qr_public_id": item["qr_public_id"],
+        })
+    # ``ORDER BY rowid`` is a no-op on the engine, so newest-first is restored here.
+    items_rows.reverse()
 
     for idx, r in enumerate(items_rows, start=1):
         raw_q = r["quantity"]
@@ -131,28 +173,46 @@ def generate_production_excel_report(db_path: str) -> BytesIO:
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    reports = cur.execute("""
-        SELECT r.server_timestamp, r.actor_display_name_snapshot as actor,
-               p.part_name, t.tracking_code,
-               coalesce(m.display_name, 'Gia công') || case when r.attempt_number is not null then ' (Lần ' || r.attempt_number || ')' else ' (Đã xong)' end as action,
-               'GIA CÔNG' as category, r.quantity, r.notes
-        FROM process_report_events r
-        LEFT JOIN machining_types m ON r.machining_type_id = m.internal_id
-        LEFT JOIN order_tracking_items t ON r.tracking_item_id = t.internal_id
-        LEFT JOIN products p ON t.product_id = p.internal_id
-    """).fetchall()
+    reports = []
+    for r in database.query(
+        "SELECT server_timestamp, actor_display_name_snapshot, machining_type_id,"
+        " attempt_number, tracking_item_id, quantity, notes FROM process_report_events"
+    ):
+        tracking = tracking_items.get(r["tracking_item_id"]) or {}
+        product = products.get(tracking.get("product_id")) or {}
+        machining = machining_types.get(r["machining_type_id"]) or "Gia công"
+        attempt = r["attempt_number"]
+        action = f"{machining} (Lần {attempt})" if attempt is not None else f"{machining} (Đã xong)"
+        reports.append({
+            "server_timestamp": r["server_timestamp"],
+            "actor": r["actor_display_name_snapshot"],
+            "part_name": product.get("part_name"),
+            "tracking_code": tracking.get("tracking_code"),
+            "action": action,
+            "category": "GIA CÔNG",
+            "quantity": r["quantity"],
+            "notes": r["notes"],
+        })
 
-    workflows = cur.execute("""
-        SELECT w.server_timestamp, w.actor_display_name_snapshot as actor,
-               p.part_name, t.tracking_code,
-               w.event_type as action, 'QUY TRÌNH QC/GIAO' as category,
-               w.quantity, w.notes
-        FROM tracking_workflow_events w
-        LEFT JOIN order_tracking_items t ON w.tracking_item_id = t.internal_id
-        LEFT JOIN products p ON t.product_id = p.internal_id
-    """).fetchall()
+    workflows = []
+    for w in database.query(
+        "SELECT server_timestamp, actor_display_name_snapshot, event_type,"
+        " tracking_item_id, quantity, notes FROM tracking_workflow_events"
+    ):
+        tracking = tracking_items.get(w["tracking_item_id"]) or {}
+        product = products.get(tracking.get("product_id")) or {}
+        workflows.append({
+            "server_timestamp": w["server_timestamp"],
+            "actor": w["actor_display_name_snapshot"],
+            "part_name": product.get("part_name"),
+            "tracking_code": tracking.get("tracking_code"),
+            "action": w["event_type"],
+            "category": "QUY TRÌNH QC/GIAO",
+            "quantity": w["quantity"],
+            "notes": w["notes"],
+        })
 
-    all_logs = sorted(list(reports) + list(workflows), key=lambda x: str(x["server_timestamp"]), reverse=True)
+    all_logs = sorted(reports + workflows, key=lambda x: str(x["server_timestamp"]), reverse=True)
 
     for idx, l in enumerate(all_logs, start=1):
         ts = str(l["server_timestamp"])[:19].replace("T", " ")
@@ -179,8 +239,6 @@ def generate_production_excel_report(db_path: str) -> BytesIO:
             max_len = max(len(str(cell.value or "")) for cell in col)
             col_letter = get_column_letter(col[0].column)
             ws.column_dimensions[col_letter].width = min(max(max_len + 3, 11), 45)
-
-    conn.close()
 
     output = BytesIO()
     wb.save(output)

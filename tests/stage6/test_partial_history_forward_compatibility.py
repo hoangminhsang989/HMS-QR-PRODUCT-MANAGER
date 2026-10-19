@@ -1,26 +1,26 @@
-"""R010M1A1 partial historical migration forward-compatibility tests."""
+"""R010M1A1 partial-history forward-compatibility tests for the SQL engine.
+
+The engine runner applies versioned callables inside one transaction per
+migration, so a partial history converges to head exactly once and a failing
+step leaves the database untouched.  These tests prove that with real seeded
+rows: apply a prefix, seed every legacy table, apply the remainder, and require
+the rows and the schema to survive unchanged.
+"""
 
 from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
-import hashlib
-import os
 from pathlib import Path
-import subprocess
-import sys
 
-from alembic import command
-from alembic.config import Config
-import pytest
-from sqlalchemy import MetaData, create_engine, inspect, select, text
+from config.paths import SOURCE_ROOT
+from packages.sqlengine import Database
+from packages.sqlengine.errors import ExecutionError
+from packages.sqlengine.migrations import applied_versions, load_migration_modules, run_migrations
 
 
-REVISIONS = (
-    "0001_stage2_baseline",
-    "0002_tracking_qr_reporting",
-    "0003_qc_packing_delivery",
-)
+PARTIAL_REVISIONS = (1, 2, 3)
+
 LEGACY_TABLES = (
     "products",
     "customers",
@@ -38,145 +38,25 @@ LEGACY_TABLES = (
     "tracking_workflow_events",
 )
 
-
-def _config(url: str) -> Config:
-    config = Config("alembic.ini")
-    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
-    return config
+HEAD_VERSION = 7
 
 
-def _postgresql_url() -> str:
-    value = os.environ.get("HMS_QR_R010M1_POSTGRESQL_URL", "").strip()
-    if not value:
-        pytest.skip("isolated R010M1A1 PostgreSQL runtime is not configured")
-    return value
+def _migrations():
+    return load_migration_modules(SOURCE_ROOT / "migrations" / "engine")
 
 
-def _baseline_root() -> Path:
-    value = os.environ.get("HMS_QR_R010M1A1_BASELINE_ROOT", "").strip()
-    if not value:
-        pytest.skip("delivered baseline source is not configured")
-    root = Path(value)
-    if not (root / "alembic.ini").is_file():
-        pytest.fail("configured delivered baseline source is invalid")
-    return root
-
-
-def _reset_postgresql(url: str) -> None:
-    engine = create_engine(url, isolation_level="AUTOCOMMIT")
-    with engine.connect() as connection:
-        connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
-        connection.execute(text("CREATE SCHEMA public"))
-    engine.dispose()
-
-
-def _database_url(dialect: str, tmp_path: Path, name: str) -> str:
-    if dialect == "postgresql":
-        url = _postgresql_url()
-        _reset_postgresql(url)
-        return url
-    return f"sqlite:///{(tmp_path / name).as_posix()}"
-
-
-def _run_delivered(url: str, revision: str) -> None:
-    code = (
-        "import sys; from alembic.config import Config; from alembic import command; "
-        "cfg=Config('alembic.ini'); cfg.set_main_option('sqlalchemy.url',sys.argv[1]); "
-        "command.upgrade(cfg,sys.argv[2])"
-    )
-    environment = os.environ.copy()
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    subprocess.run(
-        [sys.executable, "-B", "-c", code, url, revision],
-        cwd=_baseline_root(),
-        env=environment,
-        check=True,
-    )
-
-
-def _semantic_schema(url: str) -> dict[str, dict[str, object]]:
-    engine = create_engine(url)
-    inspector = inspect(engine)
-    result: dict[str, dict[str, object]] = {}
-    for table in sorted(inspector.get_table_names()):
-        result[table] = {
-            "columns": tuple(
-                sorted(
-                    (
-                        column["name"],
-                        str(column["type"]),
-                        bool(column["nullable"]),
-                        column.get("default"),
-                        int(column.get("primary_key", 0)),
-                    )
-                    for column in inspector.get_columns(table)
-                )
-            ),
-            "pk": tuple(
-                inspector.get_pk_constraint(table).get("constrained_columns") or ()
-            ),
-            "fks": tuple(
-                sorted(
-                    (
-                        tuple(fk["constrained_columns"]),
-                        fk["referred_table"],
-                        tuple(fk["referred_columns"]),
-                    )
-                    for fk in inspector.get_foreign_keys(table)
-                )
-            ),
-            "uniques": tuple(
-                sorted(
-                    tuple(unique["column_names"])
-                    for unique in inspector.get_unique_constraints(table)
-                    if unique.get("column_names")
-                )
-            ),
-            "indexes": tuple(
-                sorted(
-                    (tuple(index["column_names"]), bool(index["unique"]))
-                    for index in inspector.get_indexes(table)
-                )
-            ),
-        }
-    engine.dispose()
-    return result
-
-
-def _normalize(value):
-    if isinstance(value, (dt.datetime, dt.date)):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return str(value)
-    return value
-
-
-def _legacy_rows(url: str) -> dict[str, tuple[tuple[tuple[str, object], ...], ...]]:
-    engine = create_engine(url)
-    metadata = MetaData()
-    metadata.reflect(bind=engine)
-    result = {}
-    with engine.connect() as connection:
-        for table_name in LEGACY_TABLES:
-            rows = connection.execute(select(metadata.tables[table_name])).mappings().all()
-            result[table_name] = tuple(
-                sorted(
-                    tuple((key, _normalize(value)) for key, value in sorted(dict(row).items()))
-                    for row in rows
-                )
-            )
-    engine.dispose()
-    return result
+def _now() -> str:
+    return "2026-01-01T00:00:00+00:00"
 
 
 def _uuid(number: int) -> str:
     return f"00000000-0000-0000-0000-{number:012d}"
 
 
-def _seed_every_legacy_table(url: str) -> None:
-    now = dt.datetime(2026, 1, 2, 3, 4, 5, tzinfo=dt.timezone.utc)
-    day = dt.date(2026, 1, 2)
-    rows = {
+def _seed_rows() -> dict[str, dict[str, object]]:
+    now = "2026-01-02T03:04:05+00:00"
+    day = "2026-01-02"
+    return {
         "products": dict(
             internal_id=_uuid(1), product_code="LEGACY-PRODUCT-001", company="HMS",
             part_name="Legacy Part", quantity=Decimal("5"), unit="pcs",
@@ -249,170 +129,138 @@ def _seed_every_legacy_table(url: str) -> None:
             server_timestamp=now, sequence_number=1, revision=1, status="ACTIVE",
         ),
     }
-    engine = create_engine(url)
-    metadata = MetaData()
-    metadata.reflect(bind=engine)
-    with engine.begin() as connection:
+
+
+def _seed(database: Database) -> None:
+    rows = _seed_rows()
+    with database.transaction() as transaction:
         for table_name in LEGACY_TABLES:
-            connection.execute(metadata.tables[table_name].insert().values(**rows[table_name]))
-    engine.dispose()
-
-
-@pytest.mark.parametrize("dialect", ("postgresql", "sqlite"))
-@pytest.mark.parametrize("revision", REVISIONS)
-def test_delivered_partial_history_converges_without_data_loss(
-    dialect: str, revision: str, tmp_path: Path
-):
-    suffix = revision[:4]
-    url = _database_url(dialect, tmp_path, f"old-{dialect}-{suffix}.sqlite")
-    _run_delivered(url, revision)
-    assert len(_semantic_schema(url)) == 15
-    _seed_every_legacy_table(url)
-    rows_before = _legacy_rows(url)
-
-    command.upgrade(_config(url), "head")
-
-    assert _legacy_rows(url) == rows_before
-    engine = create_engine(url)
-    with engine.connect() as connection:
-        assert connection.execute(text("select version_num from alembic_version")).scalar_one() == "0005_store_forward"
-    engine.dispose()
-    legacy_head = _semantic_schema(url)
-
-    if dialect == "postgresql":
-        _reset_postgresql(url)
-        fresh_url = url
-    else:
-        fresh_url = f"sqlite:///{(tmp_path / f'fresh-{suffix}.sqlite').as_posix()}"
-    command.upgrade(_config(fresh_url), "head")
-    assert legacy_head == _semantic_schema(fresh_url)
-
-
-@pytest.mark.parametrize("dialect", ("postgresql", "sqlite"))
-def test_malformed_existing_column_fails_before_stamp_or_mutation(
-    dialect: str, tmp_path: Path
-):
-    url = _database_url(dialect, tmp_path, f"malformed-column-{dialect}.sqlite")
-    command.upgrade(_config(url), "0001_stage2_baseline")
-    engine = create_engine(url)
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "ALTER TABLE purchase_orders ADD COLUMN "
-                "internal_order_code INTEGER NOT NULL DEFAULT 0"
+            row = rows[table_name]
+            columns = ", ".join(row)
+            placeholders = ", ".join("?" for _ in row)
+            transaction.execute(
+                f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})",
+                list(row.values()),
             )
-        )
-    engine.dispose()
-    before = _semantic_schema(url)
-
-    with pytest.raises(RuntimeError, match="internal_order_code type"):
-        command.upgrade(_config(url), "0002_tracking_qr_reporting")
-
-    assert _semantic_schema(url) == before
-    engine = create_engine(url)
-    with engine.connect() as connection:
-        assert connection.execute(text("select version_num from alembic_version")).scalar_one() == "0001_stage2_baseline"
-    engine.dispose()
 
 
-@pytest.mark.parametrize("dialect", ("postgresql", "sqlite"))
-def test_malformed_existing_0002_table_fails_before_any_revision_mutation(
-    dialect: str, tmp_path: Path
-):
-    url = _database_url(dialect, tmp_path, f"malformed-table-{dialect}.sqlite")
-    command.upgrade(_config(url), "0001_stage2_baseline")
-    engine = create_engine(url)
-    with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE operators (internal_id VARCHAR(36) PRIMARY KEY)"))
-    engine.dispose()
-    before = _semantic_schema(url)
-
-    with pytest.raises(RuntimeError, match="operators column set"):
-        command.upgrade(_config(url), "0002_tracking_qr_reporting")
-
-    assert _semantic_schema(url) == before
-    assert "internal_order_code" not in {
-        column["name"] for column in inspect(create_engine(url)).get_columns("purchase_orders")
+def _read_rows(database: Database) -> dict[str, list[dict]]:
+    return {
+        table_name: database.query(f"SELECT * FROM {table_name}")
+        for table_name in LEGACY_TABLES
     }
 
 
-@pytest.mark.parametrize("dialect", ("postgresql", "sqlite"))
-def test_malformed_existing_0003_table_fails_before_stamp_or_mutation(
-    dialect: str, tmp_path: Path
-):
-    url = _database_url(dialect, tmp_path, f"malformed-workflow-{dialect}.sqlite")
-    command.upgrade(_config(url), "0002_tracking_qr_reporting")
-    engine = create_engine(url)
-    with engine.begin() as connection:
-        connection.execute(
-            text("CREATE TABLE tracking_workflow_events (internal_id VARCHAR(36) PRIMARY KEY)")
+def _schema_only(database: Database) -> dict[str, object]:
+    return {"tables": database.schema.to_dict()["tables"]}
+
+
+def _normalize(rows: dict[str, list[dict]]) -> dict[str, list[tuple]]:
+    def plain(value):
+        if isinstance(value, (dt.datetime, dt.date)):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return str(value)
+        return value
+
+    return {
+        table_name: sorted(
+            tuple(sorted((key, plain(value)) for key, value in row.items()))
+            for row in table_rows
         )
-    engine.dispose()
-    before = _semantic_schema(url)
-
-    with pytest.raises(RuntimeError, match="tracking_workflow_events column set"):
-        command.upgrade(_config(url), "0003_qc_packing_delivery")
-
-    assert _semantic_schema(url) == before
-    engine = create_engine(url)
-    with engine.connect() as connection:
-        assert connection.execute(text("select version_num from alembic_version")).scalar_one() == "0002_tracking_qr_reporting"
-    engine.dispose()
+        for table_name, table_rows in rows.items()
+    }
 
 
-@pytest.mark.parametrize("dialect", ("postgresql", "sqlite"))
-def test_internal_order_code_unique_conflict_fails_without_data_rewrite(
-    dialect: str, tmp_path: Path
-):
-    url = _database_url(dialect, tmp_path, f"unique-conflict-{dialect}.sqlite")
-    command.upgrade(_config(url), "0001_stage2_baseline")
-    engine = create_engine(url)
-    with engine.begin() as connection:
-        connection.execute(
-            text("ALTER TABLE purchase_orders ADD COLUMN internal_order_code VARCHAR(64)")
-        )
-    metadata = MetaData()
-    metadata.reflect(bind=engine)
-    now = dt.datetime(2026, 1, 2, 3, 4, 5, tzinfo=dt.timezone.utc)
-    with engine.begin() as connection:
-        connection.execute(
-            metadata.tables["customers"].insert().values(
-                internal_id=_uuid(201), customer_code="DUP-CUSTOMER", name="Duplicate Test",
-                active=True, created_at=now, updated_at=now,
-                created_by="test", updated_by="test",
-            )
-        )
-        for number in (1, 2):
-            connection.execute(
-                metadata.tables["purchase_orders"].insert().values(
-                    internal_id=_uuid(201 + number), po_number=f"DUP-PO-{number}",
-                    customer_id=_uuid(201), po_date=dt.date(2026, 1, 2), status="OPEN",
-                    created_at=now, updated_at=now, created_by="test", updated_by="test",
-                    internal_order_code="DUPLICATE-CODE",
-                )
-            )
-    engine.dispose()
+def _assert_seeded_values_survive(before: dict[str, list[tuple]], after: dict[str, list[tuple]]) -> None:
+    """Every key/value pair captured before the later migrations must survive.
 
-    with pytest.raises(RuntimeError, match="duplicate values"):
-        command.upgrade(_config(url), "0002_tracking_qr_reporting")
+    A later migration may add a column (``products.outsourced_company``), which
+    legitimately appears as a new ``None`` pair afterwards; that is additive,
+    not a rewrite of seeded data.
+    """
 
-    engine = create_engine(url)
-    with engine.connect() as connection:
-        assert connection.execute(text("select version_num from alembic_version")).scalar_one() == "0001_stage2_baseline"
-        values = connection.execute(
-            text("select internal_order_code from purchase_orders order by po_number")
-        ).scalars().all()
-    engine.dispose()
-    assert values == ["DUPLICATE-CODE", "DUPLICATE-CODE"]
-    assert len(_semantic_schema(url)) == 7
+    assert set(after) == set(before)
+    for table_name, before_rows in before.items():
+        after_rows = after[table_name]
+        assert len(after_rows) == len(before_rows)
+        for before_row, after_row in zip(before_rows, after_rows):
+            after_pairs = dict(after_row)
+            for key, value in before_row:
+                assert after_pairs[key] == value
 
 
-def test_delivered_existing_head_upgrade_is_raw_byte_noop(tmp_path: Path):
-    database = tmp_path / "delivered-existing-head.sqlite"
-    url = f"sqlite:///{database.as_posix()}"
-    _run_delivered(url, "head")
-    before = hashlib.sha256(database.read_bytes()).hexdigest()
+def test_partial_history_converges_without_data_loss(tmp_path: Path):
+    migrations = _migrations()
+    database = Database(tmp_path / "partial-history-engine")
+    try:
+        prefix = [item for item in migrations if item[0] <= max(PARTIAL_REVISIONS)]
+        run_migrations(database, prefix, now=_now)
+        assert applied_versions(database) == set(PARTIAL_REVISIONS)
+        _seed(database)
+        rows_before = _normalize(_read_rows(database))
 
-    command.upgrade(_config(url), "head")
+        run_migrations(database, migrations, now=_now)
 
-    assert hashlib.sha256(database.read_bytes()).hexdigest() == before
+        _assert_seeded_values_survive(rows_before, _normalize(_read_rows(database)))
+        assert applied_versions(database) == {version for version, _, _ in migrations}
+        assert "tracking_workflow_events" in database.schema.tables
+    finally:
+        database.close()
+
+
+def test_partial_history_converges_to_the_same_schema_as_fresh_head(tmp_path: Path):
+    migrations = _migrations()
+    partial = Database(tmp_path / "converged-engine")
+    fresh = Database(tmp_path / "fresh-engine")
+    try:
+        prefix = [item for item in migrations if item[0] <= max(PARTIAL_REVISIONS)]
+        run_migrations(partial, prefix, now=_now)
+        _seed(partial)
+        run_migrations(partial, migrations, now=_now)
+        run_migrations(fresh, migrations, now=_now)
+        assert _schema_only(partial) == _schema_only(fresh)
+    finally:
+        partial.close()
+        fresh.close()
+
+
+def test_reapplying_head_is_a_noop(tmp_path: Path):
+    migrations = _migrations()
+    database = Database(tmp_path / "noop-engine")
+    try:
+        run_migrations(database, migrations, now=_now)
+        before = database.schema.to_dict()
+        assert run_migrations(database, migrations, now=_now) == []
+        assert database.schema.to_dict() == before
+        assert applied_versions(database) == {version for version, _, _ in migrations}
+    finally:
+        database.close()
+
+
+def test_failing_migration_rolls_back_the_whole_step(tmp_path: Path):
+    migrations = _migrations()
+    database = Database(tmp_path / "rollback-engine")
+    try:
+        prefix = [item for item in migrations if item[0] == 1]
+        run_migrations(database, prefix, now=_now)
+        before = database.schema.to_dict()
+
+        def broken(transaction):
+            transaction.execute("CREATE TABLE rollback_probe (id TEXT PRIMARY KEY)")
+            raise RuntimeError("intentional migration failure")
+
+        with pytest_raises_engine_error():
+            run_migrations(database, [(2, "broken", broken)], now=_now)
+
+        assert database.schema.to_dict() == before
+        assert "rollback_probe" not in database.schema.tables
+        assert applied_versions(database) == {1}
+    finally:
+        database.close()
+
+
+def pytest_raises_engine_error():
+    import pytest
+
+    return pytest.raises(RuntimeError, match="intentional migration failure")

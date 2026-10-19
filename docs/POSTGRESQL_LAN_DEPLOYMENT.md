@@ -1,7 +1,15 @@
 # PostgreSQL LAN Deployment
 
+> **Superseded on the database layer by ADR-015 (2026-10-18).** The server no
+> longer runs PostgreSQL and no longer accepts a `postgresql+psycopg` URL: it
+> embeds its own SQL engine (`packages/sqlengine`) and creates a local SQLite
+> database file at `D:\HMS-QR-PROD\hms_qr.db`. The LAN topology, NAS storage
+> rules, firewall guidance, and environment-variable handling below remain the
+> deployment reference; ignore every PostgreSQL-specific step and set
+> `HMS_QR_DATABASE_URL` to the SQLite file path the Server Tool writes.
+
 This runbook deploys one central HMS QR server for trusted LAN desktops.
-It does not expose PostgreSQL to desktops or the public Internet.
+It does not expose the database to desktops or the public Internet.
 
 ## Scope And Prerequisites
 

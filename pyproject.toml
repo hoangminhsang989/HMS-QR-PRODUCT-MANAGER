@@ -7,9 +7,7 @@ name = "hms-qr-product-manager"
 version = "0.1.0"
 description = "HMS QR Product Manager foundation"
 requires-python = ">=3.11"
-dependencies = [
-    "psycopg[binary]>=3.2,<4",
-]
+dependencies = []
 
 [tool.pytest.ini_options]
 addopts = "-ra"

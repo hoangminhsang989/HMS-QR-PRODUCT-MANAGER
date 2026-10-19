@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from apps.desktop.file_panels import AdminStoragePanel, ProductFilesPanel
-from apps.mobile.web import MOBILE_HTML
+from apps.mobile.web import MOBILE_PAGE_PATH
 from apps.server.files import build_files_api
 from config.environments import Environment, load_config
 
@@ -134,8 +134,9 @@ def test_desktop_file_operation_reports_safe_success_and_hides_unexpected_error(
 
 
 def test_mobile_file_access_is_server_mediated_touch_safe_and_has_no_raw_path():
-    assert "/files/api/v1/products/" in MOBILE_HTML
-    assert "/files/api/v1/files/" in MOBILE_HTML
-    assert "min-height:44px" in MOBILE_HTML
-    assert "archive_target_root" not in MOBILE_HTML
-    assert "\\\\192.168.1.58" not in MOBILE_HTML
+    page = MOBILE_PAGE_PATH.read_text(encoding="utf-8")
+    assert "filesApi + '/api/v1/products/'" in page
+    assert "${filesApi}/api/v1/files/" in page
+    assert "min-height:44px" in page
+    assert "archive_target_root" not in page
+    assert "\\\\192.168.1.58" not in page

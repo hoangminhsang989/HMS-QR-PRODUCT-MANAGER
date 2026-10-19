@@ -12,10 +12,7 @@ import os
 import secrets
 from uuid import uuid4
 
-from sqlalchemy import func, select
-
-from packages.persistence.database import DatabaseRuntime, transaction_lock
-from packages.persistence.sqlalchemy_models import ServerSettingORM, UserAccountORM
+from packages.persistence.database import DatabaseRuntime
 
 
 class UserRole(StrEnum):
@@ -72,16 +69,23 @@ class ServerAuthService:
     def bootstrap_admin(self) -> None:
         username = os.environ.get("HMS_QR_BOOTSTRAP_ADMIN_USERNAME", "").strip()
         password = os.environ.get("HMS_QR_BOOTSTRAP_ADMIN_PASSWORD", "")
-        with self.runtime.session_factory.begin() as session:
-            if session.scalar(select(UserAccountORM.internal_id).limit(1)) is not None:
+        with self.runtime.database.transaction() as transaction:
+            existing = transaction.execute(
+                "SELECT internal_id FROM user_accounts LIMIT 1"
+            )
+            if existing:
                 return
             if not username:
                 raise AuthenticationError("Server has no administrator account. Configure bootstrap admin credentials.")
             self._validate_username(username)
-            session.add(UserAccountORM(
-                internal_id=str(uuid4()), username=username.casefold(), password_hash=_password_hash(password),
-                role=UserRole.ADMIN.value, active=True, created_at=_now(), updated_at=_now(),
-            ))
+            transaction.execute(
+                "INSERT INTO user_accounts (internal_id, username, password_hash, role,"
+                " active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    str(uuid4()), username.casefold(), _password_hash(password),
+                    UserRole.ADMIN.value, True, _now(), _now(),
+                ],
+            )
 
     @staticmethod
     def _validate_username(username: str) -> None:
@@ -93,14 +97,28 @@ class ServerAuthService:
             raise AuthenticationError("Server authentication is not configured.")
         if not password and os.environ.get("HMS_QR_ALLOW_EMPTY_PASSWORDS", "").strip().lower() != "true":
             raise AuthenticationError("Đăng nhập không mật khẩu chưa được bật trên server nội bộ.")
-        with self.runtime.session_factory() as session:
-            account = session.scalar(select(UserAccountORM).where(UserAccountORM.username == username.strip().casefold()))
-            if account is None or not account.active or not _verify_password(password, account.password_hash):
-                raise AuthenticationError("Tên đăng nhập hoặc mật khẩu không đúng.")
-            return {"access_token": self._issue(account), "token_type": "bearer", "role": account.role, "username": account.username}
+        rows = self.runtime.database.query(
+            "SELECT internal_id, username, password_hash, role, active FROM user_accounts"
+            " WHERE username = ?",
+            [username.strip().casefold()],
+        )
+        account = rows[0] if rows else None
+        if account is None or not account["active"] or not _verify_password(password, account["password_hash"]):
+            raise AuthenticationError("Tên đăng nhập hoặc mật khẩu không đúng.")
+        return {
+            "access_token": self._issue(account),
+            "token_type": "bearer",
+            "role": account["role"],
+            "username": account["username"],
+        }
 
-    def _issue(self, account: UserAccountORM) -> str:
-        payload = {"sub": account.internal_id, "usr": account.username, "role": account.role, "exp": int((_now() + timedelta(hours=8)).timestamp())}
+    def _issue(self, account) -> str:
+        payload = {
+            "sub": account["internal_id"],
+            "usr": account["username"],
+            "role": account["role"],
+            "exp": int((_now() + timedelta(hours=8)).timestamp()),
+        }
         encoded = urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
         signature = hmac.new(self._token_secret.encode(), encoded.encode(), hashlib.sha256).digest()
         return f"{encoded}.{urlsafe_b64encode(signature).decode().rstrip('=')}"
@@ -116,33 +134,64 @@ class ServerAuthService:
             payload = json.loads(urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
             if int(payload["exp"]) <= int(_now().timestamp()):
                 raise AuthenticationError("Phiên đăng nhập đã hết hạn.")
-            with self.runtime.session_factory() as session:
-                account = session.get(UserAccountORM, payload["sub"])
-                if account is None or not account.active:
-                    raise AuthenticationError("Tài khoản không còn hoạt động.")
-                return {
-                    "internal_id": account.internal_id,
-                    "username": account.username,
-                    "role": account.role,
-                }
+            rows = self.runtime.database.query(
+                "SELECT internal_id, username, role, active FROM user_accounts"
+                " WHERE internal_id = ?",
+                [payload["sub"]],
+            )
+            if not rows or not rows[0]["active"]:
+                raise AuthenticationError("Tài khoản không còn hoạt động.")
+            account = rows[0]
+            return {
+                "internal_id": account["internal_id"],
+                "username": account["username"],
+                "role": account["role"],
+            }
         except AuthenticationError:
             raise
         except (KeyError, ValueError, UnicodeError, json.JSONDecodeError):
             raise AuthenticationError("Phiên đăng nhập không hợp lệ.") from None
 
     def list_accounts(self) -> list[dict[str, object]]:
-        with self.runtime.session_factory() as session:
-            return [{"internal_id": item.internal_id, "username": item.username, "role": item.role, "active": item.active} for item in session.scalars(select(UserAccountORM).order_by(UserAccountORM.username))]
+        rows = self.runtime.database.query(
+            "SELECT internal_id, username, role, active FROM user_accounts"
+            " ORDER BY username ASC, internal_id ASC"
+        )
+        return [
+            {
+                "internal_id": row["internal_id"],
+                "username": row["username"],
+                "role": row["role"],
+                "active": row["active"],
+            }
+            for row in rows
+        ]
 
     def create_account(self, username: str, password: str, role: str) -> dict[str, object]:
         self._validate_username(username)
         parsed_role = UserRole(role)
-        with self.runtime.session_factory.begin() as session:
-            if session.scalar(select(UserAccountORM).where(UserAccountORM.username == username.casefold())):
+        with self.runtime.database.transaction() as transaction:
+            duplicate = transaction.execute(
+                "SELECT internal_id FROM user_accounts WHERE username = ?",
+                [username.casefold()],
+            )
+            if duplicate:
                 raise ValueError("Tên đăng nhập đã tồn tại.")
-            account = UserAccountORM(internal_id=str(uuid4()), username=username.casefold(), password_hash=_password_hash(password), role=parsed_role.value, active=True, created_at=_now(), updated_at=_now())
-            session.add(account)
-            return {"internal_id": account.internal_id, "username": account.username, "role": account.role, "active": account.active}
+            account = {
+                "internal_id": str(uuid4()),
+                "username": username.casefold(),
+                "role": parsed_role.value,
+                "active": True,
+            }
+            transaction.execute(
+                "INSERT INTO user_accounts (internal_id, username, password_hash, role,"
+                " active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    account["internal_id"], account["username"], _password_hash(password),
+                    account["role"], True, _now(), _now(),
+                ],
+            )
+        return account
 
     def update_account(
         self,
@@ -153,63 +202,82 @@ class ServerAuthService:
         role: str | None = None,
         password: str | None = None,
     ) -> dict[str, object]:
-        with self.runtime.session_factory.begin() as session:
-            transaction_lock(session, "server-accounts", "active-admin")
-            account = session.get(UserAccountORM, identifier)
-            if account is None:
+        with self.runtime.database.transaction() as transaction:
+            rows = transaction.execute(
+                "SELECT internal_id, username, role, active, password_hash"
+                " FROM user_accounts WHERE internal_id = ?",
+                [identifier],
+            )
+            if not rows:
                 raise ValueError("Không tìm thấy tài khoản.")
-            next_username = account.username if username is None else username.casefold().strip()
+            account = rows[0]
+            next_username = account["username"] if username is None else username.casefold().strip()
             if username is not None:
                 self._validate_username(next_username)
-                duplicate = session.scalar(
-                    select(UserAccountORM).where(
-                        UserAccountORM.username == next_username,
-                        UserAccountORM.internal_id != identifier,
-                    )
+                duplicate = transaction.execute(
+                    "SELECT internal_id FROM user_accounts WHERE username = ?"
+                    " AND internal_id != ?",
+                    [next_username, identifier],
                 )
                 if duplicate:
                     raise ValueError("Tên đăng nhập đã tồn tại.")
-            next_active = account.active if active is None else active
-            next_role = account.role if role is None else UserRole(role).value
+            next_active = account["active"] if active is None else active
+            next_role = account["role"] if role is None else UserRole(role).value
             removes_admin_access = (
-                account.active
-                and account.role == UserRole.ADMIN.value
+                account["active"]
+                and account["role"] == UserRole.ADMIN.value
                 and (not next_active or next_role != UserRole.ADMIN.value)
             )
             if removes_admin_access:
-                active_admins = session.scalar(
-                    select(func.count())
-                    .select_from(UserAccountORM)
-                    .where(
-                        UserAccountORM.active.is_(True),
-                        UserAccountORM.role == UserRole.ADMIN.value,
-                    )
-                )
+                active_admins = len(transaction.execute(
+                    "SELECT internal_id FROM user_accounts WHERE active = ? AND role = ?",
+                    [True, UserRole.ADMIN.value],
+                ))
                 if active_admins <= 1:
                     raise ValueError("Không thể vô hiệu hóa hoặc hạ quyền quản trị viên cuối cùng.")
-            account.active = next_active
-            account.role = next_role
-            account.username = next_username
-            if password is not None:
-                account.password_hash = _password_hash(password)
-            account.updated_at = _now()
-            return {"internal_id": account.internal_id, "username": account.username, "role": account.role, "active": account.active}
+            transaction.execute(
+                "UPDATE user_accounts SET username = ?, role = ?, active = ?,"
+                " password_hash = ?, updated_at = ? WHERE internal_id = ?",
+                [
+                    next_username, next_role, next_active,
+                    _password_hash(password) if password is not None else account["password_hash"],
+                    _now(), identifier,
+                ],
+            )
+        return {
+            "internal_id": identifier,
+            "username": next_username,
+            "role": next_role,
+            "active": next_active,
+        }
 
     def settings(self) -> dict[str, str]:
-        with self.runtime.session_factory() as session:
-            return {row.setting_key: row.setting_value for row in session.scalars(select(ServerSettingORM))}
+        rows = self.runtime.database.query(
+            "SELECT setting_key, setting_value FROM server_settings"
+        )
+        return {row["setting_key"]: row["setting_value"] for row in rows}
 
     def update_settings(self, values: dict[str, str]) -> None:
         allowed = {"site_title", "site_message"}
         if set(values) - allowed:
             raise ValueError("Cài đặt không hợp lệ.")
-        with self.runtime.session_factory.begin() as session:
+        with self.runtime.database.transaction() as transaction:
             for key, value in values.items():
-                current = session.get(ServerSettingORM, key)
-                if current is None:
-                    session.add(ServerSettingORM(setting_key=key, setting_value=str(value)[:500], updated_at=_now()))
+                current = transaction.execute(
+                    "SELECT setting_key FROM server_settings WHERE setting_key = ?", [key]
+                )
+                if not current:
+                    transaction.execute(
+                        "INSERT INTO server_settings (setting_key, setting_value, updated_at)"
+                        " VALUES (?, ?, ?)",
+                        [key, str(value)[:500], _now()],
+                    )
                 else:
-                    current.setting_value, current.updated_at = str(value)[:500], _now()
+                    transaction.execute(
+                        "UPDATE server_settings SET setting_value = ?, updated_at = ?"
+                        " WHERE setting_key = ?",
+                        [str(value)[:500], _now(), key],
+                    )
 
 
 __all__ = ["AuthenticationError", "ServerAuthService", "UserRole"]

@@ -264,113 +264,119 @@ def import_factory_items_to_db(
     po_prefix: str = "PO-2609",
     actor: str = "admin",
 ) -> dict[str, Any]:
-    """Import parsed factory items into products, orders, tracking items, and issue QR codes."""
-    import sqlite3
+    """Import parsed factory items into products, orders, tracking items, and issue QR codes.
 
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+    ``db_path`` is the configured SQLite address; the engine keeps its data in the
+    sibling ``<name>-engine`` directory, which is what this writes to. The whole
+    import runs in one engine transaction, so a failure part-way leaves no
+    half-imported sheet behind.
+    """
+    from packages.persistence.database import engine_path
+    from packages.sqlengine import connect
+
+    database = connect(engine_path(f"sqlite:///{Path(db_path).as_posix()}"))
 
     now_iso = datetime.now(timezone.utc).isoformat()
     today_iso = date.today().isoformat()
     qr_payload_svc = QrPayloadService()
 
-    # Load existing customer map by code and name
-    cust_rows = cur.execute("SELECT internal_id, customer_code, name FROM customers").fetchall()
-    cust_map = {r[2].strip().upper(): r[0] for r in cust_rows}
-    cust_code_map = {r[1].strip().upper(): r[0] for r in cust_rows}
-
-    # Load existing product codes
-    prod_codes = {r[0].strip().upper() for r in cur.execute("SELECT product_code FROM products").fetchall()}
-
-    # Next tracking item sequence
-    cur.execute("SELECT count(*) FROM order_tracking_items")
-    seq_counter = cur.fetchone()[0] + 1
-
     imported_products = 0
     imported_tracking = 0
 
-    for idx, item in enumerate(items, start=1):
-        comp_name = item["company"].strip().upper() or "SHL"
-        # 1. Resolve or create Customer
-        cust_id = cust_map.get(comp_name) or cust_code_map.get(comp_name)
-        if not cust_id:
-            cust_id = str(uuid.uuid4())
-            cust_code = f"CUS-{comp_name[:10]}"
-            cur.execute("""
-                INSERT INTO customers (
-                    internal_id, customer_code, name, short_name, address, tax_code,
-                    contact_name, phone, email, notes, active, created_at, updated_at, created_by, updated_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
-            """, (cust_id, cust_code, comp_name, comp_name, "", "", "", "", "", "Khách hàng từ Excel", now_iso, now_iso, actor, actor))
-            cust_map[comp_name] = cust_id
+    with database.transaction() as transaction:
+        # Load existing customer map by code and name
+        cust_rows = transaction.execute("SELECT internal_id, customer_code, name FROM customers")
+        cust_map = {str(r["name"]).strip().upper(): r["internal_id"] for r in cust_rows}
+        cust_code_map = {str(r["customer_code"]).strip().upper(): r["internal_id"] for r in cust_rows}
 
-        # 2. Product code generation
-        # Use part name if clean alphanumeric, else SP-2609-XXXX
-        raw_code = f"SP-{item.get('sheet_name', 'DAY')[:5]}-{idx:03d}".replace(" ", "").upper()
-        if raw_code in prod_codes:
-            raw_code = f"SP-{uuid.uuid4().hex[:8].upper()}"
-        prod_codes.add(raw_code)
+        # Load existing product codes
+        prod_codes = {
+            str(r["product_code"]).strip().upper()
+            for r in transaction.execute("SELECT product_code FROM products")
+        }
 
-        prod_id = str(uuid.uuid4())
-        qty = Decimal(str(item["quantity"]))
-        cur.execute("""
-            INSERT INTO products (
-                internal_id, product_code, company, part_name, quantity, unit,
-                material, requester, surface_treatment, outsourced, size, notes,
-                delivery_schedule, status, created_at, updated_at, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN_PROGRESS', ?, ?, ?, ?)
-        """, (
-            prod_id, raw_code, comp_name, item["part_name"], str(qty), item["unit"],
-            item["material"], item["requester"], item["surface_treatment"], int(item["outsourced"]),
-            item["size"], item["notes"], today_iso, now_iso, now_iso, actor, actor
-        ))
-        imported_products += 1
+        # Next tracking item sequence
+        seq_counter = int(transaction.execute("SELECT COUNT(*) FROM order_tracking_items")[0]["count"]) + 1
 
-        # 3. Create PO & PO Line
-        po_id = str(uuid.uuid4())
-        po_num = f"{po_prefix}-{idx:04d}"
-        ord_num = f"ORD-{po_prefix}-{idx:04d}"
-        cur.execute("""
-            INSERT INTO purchase_orders (
-                internal_id, po_number, internal_order_code, customer_id, po_date,
-                requested_delivery_date, status, notes, created_at, updated_at, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?)
-        """, (po_id, po_num, ord_num, cust_id, today_iso, today_iso, f"Import từ sheet {item.get('sheet_name', '')}", now_iso, now_iso, actor, actor))
+        for idx, item in enumerate(items, start=1):
+            comp_name = item["company"].strip().upper() or "SHL"
+            # 1. Resolve or create Customer
+            cust_id = cust_map.get(comp_name) or cust_code_map.get(comp_name)
+            if not cust_id:
+                cust_id = str(uuid.uuid4())
+                cust_code = f"CUS-{comp_name[:10]}"
+                transaction.execute("""
+                    INSERT INTO customers (
+                        internal_id, customer_code, name, short_name, address, tax_code,
+                        contact_name, phone, email, notes, active, created_at, updated_at, created_by, updated_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                """, [cust_id, cust_code, comp_name, comp_name, "", "", "", "", "", "Khách hàng từ Excel", now_iso, now_iso, actor, actor])
+                cust_map[comp_name] = cust_id
 
-        line_id = str(uuid.uuid4())
-        cur.execute("""
-            INSERT INTO purchase_order_lines (
-                internal_id, po_id, product_id, line_number, ordered_quantity, unit,
-                unit_price, currency, customer_part_reference, notes
-            ) VALUES (?, ?, ?, 1, ?, ?, ?, 'VND', ?, ?)
-        """, (line_id, po_id, prod_id, str(qty), item["unit"], item.get("price"), item["part_name"], item["notes"]))
+            # 2. Product code generation
+            # Use part name if clean alphanumeric, else SP-2609-XXXX
+            raw_code = f"SP-{item.get('sheet_name', 'DAY')[:5]}-{idx:03d}".replace(" ", "").upper()
+            if raw_code in prod_codes:
+                raw_code = f"SP-{uuid.uuid4().hex[:8].upper()}"
+            prod_codes.add(raw_code)
 
-        # 4. Order Tracking Item & QR issuance
-        tracking_id = str(uuid.uuid4())
-        current_year = datetime.now().year
-        tracking_code = f"ITEM-{current_year}-{seq_counter:06d}"
-        seq_counter += 1
-        qr_pub_id = "qr_" + uuid.uuid4().hex[:16]
+            prod_id = str(uuid.uuid4())
+            qty = Decimal(str(item["quantity"]))
+            transaction.execute("""
+                INSERT INTO products (
+                    internal_id, product_code, company, part_name, quantity, unit,
+                    material, requester, surface_treatment, outsourced, size, notes,
+                    delivery_schedule, status, created_at, updated_at, created_by, updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN_PROGRESS', ?, ?, ?, ?)
+            """, [
+                prod_id, raw_code, comp_name, item["part_name"], str(qty), item["unit"],
+                item["material"], item["requester"], item["surface_treatment"], int(item["outsourced"]),
+                item["size"], item["notes"], today_iso, now_iso, now_iso, actor, actor
+            ])
+            imported_products += 1
 
-        cur.execute("""
-            INSERT INTO order_tracking_items (
-                internal_id, tracking_code, purchase_order_id, purchase_order_line_id,
-                product_id, customer_id, quantity, unit, delivery_date, status,
-                qr_public_id, qr_status, created_at, updated_at, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN_PRODUCTION', ?, 'ACTIVE', ?, ?, ?, ?)
-        """, (tracking_id, tracking_code, po_id, line_id, prod_id, cust_id, str(qty), item["unit"], today_iso, qr_pub_id, now_iso, now_iso, actor, actor))
+            # 3. Create PO & PO Line
+            po_id = str(uuid.uuid4())
+            po_num = f"{po_prefix}-{idx:04d}"
+            ord_num = f"ORD-{po_prefix}-{idx:04d}"
+            transaction.execute("""
+                INSERT INTO purchase_orders (
+                    internal_id, po_number, internal_order_code, customer_id, po_date,
+                    requested_delivery_date, status, notes, created_at, updated_at, created_by, updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?)
+            """, [po_id, po_num, ord_num, cust_id, today_iso, today_iso, f"Import từ sheet {item.get('sheet_name', '')}", now_iso, now_iso, actor, actor])
 
-        # 5. Tracking Audit event
-        cur.execute("""
-            INSERT INTO tracking_audit_events (
-                internal_id, tracking_item_id, event_type, old_value, new_value, actor, reason, server_timestamp
-            ) VALUES (?, ?, 'QR_ISSUED', NULL, ?, ?, 'Import từ Excel xưởng', ?)
-        """, (str(uuid.uuid4()), tracking_id, qr_pub_id, actor, now_iso))
+            line_id = str(uuid.uuid4())
+            transaction.execute("""
+                INSERT INTO purchase_order_lines (
+                    internal_id, po_id, product_id, line_number, ordered_quantity, unit,
+                    unit_price, currency, customer_part_reference, notes
+                ) VALUES (?, ?, ?, 1, ?, ?, ?, 'VND', ?, ?)
+            """, [line_id, po_id, prod_id, str(qty), item["unit"], item.get("price"), item["part_name"], item["notes"]])
 
-        imported_tracking += 1
+            # 4. Order Tracking Item & QR issuance
+            tracking_id = str(uuid.uuid4())
+            current_year = datetime.now().year
+            tracking_code = f"ITEM-{current_year}-{seq_counter:06d}"
+            seq_counter += 1
+            qr_pub_id = "qr_" + uuid.uuid4().hex[:16]
 
-    conn.commit()
-    conn.close()
+            transaction.execute("""
+                INSERT INTO order_tracking_items (
+                    internal_id, tracking_code, purchase_order_id, purchase_order_line_id,
+                    product_id, customer_id, quantity, unit, delivery_date, status,
+                    qr_public_id, qr_status, created_at, updated_at, created_by, updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN_PRODUCTION', ?, 'ACTIVE', ?, ?, ?, ?)
+            """, [tracking_id, tracking_code, po_id, line_id, prod_id, cust_id, str(qty), item["unit"], today_iso, qr_pub_id, now_iso, now_iso, actor, actor])
+
+            # 5. Tracking Audit event
+            transaction.execute("""
+                INSERT INTO tracking_audit_events (
+                    internal_id, tracking_item_id, event_type, old_value, new_value, actor, reason, server_timestamp
+                ) VALUES (?, ?, 'QR_ISSUED', NULL, ?, ?, 'Import từ Excel xưởng', ?)
+            """, [str(uuid.uuid4()), tracking_id, qr_pub_id, actor, now_iso])
+
+            imported_tracking += 1
 
     return {
         "success": True,

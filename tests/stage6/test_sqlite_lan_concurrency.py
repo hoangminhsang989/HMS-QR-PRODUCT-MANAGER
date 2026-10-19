@@ -1,93 +1,102 @@
-"""Standalone SQLite LAN concurrency: WAL, busy timeout, and parallel writers."""
+"""Engine concurrency: single-writer serialization and durable recovery."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
-import sqlite3
+from uuid import UUID
 import threading
 
-from sqlalchemy import text
-
 from config.environments import AppConfig, Environment
-from packages.persistence.database import (
-    SQLITE_BUSY_TIMEOUT_SECONDS,
-    create_database_runtime,
-)
+from packages.domain.product import Product, ProductStatus
+from packages.persistence.database import create_database_runtime
+from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+from packages.persistence.sqlalchemy_repository import Stage2Repository
 
 
 def _runtime(tmp_path: Path, name: str):
-    database = tmp_path / name
     return create_database_runtime(
-        AppConfig(Environment.DEV, f"sqlite:///{database.as_posix()}", "local")
+        AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / name).as_posix()}", "local")
     )
 
 
-def test_sqlite_engine_enables_wal_and_busy_timeout(tmp_path):
-    runtime = _runtime(tmp_path, "wal.sqlite")
+def _seed(runtime, product_code: str, quantity: int) -> None:
+    now = datetime.now(timezone.utc)
+    SqlAlchemyProductRepository(runtime.database).create(Product(
+        internal_id=UUID(int=quantity), product_code=product_code, company="HMS",
+        part_name="Plate", quantity=quantity, unit="pcs", material=None,
+        requester=None, surface_treatment=None, outsourced=False, size=None,
+        notes=None, delivery_schedule=None, status=ProductStatus.NEW,
+        created_at=now, updated_at=now, created_by="seed", updated_by="seed",
+    ))
+
+
+def test_engine_database_is_durable_across_reopen(tmp_path):
+    runtime = _runtime(tmp_path, "durable.sqlite")
     try:
-        with runtime.engine.connect() as connection:
-            journal = connection.execute(text("PRAGMA journal_mode")).scalar_one()
-            busy_timeout = connection.execute(text("PRAGMA busy_timeout")).scalar_one()
-            synchronous = connection.execute(text("PRAGMA synchronous")).scalar_one()
-        assert journal.lower() == "wal"
-        assert busy_timeout == int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)
-        assert synchronous == 1
+        Stage2Repository(runtime).create_schema()
+        _seed(runtime, "DUR-1", 10)
     finally:
         runtime.dispose()
-
-
-def test_reader_is_not_blocked_while_writer_holds_transaction(tmp_path):
-    runtime = _runtime(tmp_path, "concurrent.sqlite")
+    reopened = _runtime(tmp_path, "durable.sqlite")
     try:
-        with runtime.engine.begin() as connection:
-            connection.execute(text("CREATE TABLE sample (value TEXT)"))
-        writer = sqlite3.connect(tmp_path / "concurrent.sqlite", timeout=30)
-        reader = sqlite3.connect(tmp_path / "concurrent.sqlite", timeout=30)
-        try:
-            writer.execute("BEGIN IMMEDIATE")
-            writer.execute("INSERT INTO sample (value) VALUES ('held')")
-            assert reader.execute("SELECT COUNT(*) FROM sample").fetchone()[0] == 0
-            writer.commit()
-            assert reader.execute("SELECT COUNT(*) FROM sample").fetchone()[0] == 1
-        finally:
-            writer.close()
-            reader.close()
+        rows = reopened.database.query(
+            "SELECT product_code FROM products WHERE product_code = ?", ["DUR-1"]
+        )
+        assert [row["product_code"] for row in rows] == ["DUR-1"]
     finally:
-        runtime.dispose()
+        reopened.dispose()
 
 
-def test_parallel_writers_commit_without_locked_errors(tmp_path):
+def test_engine_serializes_parallel_writers_without_lost_updates(tmp_path):
     runtime = _runtime(tmp_path, "writers.sqlite")
     try:
-        with runtime.engine.begin() as connection:
-            connection.execute(text("CREATE TABLE writes (worker TEXT, seq INTEGER)"))
+        Stage2Repository(runtime).create_schema()
+        _seed(runtime, "PAR-1", 0)
         failures: list[Exception] = []
 
-        def write_rows(worker: str, count: int) -> None:
+        def increment(count: int) -> None:
             try:
-                connection = sqlite3.connect(tmp_path / "writers.sqlite", timeout=30)
-                try:
-                    for seq in range(count):
-                        connection.execute(
-                            "INSERT INTO writes (worker, seq) VALUES (?, ?)", (worker, seq)
+                for _ in range(count):
+                    with runtime.database.transaction() as transaction:
+                        rows = transaction.execute(
+                            "SELECT quantity FROM products WHERE product_code = ?", ["PAR-1"]
                         )
-                        connection.commit()
-                finally:
-                    connection.close()
+                        current = int(rows[0]["quantity"])
+                        transaction.execute(
+                            "UPDATE products SET quantity = ? WHERE product_code = ?",
+                            [current + 1, "PAR-1"],
+                        )
             except Exception as exc:  # noqa: BLE001 - surfaced through failures
                 failures.append(exc)
 
-        threads = [
-            threading.Thread(target=write_rows, args=(f"worker-{index}", 25))
-            for index in range(4)
-        ]
+        threads = [threading.Thread(target=increment, args=(25,)) for _ in range(4)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join(timeout=60)
         assert not failures
-        with runtime.engine.connect() as connection:
-            total = connection.execute(text("SELECT COUNT(*) FROM writes")).scalar_one()
-        assert total == 100
+        rows = runtime.database.query(
+            "SELECT quantity FROM products WHERE product_code = ?", ["PAR-1"]
+        )
+        assert int(rows[0]["quantity"]) == 100
+    finally:
+        runtime.dispose()
+
+
+def test_engine_rolls_back_a_failed_transaction(tmp_path):
+    runtime = _runtime(tmp_path, "rollback.sqlite")
+    try:
+        Stage2Repository(runtime).create_schema()
+        try:
+            with runtime.database.transaction() as transaction:
+                _seed(runtime, "RB-1", 1)
+                raise RuntimeError("injected failure")
+        except RuntimeError:
+            pass
+        rows = runtime.database.query(
+            "SELECT product_code FROM products WHERE product_code = ?", ["RB-1"]
+        )
+        assert rows == []
     finally:
         runtime.dispose()

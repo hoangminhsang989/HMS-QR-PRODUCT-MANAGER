@@ -9,8 +9,8 @@ Business workflows are intentionally deferred until the foundation gate passes.
 Stage 1 adds the first Product Master vertical slice on branch
 `stage1-product-master`: validated Product domain, SQLite DEV/test repository,
 versioned API, Vietnamese PySide6 desktop window, and generic Excel
-preview/confirm/import/export. PostgreSQL production integration and exact
-legacy workbook fidelity are intentionally pending.
+preview/confirm/import/export. Exact legacy workbook fidelity is
+intentionally pending.
 
 Development entry points:
 
@@ -21,8 +21,10 @@ uvicorn apps.server.app:app --reload
 
 ## Central Server Deployment
 
-For PostgreSQL-backed LAN deployment, follow
-[`docs/POSTGRESQL_LAN_DEPLOYMENT.md`](docs/POSTGRESQL_LAN_DEPLOYMENT.md).
+For LAN deployment, follow
+[`docs/POSTGRESQL_LAN_DEPLOYMENT.md`](docs/POSTGRESQL_LAN_DEPLOYMENT.md)
+(superseded on the database layer by ADR-015: the server now embeds its own SQL
+engine and installs no external database).
 Desktop clients never receive a database URL or storage path. Start
 `CHAY_DESKTOP.bat` on Machine 2: Desktop first uses a verified saved endpoint,
 then Private-LAN discovery, and provides Server selection plus native login if
@@ -30,8 +32,8 @@ the launcher does not supply `HMS_QR_SERVER_URL`, `HMS_QR_USERNAME`, and
 `HMS_QR_PASSWORD`.
 
 Stage 2 adds the Customer → PO → PO Line → Delivery Schedule / Production Run
-vertical slice with SQLAlchemy/Alembic architecture, generic order export, and
-compact desktop navigation tabs. QR issuance, mobile scan, QC, NAS writes, and
+vertical slice with the normalized persistence architecture, generic order
+export, and compact desktop navigation tabs. QR issuance, mobile scan, QC, NAS writes, and
 Machine A deployment remain outside R004.
 
 Stage 3 adds Order Tracking Items, deterministic four-field QR/live tracking-code resolution,

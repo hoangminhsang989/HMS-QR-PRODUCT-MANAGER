@@ -9,8 +9,6 @@ import subprocess
 import sys
 
 import pytest
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 
 import config.paths as paths_module
 from config.environments import Environment, load_config
@@ -87,7 +85,7 @@ def test_source_root_is_structural_and_known_host_literals_are_absent():
     runtime_files = [
         ROOT / relative
         for relative in tracked
-        if relative in {"alembic.ini", "pyproject.toml"}
+        if relative in {"pyproject.toml"}
         or relative.startswith(("apps/", "config/", "migrations/", "packages/", "scripts/"))
     ]
     repository, test_root = _known_roots()
@@ -106,11 +104,20 @@ def test_source_root_is_structural_and_known_host_literals_are_absent():
     assert findings == {}
 
 
-def test_alembic_default_has_no_database_path_authority():
-    config = AlembicConfig(str(ROOT / "alembic.ini"))
-    assert config.get_main_option("sqlalchemy.url") == ""
-    with pytest.raises(Exception):
-        alembic_command.upgrade(config, "head")
+def test_engine_migrations_have_no_database_path_authority():
+    """No shipped migration may name a concrete database directory.
+
+    The engine runner receives its target from ``create_database_runtime``; a
+    migration that hardcoded a path would silently redirect a portable runtime.
+    """
+
+    from packages.persistence.database import ENGINE_MIGRATION_DIRECTORY
+
+    assert ENGINE_MIGRATION_DIRECTORY == SOURCE_ROOT / "migrations" / "engine"
+    for path in sorted(ENGINE_MIGRATION_DIRECTORY.glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        assert "sqlite:///" not in source
+        assert "Database(" not in source
 
 
 @pytest.mark.parametrize("value", ["", "relative/test-root", "<placeholder>"])

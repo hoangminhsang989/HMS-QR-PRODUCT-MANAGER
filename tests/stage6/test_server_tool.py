@@ -1,6 +1,5 @@
 import hashlib
 import os
-import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -9,7 +8,8 @@ import pytest
 from PySide6.QtWidgets import QMessageBox
 
 import apps.server.tool as server_tool
-from apps.server.tool import AUTO_START_TASK_NAME, MAX_ACTIVITY_LOG_LINES, POSTGRESQL_DATA_ROOT, POSTGRESQL_INSTALLER_SHA256, active_lan_network_status, backup_freshness, backup_integrity_details, backup_integrity_inventory, backup_inventory, backup_sqlite, check_sqlite_backup, create_production_secrets, current_user_autostart_command, current_user_autostart_exists, disk_space_status, external_hms_server_pid_command, firewall_private_status, generate_admin_password, lan_listener_status, lan_readiness_assessment, lan_readiness_checklist, latest_postgresql_backup, latest_sqlite_backup, load_server_secret, load_tool_settings, locations_are_saved, operational_readiness_report, postgresql_backup_inventory, postgresql_backup_path, postgresql_restore_command, postgresql_unattended_command, postgresql_unattended_options, production_database_file, production_database_mode, production_database_url, production_paths, production_postgresql_is_installed, production_setup_requirements, repair_private_lan_command, restore_sqlite_database, run_postgresql_offline_installer, save_autostart_preference, save_server_secret, save_tool_settings, set_current_user_autostart, verified_postgresql_offline_installer
+from apps.server.tool import AUTO_START_TASK_NAME, ENGINE_BACKUP_SUFFIX, MAX_ACTIVITY_LOG_LINES, active_lan_network_status, backup_freshness, backup_integrity_details, backup_integrity_inventory, backup_inventory, backup_sqlite, check_sqlite_backup, create_production_secrets, current_user_autostart_command, current_user_autostart_exists, disk_space_status, engine_dir_for, external_hms_server_pid_command, firewall_private_status, generate_admin_password, lan_listener_status, lan_readiness_assessment, lan_readiness_checklist, latest_sqlite_backup, load_server_secret, load_tool_settings, locations_are_saved, operational_readiness_report, production_database_file, production_database_url, production_paths, production_setup_requirements, repair_private_lan_command, restore_sqlite_database, save_autostart_preference, save_server_secret, save_tool_settings, set_current_user_autostart
+from packages.sqlengine import connect
 
 
 def test_direct_module_launch_requests_admin_and_does_not_start_window_when_not_elevated(monkeypatch):
@@ -173,50 +173,10 @@ def test_production_storage_and_backups_are_valid_separate_tool_roots(tmp_path):
     save_tool_settings(str(paths["storage"]), str(paths["backups"]), tmp_path / "settings.json")
 
 
-def test_postgresql_unattended_command_uses_local_paths_without_network():
-    option_file = Path("C:/runtime/postgresql-install-options.conf")
-    command = postgresql_unattended_command(Path("C:/release/postgresql.exe"), option_file)
-
-    assert Path(command[0]) == Path("C:/release/postgresql.exe")
-    assert command[1:] == ["--optionfile", str(option_file)]
-    options = postgresql_unattended_options(data_root=POSTGRESQL_DATA_ROOT, superpassword="secret")
-    assert "mode=unattended" in options
-    assert f"datadir={POSTGRESQL_DATA_ROOT}" in options
-    assert "serverport=5432" in options
-    assert "secret" in options
-
-
-def test_postgresql_installer_removes_temporary_secret_option_file(tmp_path):
-    option_file = tmp_path / "postgresql-install-options.conf"
-    installer = tmp_path / "postgresql.exe"
-    with patch("apps.server.tool.restrict_option_file_to_current_user") as restrict, patch("apps.server.tool.subprocess.run", return_value=Mock(returncode=0)):
-        result = run_postgresql_offline_installer(installer, option_file, "superpassword=secret\n")
-
-    assert result.returncode == 0
-    restrict.assert_called_once_with(option_file)
-    assert not option_file.exists()
-
-
-def test_provisioning_skips_postgresql_restart_when_already_local_only():
-    from apps.server.tool import ServerToolWindow
-
-    responses = iter((
-        Mock(returncode=0),
-        Mock(returncode=0, stdout="1\n"),
-        Mock(returncode=0, stdout="127.0.0.1\n"),
-    ))
-    tool = ServerToolWindow.__new__(ServerToolWindow)
-    with patch.object(Path, "is_file", return_value=True), patch("apps.server.tool.load_server_secret", return_value="secret"), patch("apps.server.tool.subprocess.run", side_effect=lambda *_args, **_kwargs: next(responses)) as run:
-        tool._provision_production_database(Path("C:/PostgreSQL/bin/psql.exe"))
-
-    assert not any(call.args[0][0] == "powershell" for call in run.call_args_list)
-
-
 def test_production_setup_requires_bundled_python_and_wheels_only(tmp_path):
     source = tmp_path / "release"
     (source / "installer" / "python").mkdir(parents=True)
     (source / "installer" / "wheels").mkdir()
-    (source / "installer" / "postgresql").mkdir()
 
     missing = production_setup_requirements(source)
 
@@ -227,107 +187,87 @@ def test_production_setup_requires_bundled_python_and_wheels_only(tmp_path):
 
 def test_production_database_url_defaults_to_standalone_sqlite(tmp_path):
     secrets = tmp_path / "server-tool-secrets.json"
-
-    assert production_database_mode(secrets) == "standalone"
     assert production_database_file(tmp_path) == tmp_path / "database" / "hms_qr.sqlite"
     url = production_database_url(tmp_path, secrets)
     assert url == f"sqlite:///{(tmp_path / 'database' / 'hms_qr.sqlite').as_posix()}"
-
-
-def test_production_database_url_uses_postgresql_only_when_mode_selected(tmp_path):
-    secrets = tmp_path / "server-tool-secrets.json"
-    save_server_secret("database_mode", "postgresql", secrets)
-    save_server_secret("database_password", "app-secret", secrets)
-
-    assert production_database_mode(secrets) == "postgresql"
-    url = production_database_url(tmp_path, secrets)
-    assert url.startswith("postgresql+psycopg://hms_qr_app:app-secret@127.0.0.1:5432/hms_qr")
-
-
-def test_postgresql_backup_helpers_use_distinct_custom_dump_files(tmp_path):
-    first = postgresql_backup_path(tmp_path, now=datetime(2026, 9, 20, 9, 30, 0, 1))
-    second = postgresql_backup_path(tmp_path, now=datetime(2026, 9, 20, 9, 30, 0, 2))
-    first.write_bytes(b"one")
-    second.write_bytes(b"two")
-
-    assert first.suffix == ".dump"
-    assert first != second
-    assert latest_postgresql_backup(tmp_path) == second
-    assert postgresql_backup_inventory(tmp_path) == "2 file (0.0 MB)"
-
-
-def test_postgresql_restore_and_autostart_commands_do_not_contain_secrets(tmp_path):
-    restore = postgresql_restore_command(tmp_path / "hms_qr_verified.dump")
+def test_autostart_command_does_not_contain_secrets(tmp_path):
     autostart = current_user_autostart_command(tmp_path)
-    assert "--clean" in restore and "--exit-on-error" in restore
-    assert str(tmp_path / "hms_qr_verified.dump") in restore
     assert autostart[:3] == ["schtasks.exe", "/Create", "/TN"]
     assert AUTO_START_TASK_NAME in autostart
     assert "production_launcher" in " ".join(autostart)
     assert "password" not in " ".join(autostart).lower()
+def _seed_engine_database(database: Path) -> Path:
+    """Create the engine directory that backs ``database`` and return it."""
+
+    from packages.sqlengine import connect
+
+    engine_dir = engine_dir_for(database)
+    engine_dir.mkdir(parents=True, exist_ok=True)
+    db = connect(engine_dir)
+    try:
+        db.execute("CREATE TABLE sample (name TEXT)")
+        db.execute("INSERT INTO sample VALUES ('verified')")
+    finally:
+        db.close()
+    return engine_dir
 
 
-def test_server_tool_creates_readable_sqlite_backup(tmp_path):
+def test_server_tool_creates_readable_engine_backup(tmp_path):
     database = tmp_path / "runtime" / "hms_qr_test.sqlite"
     database.parent.mkdir()
-    with sqlite3.connect(database) as connection:
-        connection.execute("CREATE TABLE sample (name TEXT)")
-        connection.execute("INSERT INTO sample VALUES ('verified')")
+    _seed_engine_database(database)
 
     backup = backup_sqlite(database, tmp_path / "backups")
 
-    with sqlite3.connect(backup) as connection:
-        assert connection.execute("SELECT name FROM sample").fetchone() == ("verified",)
+    assert backup.is_dir()
+    assert backup.name.startswith("hms_qr_")
+    assert backup.name.endswith(ENGINE_BACKUP_SUFFIX)
+    assert (backup / "snapshot.json").is_file()
     assert latest_sqlite_backup(tmp_path / "backups") == backup
     assert latest_sqlite_backup(tmp_path / "empty-backups") is None
-    assert check_sqlite_backup(backup) == f"BACKUP HỢP LỆ: {backup.name}"
+    assert check_sqlite_backup(backup).startswith(f"BACKUP HỢP LỆ: {backup.name}")
     with pytest.raises(ValueError, match="Không tìm thấy"):
-        check_sqlite_backup(tmp_path / "missing.sqlite")
+        check_sqlite_backup(tmp_path / "missing.engine")
 
 
-def test_rapid_sqlite_backups_do_not_overwrite_each_other(tmp_path):
+def test_rapid_engine_backups_do_not_overwrite_each_other(tmp_path):
     database = tmp_path / "runtime" / "hms_qr_test.sqlite"
     database.parent.mkdir()
-    with sqlite3.connect(database) as connection:
-        connection.execute("CREATE TABLE sample (name TEXT)")
+    _seed_engine_database(database)
     first = backup_sqlite(database, tmp_path / "backups")
     second = backup_sqlite(database, tmp_path / "backups")
     assert first != second
-    assert first.is_file()
-    assert second.is_file()
+    assert first.is_dir()
+    assert second.is_dir()
+    assert check_sqlite_backup(first).startswith("BACKUP HỢP LỆ")
+    assert check_sqlite_backup(second).startswith("BACKUP HỢP LỆ")
 
 
 def test_restore_sqlite_database_keeps_safety_snapshot_and_replaces_runtime(tmp_path):
     database = tmp_path / "runtime" / "hms_qr_test.sqlite"
     database.parent.mkdir()
-    connection = sqlite3.connect(database)
-    try:
-        connection.execute("CREATE TABLE sample (value TEXT)")
-        connection.execute("INSERT INTO sample VALUES ('current')")
-        connection.commit()
-    finally:
-        connection.close()
+    engine_dir = _seed_engine_database(database)
     backup_root = tmp_path / "backups"
     source_backup = backup_sqlite(database, backup_root)
-    connection = sqlite3.connect(database)
+
+    db = connect(engine_dir)
     try:
-        connection.execute("UPDATE sample SET value = 'changed'")
-        connection.commit()
+        db.execute("UPDATE sample SET name = 'changed'")
     finally:
-        connection.close()
+        db.close()
 
     safety = restore_sqlite_database(database, source_backup, backup_root)
 
-    connection = sqlite3.connect(database)
+    db = connect(engine_dir)
     try:
-        assert connection.execute("SELECT value FROM sample").fetchone() == ("current",)
+        assert db.query("SELECT name FROM sample") == [{"name": "verified"}]
     finally:
-        connection.close()
-    connection = sqlite3.connect(safety)
+        db.close()
+    db = connect(safety)
     try:
-        assert connection.execute("SELECT value FROM sample").fetchone() == ("changed",)
+        assert db.query("SELECT name FROM sample") == [{"name": "changed"}]
     finally:
-        connection.close()
+        db.close()
 
 
 def test_restore_refuses_an_external_running_server(qtbot):
@@ -336,20 +276,9 @@ def test_restore_refuses_an_external_running_server(qtbot):
     window = ServerToolWindow()
     window._timer.stop()
     qtbot.addWidget(window)
-    with patch("apps.server.tool.production_postgresql_is_installed", return_value=False), patch.object(window, "_server_listening", return_value=True), patch("apps.server.tool.QMessageBox.warning") as warning:
+    with patch.object(window, "_server_listening", return_value=True), patch("apps.server.tool.QMessageBox.warning") as warning:
         window.restore_database()
     assert warning.call_args.args[1] == "Không thể khôi phục"
-
-
-def test_restore_uses_postgresql_workflow_when_production_postgresql_is_installed(qtbot):
-    from apps.server.tool import ServerToolWindow
-
-    window = ServerToolWindow()
-    window._timer.stop()
-    qtbot.addWidget(window)
-    with patch("apps.server.tool.production_postgresql_is_installed", return_value=True), patch.object(window, "restore_postgresql_database") as restore:
-        window.restore_database()
-    restore.assert_called_once_with()
 
 
 def test_backup_freshness_reports_missing_recent_and_stale_backups(tmp_path):
@@ -366,22 +295,26 @@ def test_backup_freshness_reports_missing_recent_and_stale_backups(tmp_path):
 def test_backup_inventory_counts_only_hms_qr_snapshots(tmp_path):
     backup_root = tmp_path / "backups"
     backup_root.mkdir()
-    (backup_root / "hms_qr_one.sqlite").write_bytes(b"a" * 1024**2)
-    (backup_root / "hms_qr_two.sqlite").write_bytes(b"b" * 512 * 1024)
-    (backup_root / "other.sqlite").write_bytes(b"ignored")
-    assert backup_inventory(backup_root) == "2 file (1.5 MB)"
+    (backup_root / "hms_qr_one.engine").mkdir()
+    (backup_root / "hms_qr_one.engine" / "snapshot.json").write_bytes(b"a" * 1024**2)
+    (backup_root / "hms_qr_two.engine").mkdir()
+    (backup_root / "hms_qr_two.engine" / "snapshot.json").write_bytes(b"b" * 512 * 1024)
+    (backup_root / "other.engine").mkdir()
+    (backup_root / "other.engine" / "snapshot.json").write_bytes(b"ignored")
+    assert backup_inventory(backup_root) == "2 bản (1.5 MB)"
 
 
 def test_backup_integrity_inventory_reports_valid_and_invalid_snapshots(tmp_path):
     backup_root = tmp_path / "backups"
     backup_root.mkdir()
-    valid_source = tmp_path / "source.sqlite"
-    with sqlite3.connect(valid_source) as connection:
-        connection.execute("CREATE TABLE sample (value TEXT)")
-    backup_sqlite(valid_source, backup_root)
-    (backup_root / "hms_qr_broken.sqlite").write_text("not a database", encoding="ascii")
+    database = tmp_path / "runtime" / "hms_qr_test.sqlite"
+    database.parent.mkdir()
+    _seed_engine_database(database)
+    backup_sqlite(database, backup_root)
+    (backup_root / "hms_qr_broken.engine").mkdir()
+    (backup_root / "hms_qr_broken.engine" / "snapshot.json").write_text("not an engine", encoding="ascii")
     assert backup_integrity_inventory(backup_root) == "1 hợp lệ, 1 lỗi"
-    assert backup_integrity_details(backup_root) == ("1 hợp lệ, 1 lỗi", ["hms_qr_broken.sqlite"])
+    assert backup_integrity_details(backup_root) == ("1 hợp lệ, 1 lỗi", ["hms_qr_broken.engine"])
 
 
 def test_disk_space_status_classifies_free_space_without_writing(tmp_path):
@@ -399,37 +332,15 @@ def test_backup_creation_verifies_the_new_file(qtbot, tmp_path):
 
     database = tmp_path / "runtime" / "hms_qr_test.sqlite"
     database.parent.mkdir()
-    with sqlite3.connect(database) as connection:
-        connection.execute("CREATE TABLE verified_backup (value TEXT)")
+    _seed_engine_database(database)
     window = ServerToolWindow()
     window._timer.stop()
     qtbot.addWidget(window)
     window._settings = {"data_root": str(database.parent), "backup_root": str(tmp_path / "backups")}
-    with patch("apps.server.tool.POSTGRESQL_INSTALL_ROOT", tmp_path / "no-postgresql"), patch("apps.server.tool.QMessageBox.information") as information:
+    with patch("apps.server.tool.QMessageBox.information") as information:
         window.backup_database()
     assert "BACKUP HỢP LỆ" in window.details.toPlainText()
-    assert window.overview_backup.text().endswith(".sqlite")
-    assert information.call_args.args[1] == "Sao lưu đã xác minh"
-
-
-def test_postgresql_backup_is_verified_before_success_is_reported(qtbot, tmp_path):
-    from apps.server.tool import ServerToolWindow
-
-    window = ServerToolWindow()
-    window._timer.stop()
-    qtbot.addWidget(window)
-    window._settings = {"data_root": str(tmp_path / "runtime"), "backup_root": str(tmp_path / "backups")}
-    dump = tmp_path / "backups" / "hms_qr_20260920_094000_000001.dump"
-
-    def run(command, **_kwargs):
-        if "pg_dump.exe" in command[0]:
-            dump.parent.mkdir()
-            dump.write_bytes(b"postgresql dump")
-        return Mock(returncode=0)
-
-    with patch("apps.server.tool.POSTGRESQL_INSTALL_ROOT", tmp_path / "postgresql"), patch.object(Path, "is_file", return_value=True), patch("apps.server.tool.load_server_secret", return_value="secret"), patch("apps.server.tool.postgresql_backup_path", return_value=dump), patch("apps.server.tool.subprocess.run", side_effect=run), patch("apps.server.tool.QMessageBox.information") as information:
-        window.backup_database()
-    assert window.overview_backup.text() == dump.name
+    assert window.overview_backup.text().endswith(ENGINE_BACKUP_SUFFIX)
     assert information.call_args.args[1] == "Sao lưu đã xác minh"
 
 
@@ -439,11 +350,11 @@ def test_setup_progress_updates_visible_status(qtbot):
     window = ServerToolWindow()
     window._timer.stop()
     qtbot.addWidget(window)
-    window._set_setup_progress(3, "3/7 Đang cài PostgreSQL 17 offline...")
+    window._set_setup_progress(3, "3/7 Database SQLite nhúng sẵn sàng...")
 
     assert window.setup_progress.value() == 3
-    assert window.setup_progress.format() == "3/7 Đang cài PostgreSQL 17 offline..."
-    assert window.status_label.text() == "3/7 Đang cài PostgreSQL 17 offline..."
+    assert window.setup_progress.format() == "3/7 Database SQLite nhúng sẵn sàng..."
+    assert window.status_label.text() == "3/7 Database SQLite nhúng sẵn sàng..."
 
 
 def test_setup_failure_activity_does_not_expose_exception_message(qtbot):
@@ -497,18 +408,6 @@ def test_external_server_restart_detection_targets_only_hms_qr_uvicorn_on_8010()
     assert "--port\\s+8010" in command
 
 
-def test_postgresql_offline_installer_requires_the_verified_bundle(tmp_path, monkeypatch):
-    installer = tmp_path / "postgresql.exe"
-    installer.write_bytes(b"verified PostgreSQL fixture")
-    monkeypatch.setattr("apps.server.tool.POSTGRESQL_INSTALLER_SHA256", hashlib.sha256(installer.read_bytes()).hexdigest())
-    assert verified_postgresql_offline_installer(installer) == installer
-    installer.write_bytes(b"altered")
-    with pytest.raises(ValueError, match="checksum"):
-        verified_postgresql_offline_installer(installer)
-    with pytest.raises(ValueError, match="Không tìm thấy"):
-        verified_postgresql_offline_installer(tmp_path / "missing.exe")
-
-
 def test_server_secrets_use_dpapi_protected_storage_without_plaintext(tmp_path, monkeypatch):
     secrets_path = tmp_path / "server-tool-secrets.json"
     protected = "DPAPI-BLOB"
@@ -548,7 +447,7 @@ def test_production_secret_creation_is_idempotent_and_never_writes_plaintext(tmp
     with patch("apps.server.tool._dpapi") as dpapi:
         create_production_secrets(secrets_path)
     assert dpapi.call_count == 0
-    assert set(__import__("json").loads(first)) == {"database_mode", "postgres_password", "database_password", "auth_secret", "admin_password"}
+    assert set(__import__("json").loads(first)) == {"auth_secret", "admin_password"}
     assert "standalone" not in first
 
 

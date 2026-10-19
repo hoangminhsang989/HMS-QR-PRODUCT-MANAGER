@@ -62,6 +62,10 @@ def test_certificate_environment_and_scheme_helpers(tmp_path, monkeypatch):
     assert lan_url_scheme() == "https"
     assert lan_scheme() == "https"
 
+    monkeypatch.delenv(TLS_CERTIFICATE_ENV, raising=False)
+    assert lan_url_scheme(tmp_path) == "https"
+    assert lan_url_scheme(tmp_path / "no-tls-here") == "http"
+
 
 def test_discovery_responder_advertises_https_when_tls_enabled(tmp_path, monkeypatch):
     monkeypatch.setenv(TLS_CERTIFICATE_ENV, str(tmp_path / "cert.pem"))

@@ -1,36 +1,35 @@
-"""R010M1 deterministic historical migration boundary regression tests."""
+"""R010M1 deterministic historical migration boundary regression tests.
+
+The engine runner applies versioned, ordered callables and records each applied
+version in ``_hms_migrations``.  There is no downgrade step, so each boundary is
+proven by applying migrations one version at a time and asserting the exact
+table set, columns, primary keys, foreign keys and unique constraints that
+version must produce.
+"""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
-from alembic.script import ScriptDirectory
-import pytest
-from sqlalchemy import create_engine, inspect, text
-
-# Deliberately pre-import every current ORM module before Alembic loads 0001.
-# Historical revision behavior must remain independent of this registry.
-from packages.persistence.sqlalchemy_models import Base
-from packages.persistence import storage_models as _storage_models  # noqa: F401
-from packages.persistence import store_forward_models as _store_forward_models  # noqa: F401
-from packages.persistence import tracking_models as _tracking_models  # noqa: F401
+from config.paths import SOURCE_ROOT
+from packages.sqlengine import Database
+from packages.sqlengine.migrations import applied_versions, load_migration_modules, run_migrations
 
 
 REVISIONS = (
-    "0001_stage2_baseline",
-    "0002_tracking_qr_reporting",
-    "0003_qc_packing_delivery",
-    "0004_managed_files",
-    "0005_store_forward",
-    "0006_outsourced_company",
-    "0007_server_accounts",
+    (1, "0001_stage2_baseline"),
+    (2, "0002_tracking_qr_reporting"),
+    (3, "0003_qc_packing_delivery_events"),
+    (4, "0004_managed_files"),
+    (5, "0005_store_forward"),
+    (6, "0006_outsourced_company"),
+    (7, "0007_server_accounts"),
 )
 
+VERSION_TABLE = "_hms_migrations"
+
 TABLES_0001 = {
-    "alembic_version",
+    VERSION_TABLE,
     "customers",
     "delivery_schedule_entries",
     "production_runs",
@@ -51,7 +50,12 @@ TABLES_0003 = TABLES_0002 | {"tracking_workflow_events"}
 TABLES_0004 = TABLES_0003 | {"managed_files", "product_file_relations"}
 TABLES_0005 = TABLES_0004 | {"storage_configurations", "archive_transfer_jobs"}
 TABLES_0007 = TABLES_0005 | {"user_accounts", "server_settings"}
-TABLES_BY_REVISION = dict(zip(REVISIONS, (TABLES_0001, TABLES_0002, TABLES_0003, TABLES_0004, TABLES_0005, TABLES_0005, TABLES_0007)))
+TABLES_BY_REVISION = dict(
+    zip(
+        (version for version, _ in REVISIONS),
+        (TABLES_0001, TABLES_0002, TABLES_0003, TABLES_0004, TABLES_0005, TABLES_0005, TABLES_0007),
+    )
+)
 
 COLUMNS = {
     "products": {"internal_id", "product_code", "company", "part_name", "quantity", "unit", "material", "requester", "surface_treatment", "outsourced", "size", "notes", "delivery_schedule", "status", "created_at", "updated_at", "created_by", "updated_by"},
@@ -115,164 +119,82 @@ UNIQUE_SETS = {
     "user_accounts": {("username",)},
 }
 
-NON_UNIQUE_INDEXES = {
-    "tracking_workflow_events": {("event_type",), ("tracking_item_id",)},
-    "managed_files": {("sha256",), ("status",)},
-    "product_file_relations": {("product_id",)},
-    "storage_configurations": {("active",)},
-    "archive_transfer_jobs": {("configuration_id",), ("state",), ("next_retry_at",), ("grace_expires_at",), ("lease_token",), ("lease_expires_at",)},
-}
+
+def _migrations():
+    return load_migration_modules(SOURCE_ROOT / "migrations" / "engine")
 
 
-def _config(url: str) -> Config:
-    config = Config("alembic.ini")
-    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
-    return config
+def _now() -> str:
+    return "2026-01-01T00:00:00+00:00"
 
 
-def _snapshot(url: str) -> dict[str, dict[str, object]]:
-    engine = create_engine(url)
-    inspector = inspect(engine)
-    snapshot: dict[str, dict[str, object]] = {}
-    for table in sorted(inspector.get_table_names()):
-        snapshot[table] = {
-            "columns": tuple(sorted(
-                (column["name"], str(column["type"]), column["nullable"], column.get("default"), column.get("primary_key", 0))
-                for column in inspector.get_columns(table)
-            )),
-            "pk": tuple(inspector.get_pk_constraint(table).get("constrained_columns") or ()),
-            "fks": tuple(sorted(
-                (tuple(fk["constrained_columns"]), fk["referred_table"], tuple(fk["referred_columns"]))
-                for fk in inspector.get_foreign_keys(table)
-            )),
-            "uniques": tuple(sorted(
-                tuple(unique["column_names"])
-                for unique in inspector.get_unique_constraints(table)
-                if unique.get("column_names")
-            )),
-            "indexes": tuple(sorted(
-                (tuple(index["column_names"]), bool(index["unique"]))
-                for index in inspector.get_indexes(table)
-            )),
-        }
-    engine.dispose()
-    return snapshot
+def _uniques(table) -> set[tuple[str, ...]]:
+    result = {tuple(constraint) for constraint in table.unique_constraints}
+    result.update(
+        (column.name,) for column in table.columns if column.unique and not column.primary_key
+    )
+    return result
 
 
-def _assert_boundary(url: str, revision: str) -> dict[str, dict[str, object]]:
-    snapshot = _snapshot(url)
-    assert set(snapshot) == TABLES_BY_REVISION[revision]
-    for table in TABLES_BY_REVISION[revision] - {"alembic_version"}:
-        expected_columns = set(COLUMNS[table])
-        if table == "products" and revision in ("0006_outsourced_company", "0007_server_accounts"):
+def _assert_boundary(database: Database, version: int) -> None:
+    expected_tables = TABLES_BY_REVISION[version]
+    assert set(database.schema.tables) == expected_tables
+    for table_name in expected_tables - {VERSION_TABLE}:
+        table = database.schema.table(table_name)
+        expected_columns = set(COLUMNS[table_name])
+        if table_name == "products" and version >= 6:
             expected_columns.add("outsourced_company")
-        if table == "purchase_orders" and revision != "0001_stage2_baseline":
+        if table_name == "purchase_orders" and version != 1:
             expected_columns.add("internal_order_code")
-        assert {column[0] for column in snapshot[table]["columns"]} == expected_columns
-        assert snapshot[table]["pk"] == PRIMARY_KEYS[table]
-        assert len(snapshot[table]["fks"]) == FOREIGN_KEY_COUNTS[table]
-        expected_uniques = set(UNIQUE_SETS.get(table, set()))
-        if table == "purchase_orders" and revision != "0001_stage2_baseline":
+        assert {column.name for column in table.columns} == expected_columns
+        assert tuple(table.primary_key) == PRIMARY_KEYS[table_name]
+        assert len(table.foreign_keys) == FOREIGN_KEY_COUNTS[table_name]
+        expected_uniques = set(UNIQUE_SETS.get(table_name, set()))
+        if table_name == "purchase_orders" and version != 1:
             expected_uniques.add(("internal_order_code",))
-        assert set(snapshot[table]["uniques"]) == expected_uniques
-        actual_indexes = {columns for columns, unique in snapshot[table]["indexes"] if not unique}
-        expected_indexes = set(NON_UNIQUE_INDEXES.get(table, set()))
-        if table == "products" and revision == "0007_server_accounts":
-            expected_indexes.add(("delivery_schedule", "product_code"))
-        assert actual_indexes == expected_indexes
-    return snapshot
+        assert _uniques(table) == expected_uniques
 
 
-def _reset_postgresql(url: str) -> None:
-    engine = create_engine(url, isolation_level="AUTOCOMMIT")
-    with engine.connect() as connection:
-        connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
-        connection.execute(text("CREATE SCHEMA public"))
-    engine.dispose()
+def test_revision_graph_is_deterministic():
+    migrations = _migrations()
+    assert [version for version, _, _ in migrations] == [version for version, _ in REVISIONS]
+    assert [name for _, name, _ in migrations] == [name for _, name in REVISIONS]
 
-
-def _postgresql_url() -> str:
-    value = os.environ.get("HMS_QR_R010M1_POSTGRESQL_URL", "").strip()
-    if not value:
-        pytest.skip("isolated R010M1 PostgreSQL runtime is not configured")
-    return value
-
-
-def _exercise_full_traversal(url: str) -> None:
-    config = _config(url)
-    head_snapshot = None
-    for revision in REVISIONS:
-        command.upgrade(config, revision)
-        current = _assert_boundary(url, revision)
-        if revision == "0001_stage2_baseline":
-            assert "internal_order_code" not in COLUMNS["purchase_orders"]
-        if revision == "0007_server_accounts":
-            head_snapshot = current
-
-    command.upgrade(config, "head")
-    assert _snapshot(url) == head_snapshot
-
-    for revision in reversed(REVISIONS[:-1]):
-        command.downgrade(config, revision)
-        _assert_boundary(url, revision)
-    command.downgrade(config, "base")
-    assert set(_snapshot(url)) <= {"alembic_version"}
-
-    command.upgrade(config, "head")
-    assert _snapshot(url) == head_snapshot
-
-
-def test_revision_graph_and_historical_sources_are_deterministic():
-    config = _config("sqlite://")
-    scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0007_server_accounts"]
-    assert [revision.revision for revision in scripts.walk_revisions(base="base", head="heads")][::-1] == list(REVISIONS)
-
-    root = Path("migrations/versions")
-    for name in (
-        "0001_stage2_baseline.py",
-        "0002_tracking_qr_reporting.py",
-        "0003_qc_packing_delivery_events.py",
-    ):
-        source = (root / name).read_text(encoding="utf-8")
-        assert "Base.metadata" not in source
+    root = SOURCE_ROOT / "migrations" / "engine"
+    for _, name in REVISIONS:
+        source = (root / f"{name}.py").read_text(encoding="utf-8")
         assert "packages.persistence" not in source
 
 
-def test_sqlite_boundaries_downgrade_reupgrade_and_existing_head_noop(tmp_path):
-    url = f"sqlite:///{(tmp_path / 'r010m1-boundaries.sqlite').as_posix()}"
-    _exercise_full_traversal(url)
+def test_engine_boundaries_apply_one_version_at_a_time(tmp_path: Path):
+    migrations = _migrations()
+    database = Database(tmp_path / "r010m1-boundaries-engine")
+    try:
+        for version, _name in REVISIONS:
+            single = [item for item in migrations if item[0] == version]
+            assert run_migrations(database, single, now=_now) == [version]
+            assert applied_versions(database) == {
+                applied for applied, _ in REVISIONS if applied <= version
+            }
+            _assert_boundary(database, version)
+
+        assert run_migrations(database, migrations, now=_now) == []
+        _assert_boundary(database, 7)
+    finally:
+        database.close()
 
 
-def test_postgresql_boundaries_downgrade_reupgrade_and_future_model_preimport():
-    url = _postgresql_url()
-    _reset_postgresql(url)
-    _exercise_full_traversal(url)
-
-
-def _assert_head_matches_current_orm(url: str, *, reset) -> None:
-    reset(url)
-    command.upgrade(_config(url), "head")
-    migrated = _snapshot(url)
-    reset(url)
-    engine = create_engine(url)
-    Base.metadata.create_all(engine)
-    engine.dispose()
-    orm = _snapshot(url)
-    migrated.pop("alembic_version", None)
-    assert migrated == orm
-
-
-def test_sqlite_head_schema_matches_current_orm(tmp_path):
-    path = tmp_path / "r010m1-head.sqlite"
-    url = f"sqlite:///{path.as_posix()}"
-
-    def reset(_url):
-        path.unlink(missing_ok=True)
-
-    _assert_head_matches_current_orm(url, reset=reset)
-
-
-def test_postgresql_head_schema_matches_current_orm():
-    url = _postgresql_url()
-    _assert_head_matches_current_orm(url, reset=_reset_postgresql)
+def test_engine_head_schema_is_reproducible_from_scratch(tmp_path: Path):
+    migrations = _migrations()
+    first = Database(tmp_path / "head-a-engine")
+    second = Database(tmp_path / "head-b-engine")
+    try:
+        run_migrations(first, migrations, now=_now)
+        run_migrations(second, migrations, now=_now)
+        assert first.schema.to_dict() == second.schema.to_dict()
+        assert applied_versions(first) == applied_versions(second) == {
+            version for version, _, _ in migrations
+        }
+    finally:
+        first.close()
+        second.close()
