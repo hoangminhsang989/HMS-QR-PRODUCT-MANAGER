@@ -76,6 +76,18 @@ và GitHub commit-status trỏ vào `hms-qr-product-manager-web`. Nên xóa đi.
 Domain này phải được ghi vào `D:\HMS-QR-DATA\cors-origins.txt` trên máy chạy
 server, nếu không trình duyệt sẽ chặn mọi request từ trang production.
 
+## Truy vết ai cấp phát QR
+
+Khi thợ chọn một chi tiết chưa có mã, trang gửi kèm header `X-Actor` chứa tên
+tài khoản đang đăng nhập. Server ghi tên đó vào bảng `tracking_audit_events`,
+và lịch sử của chi tiết (`GET /tracking/api/v1/tracking-items/{id}/history`)
+sẽ hiện dòng `QR_ISSUED` kèm tên người cấp phát.
+
+Nếu không gửi header, server ghi chuỗi `"development-user"` — một cái tên
+không trả lời được câu hỏi ai đã làm. Header này không thuộc nhóm
+CORS-safelisted nên trình duyệt phải preflight; `allow_headers` của middleware
+đã bao gồm `X-Actor`.
+
 ## HTTPS là bắt buộc
 
 Trang production chạy HTTPS, và trình duyệt không cho phép một trang HTTPS gọi
