@@ -172,3 +172,42 @@ def test_portal_ignores_a_non_sqlite_database_url(tmp_path, monkeypatch):
     assert portal._resolve_engine() is None
     assert portal.get_stats() == EMPTY_STATS
     assert portal.get_live_events() == []
+
+
+def test_the_portal_counts_the_status_the_workflow_actually_writes(tmp_path, monkeypatch):
+    """The portal counted one spelling of "being machined" and not the other.
+
+    ``_project_status`` and ``submit_report`` write ``IN_PROCESS``; the factory
+    import writes ``IN_PRODUCTION``. The portal's "Dang gia cong" bucket and the
+    export report's KPI both read only ``IN_PRODUCTION``, so an item that went
+    through the normal machining workflow was counted as nothing at all - the
+    dashboard showed it in the total but in none of the stages, and the
+    percentage bar understated the work in progress.
+    """
+    engine_dir = _point_portal_at(tmp_path, monkeypatch)
+    db = connect(engine_dir)
+    try:
+        for statement in PORTAL_TABLES:
+            db.execute(statement)
+        db.execute("INSERT INTO products (internal_id, part_name) VALUES ('p1', 'BỘ PHẬN A')")
+        db.execute("INSERT INTO purchase_orders (internal_id, po_number) VALUES ('po1', 'PO-1')")
+        db.execute("INSERT INTO operators (internal_id, display_name) VALUES ('o1', 'Nguyễn Văn A')")
+        db.execute("INSERT INTO machining_types (internal_id, display_name) VALUES ('m1', 'TIỆN')")
+        for code, status in (
+            ("t1", "IN_PROCESS"),
+            ("t2", "IN_PRODUCTION"),
+            ("t3", "WAITING_QC"),
+        ):
+            db.execute(
+                "INSERT INTO order_tracking_items (internal_id, tracking_code, product_id, status)"
+                f" VALUES ('{code}', 'TRK-{code[1]}', 'p1', '{status}')"
+            )
+    finally:
+        db.close()
+
+    stats = portal.get_stats()
+    # both spellings of the same state must land in the one bucket
+    assert stats["in_prod"] == 2, (
+        f"in_prod={stats['in_prod']} - IN_PROCESS items are invisible to the dashboard"
+    )
+    assert stats["tracking"] == 3

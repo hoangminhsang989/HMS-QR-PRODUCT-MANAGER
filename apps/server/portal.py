@@ -210,7 +210,7 @@ def get_stats() -> dict[str, int]:
             sc[status] = sc.get(status, 0) + 1
         return {
             "products": prods, "pos": pos, "tracking": tracking, "operators": ops, "machining": 7,
-            "in_prod": sc.get("IN_PRODUCTION", 0),
+            "in_prod": sc.get("IN_PRODUCTION", 0) + sc.get("IN_PROCESS", 0),
             "qc": sc.get("QC_CHECKED", 0),
             "packed": sc.get("PACKED", 0),
             "deliv": sc.get("DELIVERED", 0),

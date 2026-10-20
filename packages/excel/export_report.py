@@ -63,7 +63,7 @@ def generate_production_excel_report(db_path: str) -> BytesIO:
     kpis = [
         ("Tổng số sản phẩm quản lý", total_prods, "Chi tiết"),
         ("Tổng số mã QR theo dõi (Tracking)", total_tracking, "Mã QR"),
-        ("Đang tiến hành gia công (IN_PRODUCTION)", status_counts.get("IN_PRODUCTION", 0), "Chi tiết"),
+        ("Đang tiến hành gia công (IN_PRODUCTION)", status_counts.get("IN_PRODUCTION", 0) + status_counts.get("IN_PROCESS", 0), "Chi tiết"),
         ("Đã kiểm tra chất lượng (QC_CHECKED)", status_counts.get("QC_CHECKED", 0), "Chi tiết"),
         ("Đã hoàn tất đóng gói (PACKED)", status_counts.get("PACKED", 0), "Chi tiết"),
         ("Đã xuất xưởng giao hàng (DELIVERED)", status_counts.get("DELIVERED", 0), "Chi tiết"),
