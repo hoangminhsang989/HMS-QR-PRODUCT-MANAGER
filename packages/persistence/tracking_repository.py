@@ -393,6 +393,14 @@ class TrackingRepository:
         )
         return tuple(self._report(row) for row in rows)
 
+    def audit_events(self, item_id):
+        rows = self.database.query(
+            "SELECT * FROM tracking_audit_events WHERE tracking_item_id = ?"
+            " ORDER BY server_timestamp ASC, internal_id ASC",
+            [str(item_id)],
+        )
+        return tuple(self._audit_event(row) for row in rows)
+
     def get_report(self, event_id):
         rows = self.database.query(
             "SELECT * FROM process_report_events WHERE internal_id = ?", [str(event_id)]
@@ -412,6 +420,22 @@ class TrackingRepository:
             QRStatus(row["qr_status"]) if row["qr_status"] else None,
             row["created_at"], row["updated_at"], row["created_by"], row["updated_by"],
         )
+
+    @staticmethod
+    def _audit_event(row):
+        stamp = row["server_timestamp"]
+        return {
+            "source": "AUDIT",
+            "internal_id": row["internal_id"],
+            "event_type": row["event_type"],
+            "quantity": None,
+            "notes": row["reason"],
+            "actor_user_id": row["actor"],
+            "actor_display_name_snapshot": row["actor"],
+            "server_timestamp": stamp.isoformat() if hasattr(stamp, "isoformat") else stamp,
+            "revision": None,
+            "status": "ACTIVE",
+        }
 
     @staticmethod
     def _report(row):

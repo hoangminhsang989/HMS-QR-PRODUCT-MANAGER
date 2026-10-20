@@ -25,7 +25,9 @@ def test_stage4_api_surface_status_filter_and_qr_unchanged(workflow_env):
     general=client.post(f"/api/v1/tracking-items/{item.internal_id}/reports",json=payload(env,"GENERAL_REPORT",None,"Đang xử lý lại bề mặt"));assert general.status_code==200
     summary=client.get(f"/api/v1/tracking-items/{item.internal_id}/workflow-summary").json();assert summary["current_status"]=="PARTIALLY_DELIVERED"
     filtered=client.get("/api/v1/tracking-items",params={"status":"PARTIALLY_DELIVERED"}).json()["items"];assert filtered[0]["tracking_code"]==item.tracking_code
-    history=client.get(f"/api/v1/tracking-items/{item.internal_id}/history").json()["items"];assert [x["event_type"] for x in history]==["QC_CHECKED","PACKED","DELIVERED","GENERAL_REPORT"]
+    history=client.get(f"/api/v1/tracking-items/{item.internal_id}/history").json()["items"];assert [x["event_type"] for x in history]==["QR_ISSUED","QC_CHECKED","PACKED","DELIVERED","GENERAL_REPORT"]
+    issued=[x for x in history if x["event_type"]=="QR_ISSUED"]
+    assert issued[0]["source"]=="AUDIT" and issued[0]["actor_display_name_snapshot"]=="u"
     revision=client.post(f"/api/v1/workflow-events/{delivered.json()['internal_id']}/revisions",json={"request_id":str(uuid4()),"quantity":30,"notes":"Sửa số lượng","actor_user_id":str(env["operator"].internal_id),"actor_display_name":"QC User","reason":"Nhập nhầm"});assert revision.status_code==200 and revision.json()["revision"]==2
     current=tracking.repo.get_item(item.internal_id)
     assert current.delivery_date==date(2026,8,30) and tracking.qr_payload(item.internal_id)==qr_before and set(__import__('json').loads(qr_before))=={"product_name","customer_name","product_code","tracking_code"}

@@ -702,6 +702,12 @@
       const token = readToken();
       const headers = new Headers((init && init.headers) || (input instanceof Request ? input.headers : undefined));
       if (token && !headers.has('Authorization')) headers.set('Authorization', 'Bearer ' + token);
+      // Every mutating endpoint stamps the actor it was given, and the QR
+      // issue is one of them. Without this header the server falls back to
+      // "development-user", so a code issued from the picker would carry no
+      // name and the audit trail could not answer who issued it.
+      const account = readAccount();
+      if (account && account.username && !headers.has('X-Actor')) headers.set('X-Actor', account.username);
       return nativeFetch(input, Object.assign({}, init, { headers })).then((response) => {
         if (response.status === 401) {
           // A missing token and an expired one both land here; either way the

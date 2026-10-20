@@ -74,7 +74,13 @@ class TrackingHistoryService:
         self.tracking_repository = tracking_repository
 
     def history(self, item_id):
-        return self.workflow_repository.history(item_id, self.tracking_repository.history(item_id))
+        rows = list(
+            self.workflow_repository.history(
+                item_id, self.tracking_repository.history(item_id)
+            )
+        )
+        rows.extend(self.tracking_repository.audit_events(item_id))
+        return tuple(sorted(rows, key=lambda row: row["server_timestamp"]))
 
     def summary(self, item_id):
         return self.workflow_repository.summary(item_id)

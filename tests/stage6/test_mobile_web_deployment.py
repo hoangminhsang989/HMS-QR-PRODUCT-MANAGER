@@ -583,6 +583,131 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_the_page_sends_the_operator_name_so_an_issued_qr_can_be_traced():
+    """The picker issues a QR on the operator's behalf, so the audit row has to
+    name that operator.
+
+    The server already reads an ``X-Actor`` header and already stores it in
+    ``tracking_audit_events.actor``; without this header it falls back to the
+    literal string ``"development-user"``. A code issued from the picker would
+    then carry no name, and the audit trail could not answer who issued it -
+    which is exactly the traceability the factory asked for.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+
+    wrapper = page.index("window.fetch = function (input, init)")
+    body = page[wrapper:page.index("return nativeFetch(", wrapper)]
+
+    assert "headers.set('X-Actor'" in body, (
+        "the fetch wrapper never names the operator, so every issued QR is "
+        "recorded as development-user"
+    )
+    assert "readAccount()" in body, (
+        "the operator name must come from the signed-in account, not a constant"
+    )
+    assert "account && account.username" in body, (
+        "an unauthenticated call must not invent an operator name"
+    )
+    assert "!headers.has('X-Actor')" in body, (
+        "an explicit X-Actor from a call site must not be overwritten"
+    )
+
+
+def test_the_history_shows_who_issued_the_qr(tmp_path, monkeypatch):
+    """``tracking_audit_events`` was written on every QR issue but never read
+    back, so the history endpoint reported an item going straight to QC with no
+    record of who issued its code. The audit rows now belong in the history.
+    """
+    app, runtime = _isolated_app(tmp_path, monkeypatch)
+    try:
+        with TestClient(app) as client:
+            headers = _login(client)
+            customer = client.post("/stage2/api/v1/customers", headers=headers, json={
+                "customer_code": "C-AUDIT", "name": "Công ty Biên",
+            }).json()
+            product = client.post("/api/v1/products", headers=headers, json={
+                "part_name": "Trục S45C", "quantity": "10", "unit": "cái",
+            }).json()
+            po = client.post("/stage2/api/v1/purchase-orders", headers=headers, json={
+                "po_number": "PO-AUDIT", "customer_id": customer["internal_id"],
+                "po_date": "2026-10-20", "status": "CONFIRMED",
+            }).json()
+            line = client.post(f"/stage2/api/v1/purchase-orders/{po['internal_id']}/lines",
+                               headers=headers, json={
+                                   "product_id": product["internal_id"], "line_number": 1,
+                                   "ordered_quantity": "10", "unit": "cái",
+                               }).json()
+            item = client.post("/tracking/api/v1/tracking-items", headers=headers, json={
+                "purchase_order_id": po["internal_id"],
+                "purchase_order_line_id": line["internal_id"],
+                "product_id": product["internal_id"],
+                "customer_id": customer["internal_id"],
+                "quantity": "10", "unit": "cái", "delivery_date": "2026-11-30",
+            }).json()
+            item_id = item["internal_id"]
+
+            # Without the header the server keeps its documented fallback.
+            blind = client.post(f"/tracking/api/v1/tracking-items/{item_id}/qr", headers=headers)
+            assert blind.status_code == 200, blind.text
+            history = client.get(f"/tracking/api/v1/tracking-items/{item_id}/history",
+                                 headers=headers).json()["items"]
+            issued = [row for row in history if row.get("source") == "AUDIT"]
+            assert len(issued) == 1, f"the audit row is missing from the history: {history}"
+            assert issued[0]["event_type"] == "QR_ISSUED"
+            assert issued[0]["actor_display_name_snapshot"] == "development-user"
+            assert issued[0]["actor_user_id"] == "development-user"
+
+            # With it, the row names the operator who actually did it.
+            reissue = client.post(
+                f"/tracking/api/v1/tracking-items/{item_id}/qr/reissue",
+                headers={**headers, "X-Actor": "nguyen.van.a"},
+            )
+            assert reissue.status_code == 200, reissue.text
+            history = client.get(f"/tracking/api/v1/tracking-items/{item_id}/history",
+                                 headers=headers).json()["items"]
+            reissued = [row for row in history
+                        if row.get("source") == "AUDIT" and row["event_type"] == "QR_REISSUED"]
+            assert len(reissued) == 1, f"the reissue audit row is missing: {history}"
+            assert reissued[0]["actor_display_name_snapshot"] == "nguyen.van.a"
+            assert reissued[0]["actor_user_id"] == "nguyen.van.a"
+
+            # The audit rows must not displace the workflow and machining rows
+            # that were already there, and the merged list stays time-ordered.
+            stamps = [row["server_timestamp"] for row in history]
+            assert stamps == sorted(stamps), "history lost its time ordering"
+            assert all(isinstance(stamp, str) and "T" in stamp for stamp in stamps), (
+                "audit timestamps must be ISO strings like every other row"
+            )
+    finally:
+        runtime.dispose()
+
+
+def test_cors_allows_the_actor_header_the_page_now_sends(monkeypatch):
+    """``X-Actor`` is not a CORS-safelisted header, so a browser preflights it.
+
+    If it is not allowed, every mutating call from the production page fails
+    before it reaches the server - which would take the picker's QR issue with
+    it.
+    """
+    import apps.server.app as app_module
+
+    monkeypatch.setenv("HMS_QR_CORS_ORIGINS", "https://hms-qr.vercel.app")
+    api = app_module.build_api(app_config=app_module.SERVER_APP_CONFIG,
+                               database_runtime=app_module.SERVER_DATABASE_RUNTIME)
+    with TestClient(api) as test_client:
+        allowed = test_client.options(
+            "/tracking/api/v1/operators",
+            headers={
+                "Origin": "https://hms-qr.vercel.app",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization, x-actor",
+            },
+        )
+        assert allowed.status_code == 200
+        granted = allowed.headers["access-control-allow-headers"]
+        assert "X-Actor" in granted, f"the actor header is not granted: {granted}"
+
+
 def test_the_catalog_reads_the_customer_name_from_the_customer_record():
     """The catalog and the issued QR must agree on what a payload says.
 
