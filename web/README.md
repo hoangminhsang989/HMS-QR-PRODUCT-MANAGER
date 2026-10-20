@@ -64,6 +64,28 @@ nhập, chặn nó thì không còn cách nào đăng nhập.
 4. Framework Preset: **Other**. Không có build command, không có output directory.
 5. Deploy. Mỗi lần push `main` sau đó Vercel tự deploy lại.
 
+## Domain production
+
+**`https://hms-qr-product-manager-web.vercel.app`**
+
+Project Vercel tên là **`hms-qr-product-manager-web`** (có hậu tố `-web`), không
+phải `hms-qr-product-manager`. Project cũ đó là rác - mọi alias đều trả 404
+`DEPLOYMENT_NOT_FOUND`, bản deploy duy nhất còn lại cũ hơn mọi commit trong repo,
+và GitHub commit-status trỏ vào `hms-qr-product-manager-web`. Nên xóa đi.
+
+Domain này phải được ghi vào `D:\HMS-QR-DATA\cors-origins.txt` trên máy chạy
+server, nếu không trình duyệt sẽ chặn mọi request từ trang production.
+
+## HTTPS là bắt buộc
+
+Trang production chạy HTTPS, và trình duyệt không cho phép một trang HTTPS gọi
+một origin HTTP. Vì vậy **server HMS QR phải được phơi ra ngoài qua HTTPS**.
+`CHAY_WEB.bat` làm đúng điều này: server chạy HTTP nội bộ, TLS được kết thúc tại
+Cloudflare tunnel. Một server LAN thuần HTTP sẽ không hoạt động.
+
+Đã kiểm chứng toàn bộ hành trình thật trên domain production (16/16): mở trang,
+trỏ origin tunnel, đăng nhập, chọn chi tiết, cấp phát QR, quét lại payload.
+
 ## Chạy cục bộ
 
 Không cần gì đặc biệt — mở `web/index.html` bằng Live Server, hoặc để chính máy
