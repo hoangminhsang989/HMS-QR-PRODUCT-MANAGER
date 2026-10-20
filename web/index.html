@@ -1113,6 +1113,12 @@
 
     async function sendWorkflow() {
       if (!current || !userId || !workflowType) return notify('Vui lòng chọn Người dùng trước khi gửi.', true);
+      if (workflowType !== 'GENERAL_REPORT') {
+        const qty = document.querySelector('#workflow-qty').value.trim();
+        if (!qty || isNaN(Number(qty)) || Number(qty) <= 0) {
+          return notify('Vui lòng nhập số lượng lớn hơn 0.', true);
+        }
+      }
       const routes = {
         QC_CHECKED: 'qc-events',
         SHORTAGE_REPORTED: 'qc-events',
@@ -1137,7 +1143,15 @@
       });
       if (!r.ok) {
         const e = await r.json();
-        return notify(e.error?.message || 'Không thể ghi sự kiện.', true);
+        // The server answers in two envelopes. _error() wraps as
+        // {error:{message}}, while HTTPException and FastAPI's own request
+        // validation answer as {detail:...} - a dict for HTTPException, a
+        // list of field errors for a rejected body. Reading only the first
+        // shape turned every rejected field into a message that names
+        // nothing the operator can fix.
+        const field = Array.isArray(e.detail) ? e.detail[0] : null;
+        const message = e.error?.message || e.detail?.message || field?.msg || 'Không thể ghi sự kiện.';
+        return notify(message, true);
       }
       playBeep();
       document.querySelector('#workflow-form').hidden = true;

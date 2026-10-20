@@ -880,3 +880,15 @@ begin R010 without that separate authority.
   để lại — chạm writer, portal, export và fixture seed, và chọn
   tên nào là quyết định về báo cáo nên ghi gì, không phải dọn dẹp.
 - **Full suite: 779 passed, 0 failed.**
+
+## Empty quantity and the unread error envelope — pushed `QTYFIX`
+
+Found by asking *what does the page send that the server can reject?* `#workflow-qty` is pre-filled from the item's quantity, but it is a plain number input behind an `onclick`, so nothing stops the operator clearing it. `sendWorkflow` checked `current`, `userId` and `workflowType` — never the quantity — and sent `document.querySelector('#workflow-qty').value`, which is a **string**. An empty field therefore reaches the server as `""`.
+
+Proven end-to-end against a real app: `quantity: ""` -> **HTTP 422 with `{"detail": [...]}`**, while `quantity: "10"` -> 422 with `{"error": {...}}`. The page's **only** error-extraction site (`web/index.html:1140`) read `e.error?.message`, which is `None` for the `detail` shape — so the operator saw the generic **"Không thể ghi sự kiện."** with no hint that the quantity was the problem. Verified in a real Chrome: after the fix the same action shows **"Vui lòng nhập số lượng lớn hơn 0."**, and a genuine validation error now surfaces the server's own words (**"Input should be a valid UUID, invalid character: found `x` at 1"**) instead of being swallowed.
+
+Root cause is that the API answers in **two envelopes**: `_error()` (`apps/server/app.py:439`) wraps as `{error:{code,message,details}}`, while `HTTPException` and FastAPI's own request validation answer as `{detail:...}` — a dict for `HTTPException`, a list of field errors for a rejected body. The page could read only the first. Both halves fixed: a client-side guard on the quantity, and an extraction that reads `e.error?.message || e.detail?.message || field?.msg`.
+
+**Two guards, each verified RED in 3 directions** (quantity guard removed -> 1 failed; envelope reading removed -> 1 failed; both removed -> 2 failed). Full suite **781 passed, 0 failed**.
+
+Gotchas hit while doing it: `Path.read_text()` translates `\r\n` to `\n`, so every CRLF anchor silently missed and the RED run "passed" against an unreverted file — read and write with `newline=''` when the bytes matter. And a comment placed *outside* the string literals in a patch script is a Python comment, so it is never written to the file at all.

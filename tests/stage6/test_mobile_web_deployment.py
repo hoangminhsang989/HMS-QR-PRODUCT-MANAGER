@@ -583,6 +583,48 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_an_empty_quantity_is_caught_before_the_round_trip():
+    """The quantity field is pre-filled from the item, but it is a plain number
+    input behind an onclick, so nothing stops the operator clearing it. An empty
+    value reaches the server as "" and is rejected as a 422 that names no field,
+    so the operator is told the event failed without being told what to fix.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    send = page[page.index("async function sendWorkflow"):]
+    send = send[:send.index("\n    async function ", 10)]
+
+    assert "isNaN(Number(qty))" in send, (
+        "the quantity is sent without being checked, so clearing the field "
+        "reaches the server as an empty string and comes back as a 422 that "
+        "names no field"
+    )
+    assert "Vui l\u00f2ng nh\u1eadp s\u1ed1 l\u01b0\u1ee3ng l\u1edbn h\u01a1n 0." in send, (
+        "the empty quantity is not named to the operator, so the only message "
+        "they see is that the event failed"
+    )
+
+
+def test_the_page_reads_the_servers_second_error_envelope():
+    """The server answers failures in two shapes. _error() wraps as
+    {error:{message}}, while HTTPException and FastAPI's own request validation
+    answer as {detail:...} - a dict for HTTPException, a list of field errors for
+    a rejected body. The page read only the first shape, so every rejected field
+    fell through to a message that names nothing the operator can fix.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    send = page[page.index("async function sendWorkflow"):]
+    send = send[:send.index("\n    async function ", 10)]
+
+    assert "Array.isArray(e.detail)" in send, (
+        "a 422 from request validation answers as {detail:[...]}, which the "
+        "page cannot read, so a rejected field is reported as a generic failure"
+    )
+    assert "e.detail?.message" in send, (
+        "an HTTPException answers as {detail:{message}}, which the page cannot "
+        "read, so the server's own diagnosis is discarded"
+    )
+
+
 def test_the_page_sends_the_operator_name_so_an_issued_qr_can_be_traced():
     """The picker issues a QR on the operator's behalf, so the audit row has to
     name that operator.

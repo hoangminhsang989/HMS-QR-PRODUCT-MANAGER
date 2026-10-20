@@ -123,3 +123,14 @@ Picker va cap phat QR deu noi ro buoc nao that bai, khong do loi cho buoc
 khac. Catalog khong tai duoc va cap phat QR khong duoc la hai thong bao
 rieng; neu chung im lang, lan quet tiep theo se bao "khong tim thay ma QR"
 du that bai o buoc ghi.
+
+So luong trong form su kien duoc kiem tra truoc khi gui. O so luong da duoc
+dien san tu chi tiet, nhung van xoa trang duoc, va mot o trong gui len thanh
+chuoi rong bi server tu choi bang 422 khong noi ro truong nao. Bay gay trang
+tu bao "Vui long nhap so luong lon hon 0" thay vi de operator nhan mot thong
+bao chung.
+
+May chu tra loi loi trong hai dang: `_error()` boc thanh
+`{error:{message}}`, con `HTTPException` va kiem tra du lieu cua FastAPI tra
+ve `{detail:...}`. Trang doc ca hai, nen mot truong bi tu choi se hien dung
+nguyen nhan tu may chu thay vi bi thay bang "Khong the ghi su kien".
