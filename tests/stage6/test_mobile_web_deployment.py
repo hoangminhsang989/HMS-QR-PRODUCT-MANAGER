@@ -800,6 +800,38 @@ def test_the_scan_warns_when_the_label_no_longer_matches():
     )
 
 
+def test_the_qr_issue_names_the_operator_not_the_login():
+    """Issuing a QR recorded the signed-in account, while every workflow event
+    records the operator picked from the list. On a shared device that is two
+    different names for one person inside a single history, and with nobody
+    picked yet the issue was filed under the login without a word.
+
+    The picker is the only write in the tracking flow that never asked who was
+    working, so it is the one that has to follow the convention the rest of the
+    page already follows.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+
+    wrapper = page[page.index("window.fetch = function"):]
+    wrapper = wrapper[:wrapper.index("function renderConnection")]
+
+    assert "localStorage.getItem('hms-user')" in wrapper, (
+        "the wrapper never looks at the picked operator, so the QR issue "
+        "still records the login"
+    )
+    assert "operator ||" in wrapper, (
+        "the operator is not preferred over the login, so a picked operator "
+        "is still ignored"
+    )
+    # The fallback has to survive a device where nobody has been picked yet,
+    # otherwise the header disappears and the server reverts to
+    # "development-user" - the defect this whole chain was built to remove.
+    assert "account && account.username" in wrapper, (
+        "dropping the login fallback would leave the header unset when no "
+        "operator is picked"
+    )
+
+
 def test_the_catalog_reads_the_customer_name_from_the_customer_record():
     """The catalog and the issued QR must agree on what a payload says.
 
