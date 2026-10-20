@@ -832,3 +832,36 @@ begin R010 without that separate authority.
   (cần quyền của LO), và chạy trên máy nhà máy: ghi origin
   production vào `D:\HMS-QR-DATA\cors-origins.txt`, chạy `CHAY_WEB.bat`,
   đọc `tunnel-url.txt`, mở domain trên điện thoại.
+
+- **LỖI NGHIÊM TRỌNG: import Excel xưởng ghi status mà
+  domain không có tên — `c220655`** (tìm bằng cách đối
+  chiều từng status trong `updateStepper` với những status
+  `_project_status` thực sự trả về):
+  - `factory_adapter.py` ghi `'IN_PRODUCTION'` vào
+    `order_tracking_items.status`, portal và export report đều đếm
+    giá trị đó — nhưng `TrackingStatus` không bao giờ đặt tên
+    cho nó, mà gọi trạng thái đó là `IN_PROCESS`. Đọc lại đi
+    qua `_item()` làm `TrackingStatus(row["status"])` → **`ValueError`**.
+    Import báo thành công, nhưng chi tiết sau đó **vô hình** với
+    picker, danh sách và mã QR — dù portal vẫn đếm nó.
+  - **Hướng sửa đúng**: thêm `IN_PRODUCTION` vào enum, KHÔNG
+    đổi import sang `IN_PROCESS`. Vì portal (`portal.py:213`) và export
+    (`export_report.py:66`) chỉ có bucket `IN_PRODUCTION`, không có
+    bucket `IN_PROCESS` — đổi import sẽ làm mất số liệu của cả hai.
+    (ENI đã thử đổi import trước, tự phát hiện và quay lại.)
+  - Hai tên cho một trạng thái vẫn còn; gộp là việc riêng.
+- **Stepper map từ vựng server không bao giờ ghi — `c220655`**:
+  `updateStepper` rẽ nhành trên `APPROVED`, `IN_PROGRESS`,
+  `SHORTAGE_REPORTED`, `QC_NG_RETURNED_TO_MACHINING`. Không cái nào
+  được ghi vào `order_tracking_items.status` — hai cái đầu không
+  phải status, hai cái sau là `WorkflowEventType` page gửi lên server.
+  Status thật (`WAITING_QC`, `REWORK`, `SHORTAGE`, `QC_NG`, `PACKING`,
+  `PARTIALLY_DELIVERED`) không khớp nhánh nào, rơi về mặc định
+  bước 2. Nên chi tiết đang chờ QC, bị NG, đang đóng gói, hoặc
+  giao một phần đều hiện "Gia công", và màu cảnh báo không bao giờ
+  hiện cho hai trạng thái bị lỗi.
+  Guard `test_the_stepper_covers_every_status_the_server_can_write`
+  **tự đọc status từ Python** (`TrackingStatus.X` + literal trong
+  INSERT của excel adapter, lọc bằng membership) nên không thể
+  lẩn tránh được bằng cách đổi tên.
+- **Full suite: 778 passed, 0 failed.**
