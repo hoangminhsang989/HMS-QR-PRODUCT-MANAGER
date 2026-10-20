@@ -1310,11 +1310,28 @@
         button.addEventListener('click', () => selectPartFromList(button.dataset.trackingCode));
       });
     }
-    function selectPartFromList(trackingCode) {
+    async function selectPartFromList(trackingCode) {
       const p = allAvailableParts.find(x => x.tracking_code === trackingCode);
       if (!p) return;
       closePartPicker();
-      document.getElementById('qr').value = p.qr_payload;
+      // The catalog's own payload only scans once the item's QR is ACTIVE, and
+      // scan_by_tracking_code refuses anything else with "QR not found or
+      // revoked". So for an item that has never been issued - or was revoked -
+      // ask the server to issue one and use the payload it hands back, which is
+      // authoritative. An already-active item needs no write: re-issuing would
+      // only append a duplicate QR_ISSUED row to its history.
+      let payload = p.qr_payload;
+      if (p.qr_status !== 'ACTIVE') {
+        try {
+          const issued = await fetch(serverOrigin + '/tracking/api/v1/tracking-items/'
+            + encodeURIComponent(p.internal_id) + '/qr', { method: 'POST' });
+          if (issued.ok) {
+            const body = await issued.json();
+            if (body.payload) payload = body.payload;
+          }
+        } catch (e) {}
+      }
+      document.getElementById('qr').value = payload;
       resolveScan();
     }
 

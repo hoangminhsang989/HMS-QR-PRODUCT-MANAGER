@@ -116,39 +116,108 @@ def test_login_endpoint_is_reachable_cross_origin(monkeypatch):
         assert response.headers["access-control-allow-origin"] == "https://hms-qr.vercel.app"
 
 
-def test_the_catalog_only_lists_qrs_that_actually_scan():
+def test_the_pages_inline_script_actually_parses():
+    """A syntax error in the inline script kills every function on the page.
+
+    Adding ``await`` to a function that was not ``async`` took the whole page
+    down: the browser discards the entire ``<script>`` block, so ``submitLogin``,
+    ``openPartPicker`` and ``selectPartFromList`` all became ``undefined`` while
+    the HTML still rendered normally. Nothing in the suite noticed, because the
+    guards below read the file as text and a broken script is still valid text.
+
+    Checked by parsing the block with ``ast``-equivalent tooling for JavaScript:
+    ``node --check``. Skipped when node is unavailable, so the suite still runs
+    on a machine without it.
+    """
+    import re
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+
+    html = Path("web/index.html").read_text(encoding="utf-8")
+    match = re.search(r"<script>(.*?)</script>", html, re.S)
+    assert match, "the page has no inline script"
+    script = match.group(1)
+
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as handle:
+        handle.write(script)
+        path = handle.name
+    try:
+        result = subprocess.run(["node", "--check", path],
+                                capture_output=True, text=True)
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+    assert result.returncode == 0, (
+        f"the page's inline script does not parse, so none of its functions "
+        f"exist at runtime:\n{result.stderr[:600]}"
+    )
+
+
+def test_the_catalog_reports_qr_status_so_the_page_knows_when_to_issue():
     """The picker must not hand out a code that answers 404.
 
     ``scan_by_tracking_code`` refuses any row whose ``qr_status`` is not ACTIVE,
-    while the catalog used to return every tracking item and render a QR image
-    for each. An un-issued item therefore looked scannable in the picker and
-    then failed with "QR not found or revoked" - a dead end for the operator,
-    and the same class of defect as the catalog reading the wrong customer
-    field. Checked structurally, because the fix is a WHERE clause on the query
-    and a substring test would pass on a comment that merely mentions ACTIVE.
+    while the catalog used to return a payload for every tracking item. An
+    un-issued item therefore looked scannable in the picker and then failed with
+    "QR not found or revoked" - a dead end for the operator, and the same class
+    of defect as the catalog reading the wrong customer field.
+
+    The catalog lists every item (the picker exists so an operator can work on a
+    part that has no label yet), so the page needs ``qr_status`` to know whether
+    to ask for a QR to be issued before the code will scan. Checked structurally
+    with ``ast``: the field must be selected from the query and carried into the
+    response, because a substring test would pass on a comment that merely
+    mentions it.
     """
     import ast
 
     source = Path("apps/server/app.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
-    queries = [
-        node
-        for node in ast.walk(tree)
+
+    selects = [
+        node for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "query"
-    ]
-    catalog_queries = [
-        node for node in queries
-        if node.args
+        and node.args
         and isinstance(node.args[0], ast.Constant)
         and "order_tracking_items" in str(node.args[0].value)
-        and "product_id, customer_id" in str(node.args[0].value)
     ]
-    assert catalog_queries, "the catalog's tracking-item query was not found"
-    sql = " ".join(str(catalog_queries[0].args[0].value).upper().split())
-    assert "WHERE QR_STATUS" in sql, (
-        "the catalog lists tracking items without requiring an ACTIVE QR"
+    assert selects, "the catalog's tracking-item query was not found"
+    sql = " ".join(str(selects[0].args[0].value).upper().split())
+    assert "QR_STATUS" in sql, (
+        "the catalog must select qr_status so the page can tell an un-issued "
+        "QR from a live one"
+    )
+
+    # Scoped to qr_catalog: the module carries qr_status in other responses
+    # (the tracking-item view), so a module-wide key check would pass even if
+    # the catalog dropped it.
+    catalog_fn = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "qr_catalog"
+    )
+    keys = {
+        key.value
+        for node in ast.walk(catalog_fn)
+        if isinstance(node, ast.Dict)
+        for key in node.keys
+        if isinstance(key, ast.Constant) and isinstance(key.value, str)
+    }
+    assert "qr_status" in keys, (
+        "the catalog response must carry qr_status through to the page"
+    )
+
+    page = Path("web/index.html").read_text(encoding="utf-8")
+    assert "qr_status" in page, (
+        "the picker must consult qr_status before handing out a payload"
+    )
+    assert "/qr'" in page.replace('"', "'") or "/qr\"" in page, (
+        "the picker must be able to ask the server to issue a QR"
     )
 
 

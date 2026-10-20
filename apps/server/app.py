@@ -619,18 +619,15 @@ def qr_catalog(search: str | None = None, limit: int = 150):
     # ``internal_id``, so the joined table's value would overwrite the tracking
     # item's. The lookup is therefore resolved in Python, as in the portal.
     database = SERVER_DATABASE_RUNTIME.database
-    # Only items whose QR is actually ACTIVE. The catalog renders a QR image for
-    # every row it returns, and scan_by_tracking_code refuses anything whose
-    # qr_status is not ACTIVE - so listing an un-issued or revoked item hands the
-    # operator a code that decodes fine and then answers 404 "QR not found or
-    # revoked". The picker's whole job is handing out scannable codes, which is
-    # the same principle that already skips items with an incomplete identity.
-    from packages.domain.tracking import QRStatus
-
+    # Every tracking item is listed, with its qr_status, because the picker's job
+    # is letting an operator work on a part that has no physical label yet - not
+    # browsing the ones already labelled. ``qr_status`` is what tells the page
+    # whether it must ask for a QR to be issued before the code will scan:
+    # scan_by_tracking_code refuses anything that is not ACTIVE, so an un-issued
+    # item's own payload answers 404 "QR not found or revoked".
     items = database.query(
         "SELECT internal_id, tracking_code, quantity, unit, status, delivery_date,"
-        " product_id, customer_id FROM order_tracking_items WHERE qr_status = ?",
-        [QRStatus.ACTIVE.value],
+        " qr_status, product_id, customer_id FROM order_tracking_items"
     )
     products = {
         row["internal_id"]: row
@@ -688,6 +685,7 @@ def qr_catalog(search: str | None = None, limit: int = 150):
         catalog.append({
             "internal_id": item["internal_id"],
             "tracking_code": item["tracking_code"],
+            "qr_status": item["qr_status"],
             "product_code": product["product_code"],
             "part_name": product["part_name"],
             "company": product["company"],
