@@ -1179,7 +1179,10 @@
           QC_NG_RETURNED_TO_MACHINING: 'Hàng NG',
           PACKED: 'Đóng gói',
           DELIVERED: 'Giao hàng',
-          GENERAL_REPORT: 'Báo cáo'
+          GENERAL_REPORT: 'Báo cáo',
+          QR_ISSUED: 'Cấp phát QR',
+          QR_REISSUED: 'Cấp phát lại QR',
+          DELIVERY_DATE_CHANGED: 'Đổi ngày giao'
         };
         document.querySelector('#history').innerHTML = d.items.length ? d.items.map(x =>
           `<li><span class='history-kind'>${escapeHtml(names[x.event_type] || x.event_type)}</span> — ${new Date(x.server_timestamp).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} — <b>${escapeHtml(x.actor_display_name_snapshot)}</b>${(x.quantity !== null && x.quantity !== undefined && x.quantity !== '') ? ' — SL: ' + escapeHtml(formatQty(x.quantity)) : ''}${x.notes ? ' — ' + escapeHtml(x.notes) : ''}</li>`

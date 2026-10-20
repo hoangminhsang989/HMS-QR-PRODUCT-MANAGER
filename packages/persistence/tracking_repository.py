@@ -435,6 +435,8 @@ class TrackingRepository:
             "server_timestamp": stamp.isoformat() if hasattr(stamp, "isoformat") else stamp,
             "revision": None,
             "status": "ACTIVE",
+            "old_value": row["old_value"],
+            "new_value": row["new_value"],
         }
 
     @staticmethod

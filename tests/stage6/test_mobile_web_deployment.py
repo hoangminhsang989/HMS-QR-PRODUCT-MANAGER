@@ -708,6 +708,58 @@ def test_cors_allows_the_actor_header_the_page_now_sends(monkeypatch):
         assert "X-Actor" in granted, f"the actor header is not granted: {granted}"
 
 
+def test_the_history_labels_the_audit_events_in_vietnamese():
+    """The audit rows only became visible in the history recently, and an
+    unlabelled one renders its raw English event_type to the operator.
+
+    The three types are the only ones ``save_item`` ever writes to
+    ``tracking_audit_events`` - QR_ISSUED and QR_REISSUED from the QR endpoints,
+    DELIVERY_DATE_CHANGED from the delivery-date endpoint - so this list is the
+    complete set, not a sample.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+
+    # The loadHistory map is the one that starts with ATTEMPT; the workflow map
+    # starts with QC_CHECKED and must not be edited by mistake.
+    start = page.index("ATTEMPT: '")
+    block = page[start:page.index("};", start)]
+
+    for event_type in ("QR_ISSUED", "QR_REISSUED", "DELIVERY_DATE_CHANGED"):
+        assert f"{event_type}: '" in block, (
+            f"{event_type} has no Vietnamese label, so the history shows the raw "
+            f"English event_type to the operator"
+        )
+
+    # A label must not be left as the event_type itself, which would look
+    # translated while saying nothing.
+    for line in block.splitlines():
+        stripped = line.strip()
+        for event_type in ("QR_ISSUED", "QR_REISSUED", "DELIVERY_DATE_CHANGED"):
+            if stripped.startswith(f"{event_type}:"):
+                label = stripped.split("'")[1]
+                assert label != event_type, f"{event_type} is labelled with itself"
+                assert label.strip(), f"{event_type} has an empty label"
+
+
+def test_the_audit_row_keeps_the_old_and_new_value():
+    """A DELIVERY_DATE_CHANGED audit row carries the old and the new date, and
+    they are the only record of what the date used to be. Reading the row back
+    without them would silently erase that.
+    """
+    source = (SOURCE_ROOT / "packages/persistence/tracking_repository.py").read_text(
+        encoding="utf-8"
+    )
+    block = source[source.index("def _audit_event"):]
+    block = block[:block.index("def _report")]
+
+    assert '"old_value": row["old_value"]' in block, (
+        "the audit row drops old_value, erasing what a date change replaced"
+    )
+    assert '"new_value": row["new_value"]' in block, (
+        "the audit row drops new_value, erasing what a date change became"
+    )
+
+
 def test_the_catalog_reads_the_customer_name_from_the_customer_record():
     """The catalog and the issued QR must agree on what a payload says.
 
