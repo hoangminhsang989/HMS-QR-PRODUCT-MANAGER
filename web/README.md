@@ -42,7 +42,9 @@ khởi động server:
 set HMS_QR_CORS_ORIGINS=https://ten-app.vercel.app
 ```
 
-Nhiều origin thì phân cách bằng dấu phẩy. Không bao giờ dùng `*`.
+Nhiều origin thì phân cách bằng dấu phẩy **hoặc xuống dòng** — cả hai đều được.
+`CHAY_WEB.bat` đọc danh sách từ `D:\HMS-QR-DATA\cors-origins.txt`, mỗi origin
+một dòng. Không bao giờ dùng `*`.
 
 ## Đăng nhập
 
