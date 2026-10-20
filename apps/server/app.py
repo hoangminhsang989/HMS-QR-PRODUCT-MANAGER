@@ -78,13 +78,13 @@ def create_app() -> dict[str, str]:
 
 
 def require_sqlite_legacy_endpoint(config: AppConfig) -> None:
-    """Keep incomplete SQLite-only portal features out of PostgreSQL deployments."""
+    """Keep portal features that only work in DEV out of other environments."""
     if config.environment is not Environment.DEV:
         raise HTTPException(
             status_code=501,
             detail={
                 "code": "SQLITE_LEGACY_ENDPOINT_UNSUPPORTED",
-                "message": "Chức năng portal này chưa hỗ trợ PostgreSQL server.",
+                "message": "Chức năng này chỉ hoạt động ở môi trường DEV. Máy chủ đang chạy ở môi trường khác.",
             },
         )
 

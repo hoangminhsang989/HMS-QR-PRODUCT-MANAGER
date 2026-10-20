@@ -116,3 +116,17 @@ def test_sqlite_legacy_portal_endpoints_are_rejected_outside_dev():
         require_sqlite_legacy_endpoint(config)
     assert exc.value.status_code == 501
     assert exc.value.detail["code"] == "SQLITE_LEGACY_ENDPOINT_UNSUPPORTED"
+
+
+def test_the_legacy_gate_does_not_blame_a_database_that_is_gone():
+    """The 501 message blamed PostgreSQL, which the engine cutover removed.
+
+    An operator who met that message went looking for a PostgreSQL problem
+    that does not exist. The gate is a DEV-only restriction; say so.
+    """
+    config = AppConfig(Environment.PROD, "postgresql+psycopg://user:password@localhost/hms_qr", "nas")
+    with pytest.raises(HTTPException) as exc:
+        require_sqlite_legacy_endpoint(config)
+    message = exc.value.detail["message"]
+    assert "PostgreSQL" not in message
+    assert "DEV" in message
