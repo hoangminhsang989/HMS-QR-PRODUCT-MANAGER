@@ -1313,7 +1313,12 @@
             const label = document.getElementById('part-picker-btn');
             if (label) label.textContent = '🔍 Danh Sách ' + total + ' Chi Tiết';
           }
-        } catch(e) {}
+        } catch(e) {
+          // An empty picker with no explanation reads as "there is nothing
+          // to pick", which is a different problem from "the server could
+          // not be reached". The endpoint also answers 501 outside DEV.
+          notify('Không tải được danh sách chi tiết. Kiểm tra kết nối tới máy chủ.', true);
+        }
       }
       filterPartsList();
     }
@@ -1359,8 +1364,16 @@
           if (issued.ok) {
             const body = await issued.json();
             if (body.payload) payload = body.payload;
+          } else {
+            // The catalog's own payload only scans once the item's QR is
+            // ACTIVE, so keeping it after a failed issue would surface on
+            // the next scan as "QR not found" - blaming the code for a
+            // failed write. Say what actually failed and stop.
+            return notify('Không cấp phát được mã QR. Vui lòng thử lại.', true);
           }
-        } catch (e) {}
+        } catch (e) {
+          return notify('Không cấp phát được mã QR. Vui lòng thử lại.', true);
+        }
       }
       document.getElementById('qr').value = payload;
       const stale = document.getElementById('qr-mismatch');

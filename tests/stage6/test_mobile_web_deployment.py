@@ -832,6 +832,44 @@ def test_the_qr_issue_names_the_operator_not_the_login():
     )
 
 
+def test_a_failed_qr_issue_is_not_reported_as_a_failed_scan():
+    """Issuing a QR swallowed its own failure. The catalog's payload only scans
+    once the item's QR is ACTIVE, so after a failed issue the page kept that
+    preview and the next scan answered "QR not found" - blaming the code for a
+    failed write, and sending the operator looking for a problem in the wrong
+    place.
+
+    The picker had the same shape: a catalog that could not be loaded left an
+    empty list with no explanation, which reads as "nothing to pick" rather
+    than "the server could not be reached".
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+
+    pick = page[page.index("async function selectPartFromList"):]
+    pick = pick[:pick.index("function ", pick.index("function ") + 1)]
+
+    assert "} catch (e) {}" not in pick, (
+        "the QR issue still swallows its failure, so a failed write is "
+        "reported as a failed scan"
+    )
+    assert "return notify(" in pick, (
+        "the issue failure is not surfaced, so the operator is told the QR "
+        "is missing rather than that it could not be issued"
+    )
+
+    opener = page[page.index("async function openPartPicker"):]
+    opener = opener[:opener.index("function ", opener.index("function ") + 1)]
+
+    assert "} catch(e) {}" not in opener, (
+        "a catalog that fails to load leaves the picker empty and silent, "
+        "which reads as 'nothing to pick'"
+    )
+    assert "notify(" in opener, (
+        "the catalog failure is not surfaced, so the operator cannot tell a "
+        "dead server from an empty list"
+    )
+
+
 def test_the_catalog_reads_the_customer_name_from_the_customer_record():
     """The catalog and the issued QR must agree on what a payload says.
 
