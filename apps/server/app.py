@@ -619,9 +619,18 @@ def qr_catalog(search: str | None = None, limit: int = 150):
     # ``internal_id``, so the joined table's value would overwrite the tracking
     # item's. The lookup is therefore resolved in Python, as in the portal.
     database = SERVER_DATABASE_RUNTIME.database
+    # Only items whose QR is actually ACTIVE. The catalog renders a QR image for
+    # every row it returns, and scan_by_tracking_code refuses anything whose
+    # qr_status is not ACTIVE - so listing an un-issued or revoked item hands the
+    # operator a code that decodes fine and then answers 404 "QR not found or
+    # revoked". The picker's whole job is handing out scannable codes, which is
+    # the same principle that already skips items with an incomplete identity.
+    from packages.domain.tracking import QRStatus
+
     items = database.query(
         "SELECT internal_id, tracking_code, quantity, unit, status, delivery_date,"
-        " product_id, customer_id FROM order_tracking_items"
+        " product_id, customer_id FROM order_tracking_items WHERE qr_status = ?",
+        [QRStatus.ACTIVE.value],
     )
     products = {
         row["internal_id"]: row

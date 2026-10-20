@@ -116,6 +116,42 @@ def test_login_endpoint_is_reachable_cross_origin(monkeypatch):
         assert response.headers["access-control-allow-origin"] == "https://hms-qr.vercel.app"
 
 
+def test_the_catalog_only_lists_qrs_that_actually_scan():
+    """The picker must not hand out a code that answers 404.
+
+    ``scan_by_tracking_code`` refuses any row whose ``qr_status`` is not ACTIVE,
+    while the catalog used to return every tracking item and render a QR image
+    for each. An un-issued item therefore looked scannable in the picker and
+    then failed with "QR not found or revoked" - a dead end for the operator,
+    and the same class of defect as the catalog reading the wrong customer
+    field. Checked structurally, because the fix is a WHERE clause on the query
+    and a substring test would pass on a comment that merely mentions ACTIVE.
+    """
+    import ast
+
+    source = Path("apps/server/app.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    queries = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "query"
+    ]
+    catalog_queries = [
+        node for node in queries
+        if node.args
+        and isinstance(node.args[0], ast.Constant)
+        and "order_tracking_items" in str(node.args[0].value)
+        and "product_id, customer_id" in str(node.args[0].value)
+    ]
+    assert catalog_queries, "the catalog's tracking-item query was not found"
+    sql = " ".join(str(catalog_queries[0].args[0].value).upper().split())
+    assert "WHERE QR_STATUS" in sql, (
+        "the catalog lists tracking items without requiring an ACTIVE QR"
+    )
+
+
 def test_cors_origins_split_on_newlines_as_well_as_commas(monkeypatch):
     """The launcher hands the allowlist over as one origin per line.
 
