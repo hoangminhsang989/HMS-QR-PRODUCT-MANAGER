@@ -814,3 +814,21 @@ begin R010 without that separate authority.
   co action, portal cung khong. `QR_REISSUED` va `DELIVERY_DATE_CHANGED` chi
   dat duoc qua API. Nhan tieng Viet va old/new value toi them cho chung van
   đung, nhung khong the thay tu man hinh.
+
+- **Message 501 do loi cho PostgreSQL — `ba3f8de`** (cung lop voi loi
+  "do loi cho ma QR" o tren): `require_sqlite_legacy_endpoint` tra 501 voi
+  message *"Chức năng portal này chưa hỗ trợ PostgreSQL
+  server."* — nhưng **PostgreSQL đã bị xoá hoàn toàn khỏi
+  runtime** khi cắt engine. Message chỉ vào một vấn đề không
+  thể tồn tại; ai gặp sẽ đi tìm lỗi PostgreSQL. Gate thực
+  chẩt là giới hạn DEV-only, nên giở nói đúng vậy.
+  **Code không đổi** — chỉ message và docstring (cũng mang cái
+  khẳng đóng cũ). 4 chỗ gọi (excel import, paste-import,
+  qr-catalog, export excel) đều là tính năng portal, message chung
+  đủ dùng. Test cu chỉ giư code, không giư message nên sửa
+  được; guard mới chặn lại việc đưa PostgreSQL trở vào.
+  **Verdel không redeploy** — thay đổi nằm ngoài `web/`.
+- **Việc còn lại cho LO**: xoá project Vercel `hms-qr-product-manager`
+  (cần quyền của LO), và chạy trên máy nhà máy: ghi origin
+  production vào `D:\HMS-QR-DATA\cors-origins.txt`, chạy `CHAY_WEB.bat`,
+  đọc `tunnel-url.txt`, mở domain trên điện thoại.
