@@ -887,12 +887,16 @@
     }
 
     async function changeUser() {
-      const r = await fetch(api + '/api/v1/operators');
-      if (!r.ok) return;
-      const d = await r.json();
-      document.querySelector('#user-select').innerHTML = '<option value="">-- Chọn nhân sự --</option>' +
-        d.items.map(x => `<option value="${escapeHtml(x.internal_id)}">${escapeHtml(x.display_name)}</option>`).join('');
-      document.querySelector('#user-picker').hidden = false;
+      try {
+        const r = await fetch(api + '/api/v1/operators');
+        if (!r.ok) return notify('Không tải được danh sách nhân sự. Kiểm tra kết nối tới máy chủ.', true);
+        const d = await r.json();
+        document.querySelector('#user-select').innerHTML = '<option value="">-- Chọn nhân sự --</option>' +
+          d.items.map(x => `<option value="${escapeHtml(x.internal_id)}">${escapeHtml(x.display_name)}</option>`).join('');
+        document.querySelector('#user-picker').hidden = false;
+      } catch(e) {
+        notify('Không tải được danh sách nhân sự. Kiểm tra kết nối tới máy chủ.', true);
+      }
     }
 
     async function selectUser() {
@@ -916,12 +920,16 @@
     }
 
     async function changeProcess() {
-      const r = await fetch(api + '/api/v1/machining-types');
-      if (!r.ok) return;
-      const d = await r.json();
-      document.querySelector('#process-select').innerHTML = '<option value="">-- Chọn loại gia công --</option>' +
-        d.items.map(x => `<option value="${escapeHtml(x.internal_id)}">${escapeHtml(x.display_name)}</option>`).join('');
-      document.querySelector('#process-picker').hidden = false;
+      try {
+        const r = await fetch(api + '/api/v1/machining-types');
+        if (!r.ok) return notify('Không tải được danh sách công đoạn. Kiểm tra kết nối tới máy chủ.', true);
+        const d = await r.json();
+        document.querySelector('#process-select').innerHTML = '<option value="">-- Chọn loại gia công --</option>' +
+          d.items.map(x => `<option value="${escapeHtml(x.internal_id)}">${escapeHtml(x.display_name)}</option>`).join('');
+        document.querySelector('#process-picker').hidden = false;
+      } catch(e) {
+        notify('Không tải được danh sách công đoạn. Kiểm tra kết nối tới máy chủ.', true);
+      }
     }
 
     async function selectProcess() {

@@ -124,6 +124,10 @@ khac. Catalog khong tai duoc va cap phat QR khong duoc la hai thong bao
 rieng; neu chung im lang, lan quet tiep theo se bao "khong tim thay ma QR"
 du that bai o buoc ghi.
 
+Hai nut NGUOI DUNG va CONG DOAN truoc day cung im lang: bam vao khong mo
+duoc danh sach thi khong co picker cung khong co thong bao. Bay chung noi
+ro nguyen nhan, va picker van bi an khi khong tai duoc du lieu.
+
 So luong trong form su kien duoc kiem tra truoc khi gui. O so luong da duoc
 dien san tu chi tiet, nhung van xoa trang duoc, va mot o trong gui len thanh
 chuoi rong bi server tu choi bang 422 khong noi ro truong nao. Bay gay trang

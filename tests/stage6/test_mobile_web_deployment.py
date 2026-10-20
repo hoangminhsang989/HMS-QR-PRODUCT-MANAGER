@@ -583,6 +583,35 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_the_operator_and_process_pickers_do_not_fail_silently():
+    """The NGUOI DUNG and CONG DOAN pills each open a picker. Both fetched their
+    list and returned on any non-ok response without a word, so a tap that could
+    not load its list did nothing at all - no picker, no message. The picker in
+    the part list already had this fixed; these two were the same defect left
+    behind, and neither had a try/catch, so a dead network rejected a promise
+    nobody was listening to.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+
+    for name, label in (("changeUser", "nhan su"), ("changeProcess", "cong doan")):
+        start = page.index(f"async function {name}(")
+        end = page.index("\n    async function ", start + 10)
+        body = page[start:end]
+
+        assert "if (!r.ok) return;" not in body, (
+            f"{name} still returns silently on a failed load, so tapping the "
+            "pill does nothing and says nothing"
+        )
+        assert "notify(" in body, (
+            f"the {label} list failure is not surfaced, so the operator "
+            "cannot tell a dead server from an empty list"
+        )
+        assert "} catch(e) {" in body, (
+            f"{name} has no catch, so a dead network rejects a promise "
+            "nobody is listening to"
+        )
+
+
 def test_an_empty_quantity_is_caught_before_the_round_trip():
     """The quantity field is pre-filled from the item, but it is a plain number
     input behind an onclick, so nothing stops the operator clearing it. An empty

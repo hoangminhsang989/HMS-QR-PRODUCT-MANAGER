@@ -892,3 +892,16 @@ Root cause is that the API answers in **two envelopes**: `_error()` (`apps/serve
 **Two guards, each verified RED in 3 directions** (quantity guard removed -> 1 failed; envelope reading removed -> 1 failed; both removed -> 2 failed). Full suite **781 passed, 0 failed**.
 
 Gotchas hit while doing it: `Path.read_text()` translates `\r\n` to `\n`, so every CRLF anchor silently missed and the RED run "passed" against an unreverted file — read and write with `newline=''` when the bytes matter. And a comment placed *outside* the string literals in a patch script is a Python comment, so it is never written to the file at all.
+
+## The two pickers that failed silently — pushed `PICKFIX`
+
+Found by enumerating every `fetch` in the page and asking which ones swallow a failure. The `NGƯỜI DÙNG:` and `CÔNG ĐOẠN:` pills (`web/index.html:455,458`) each open a picker, and both did:
+
+```js
+const r = await fetch(api + '/api/v1/operators');
+if (!r.ok) return;          // no picker, no message
+```
+
+So a tap that could not load its list did **nothing at all**. Neither function had a `try/catch` either, so a dead network rejected a promise nobody was listening to. This is the same defect as `openPartPicker`, which `7a73320` already fixed — that fix covered the part picker and left these two behind.
+
+Verified in a real Chrome on three paths: a 500 response now shows **"Không tải được danh sách nhân sự. Kiểm tra kết nối tới máy chủ."** (and the process equivalent) with the picker correctly left hidden; a rejected fetch shows the same; and the happy path still loads (machining types: 8 options = placeholder + 7 seeded types). Full suite **782 passed, 0 failed**.
