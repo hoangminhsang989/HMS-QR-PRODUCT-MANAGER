@@ -865,3 +865,18 @@ begin R010 without that separate authority.
   INSERT của excel adapter, lọc bằng membership) nên không thể
   lẩn tránh được bằng cách đổi tên.
 - **Full suite: 778 passed, 0 failed.**
+
+- **Portal và export đếm thiếu một trạng thái — `a34b6ed`**
+  (hậu quả trực tiếp của lỗi `IN_PRODUCTION`/`IN_PROCESS`
+  ở trên): `_project_status` và `submit_report` ghi `IN_PROCESS`,
+  factory import ghi `IN_PRODUCTION` — cùng một trạng thái. Nhưng
+  bucket "Đang gia công" của portal (`portal.py:213`) và KPI của
+  export (`export_report.py:66`) chỉ đọc `IN_PRODUCTION`. Nên chi tiết
+  đi qua quy trình gia công bình thường **không được đếm vào
+  đâu cả** — có trong tổng, mất trong từng chặng, và thanh
+  phần trăm đánh giá thấp khối lượng đang chạy. Test chứng minh:
+  `in_prod=1` khi đúng ra 2.
+  **Cả hai bucket giờ cộng hai tên.** Việc gệp hai tên thành một
+  để lại — chạm writer, portal, export và fixture seed, và chọn
+  tên nào là quyết định về báo cáo nên ghi gì, không phải dọn dẹp.
+- **Full suite: 779 passed, 0 failed.**
