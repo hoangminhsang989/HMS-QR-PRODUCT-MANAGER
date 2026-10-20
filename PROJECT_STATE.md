@@ -765,3 +765,27 @@ begin R010 without that separate authority.
     va pick chi tiet khac xoa canh bao.
   - Full suite: **771 passed** + 2 D2 flake da biet (chay rieng voi basetemp sach:
     82/82; khong file pin nao bi doi).
+
+- **Cap phat QR ghi ten tho, khong phai ten dang nhap — `86991ed`** (tim bang
+  cach doc quy uoc cua chinh codebase): `sendWorkflow` va `submitReport` deu
+  chan neu `!userId` va ghi `#user`.textContent lam actor. Picker la ngoai le
+  duy nhat — `selectPartFromList` va `openPartPicker` khong kiem tra `userId`,
+  va `X-Actor` lay tu `readAccount().username`. Nen tren may dung chung, cung
+  mot nguoi xuat hien hai ten trong mot history: bao cao gia cong ghi
+  "Nguyen Van A", con cap phat QR ghi "admin".
+  - **Quyet dinh cua toi, LO khong tra loi**: uu tien operator duoc chon, chi
+    fallback ve dang nhap khi chua chon ai. Ly do: (1) nhat quan voi moi ghi
+    nhan khac trong luồng tracking; (2) khong chan ai — neu bat buoc chon
+    operator truoc khi pick co the be luồng "giam sat pick ho cho nhieu tho";
+    (3) giu fallback, vi bo no se lam header bi thieu va server quay ve
+    "development-user" — chinh la loi ca chuoi nay da sua.
+  - **Khong phai bug, da kiem tra**: `product_api_client.py:92` dung `elif`
+    (co token thi khong gui X-Actor), nhung `current_actor` lay actor tu
+    `principal["username"]` khi da dang nhap — nen `elif` vo hai. Desktop
+    cung khong co action issue/reissue/change_date nao.
+  - **Cung khong phai bug**: `restore()` (L1450) co khoi phuc `#user` tu
+    localStorage, nen sau reload khong con la "Chua chon".
+  - Xac nhan tren trang production that qua tunnel HTTPS that: **28/28**, trong
+    do chon nhan su truoc khi pick, dong audit ghi `actor: 'Nguyen Van A'`,
+    va history hien thi dung ten do.
+  - Full suite: **774 passed, 0 failed** (basetemp sach nen ca D2 cua pass).
