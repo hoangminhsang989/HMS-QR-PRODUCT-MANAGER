@@ -737,3 +737,31 @@ begin R010 without that separate authority.
   - **Lỗi tự gây ra, bắt bởi guard đã có**: chạy script chèn nhãn hai lần (lần đầu lưu file rồi chết vì console cp949 không in được tiếng Việt, lần chạy lại chèn thêm) → block nhãn bị nhân đôi → `node --check` fail ngay. Guard `test_the_pages_inline_script_actually_parses` bắt được, đúng việc nó tồn tại để làm.
   - **Bài học ghi nhận**: viết script sửa file chứa tiếng Việt phải idempotent hoặc kiểm tra trước khi chèn; console PowerShell cp949 không in được tiếng Việt nên mọi print kiểm tra phải bỏ hoặc ghi ra file.
 - Still open from before: whether the picker issuing a `QR_ISSUED` event on first pick matches the factory's process.
+
+- **Canh bao tem cu khong khop — `1494b4d` + `8753f89`** (tim bang cach hoi co ai
+  tieu thu `qr_identity_consistent` khong): server **luon luon** tinh xem payload QR
+  co van khop voi item no tra ve khong. Tem in truoc khi thong tin chi tiet bi sua
+  van resolve duoc, vi scan tra item bang `tracking_code` — nen tho thoay chi tiet
+  ma khong co dau hieu tem cua no da cu. Lam viec tu tem cu la rui ro tinh dung,
+  khong phai loi trang tri. **Khong ai doc flag do**: mot test assert no, khong
+  caller nao dung. Page gio hien canh bao trong the san pham, va pick xoa no, vi
+  payload cua pick do server tao va nhat dinh theo cau tao.
+  - **Hai loi tu gay ra, ca hai deu bat duoc**:
+    1. Title banner ghi `KH\u1edap` = "KHOP **p**" — chu p thuong giua chu hoa,
+       trong khi dong ban ghi khac la chu hoa. Sua thanh `KH\u1edaP`.
+    2. Check E2E cua toi `.upper()` title nhung khong upper needle, nen
+       `"KH\u00d4NG KH\u1edap" in banner.upper()` **khong bao gio** khop — p
+       thuong bi upper thanh P. So sanh phai cung chu hoa hai ben.
+  - **Loi trong script E2E, khong phai loi page**: `#login-modal` ship
+    `display:none` va chi `openLogin()` hien no. Script khong bao gio mo modal,
+    nen vong lap `if modal == 'none': break` thoat ngay giay thu 1 — truoc khi
+    login xong. Cac lan chay truoc may manh thanh cong vi fetch xong trong 1 giay;
+    lan nay tunnel cham (DNS 5 lan) nen lo ra. Sua: mo modal, roi doi **token**,
+    khong phai trang thai modal.
+  - **PATCH product can `expected_updated_at`** (`app.py:230`) — optimistic
+    concurrency. Phai GET product truoc roi gui kem `updated_at`.
+  - Xac nhan tren trang production that qua tunnel HTTPS that: **26/26**, trong do
+    tem bi sua giua in va quet, banner hien dung chu "MA QR KHONG KHOP DU LIEU",
+    va pick chi tiet khac xoa canh bao.
+  - Full suite: **771 passed** + 2 D2 flake da biet (chay rieng voi basetemp sach:
+    82/82; khong file pin nao bi doi).

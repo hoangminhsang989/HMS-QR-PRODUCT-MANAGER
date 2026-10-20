@@ -102,3 +102,10 @@ trỏ origin tunnel, đăng nhập, chọn chi tiết, cấp phát QR, quét l�
 
 Không cần gì đặc biệt — mở `web/index.html` bằng Live Server, hoặc để chính máy
 chủ HMS QR serve tại `http://<ip>:8010/tracking/mobile`.
+
+## Tem cu khong khop
+
+Server tinh `qr_identity_consistent` cho moi lan quet: payload QR con khớp với
+item no tra ve khong. Tem in trước khi thông tin chi tiết bị sửa van resolve
+duợc, vi scan tra item bằng `tracking_code`. Khi không khớp, page hiện canh bao
+trong the san pham; pick chi tiet khac xoa no, vi payload của pick do server tao.
