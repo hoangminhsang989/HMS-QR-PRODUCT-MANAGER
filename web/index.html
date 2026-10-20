@@ -1025,17 +1025,24 @@
       }
       let activeIdx = 2;
       let isAlert = false;
-      if (status === 'NEW' || status === 'APPROVED') {
+      if (status === 'NEW') {
         activeIdx = 1;
-      } else if (status === 'IN_PRODUCTION' || status === 'IN_PROGRESS') {
+      } else if (status === 'IN_PRODUCTION' || status === 'IN_PROCESS') {
         activeIdx = 2;
-      } else if (status === 'QC_CHECKED') {
+      } else if (status === 'QC_CHECKED' || status === 'WAITING_QC') {
         activeIdx = 3;
-      } else if (status === 'SHORTAGE_REPORTED' || status === 'QC_NG_RETURNED_TO_MACHINING') {
+      } else if (status === 'REWORK') {
+        activeIdx = 2;
+        isAlert = true;
+      } else if (status === 'SHORTAGE' || status === 'QC_NG') {
         activeIdx = 3;
         isAlert = true;
+      } else if (status === 'PACKING') {
+        activeIdx = 4;
       } else if (status === 'PACKED') {
         activeIdx = 4;
+      } else if (status === 'PARTIALLY_DELIVERED') {
+        activeIdx = 5;
       } else if (status === 'DELIVERED') {
         activeIdx = 5;
       }

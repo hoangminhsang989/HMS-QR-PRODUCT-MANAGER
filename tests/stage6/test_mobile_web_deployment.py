@@ -1289,3 +1289,125 @@ def test_an_expired_token_is_refused_with_the_message_the_page_shows(tmp_path, m
         assert "hết hạn" in str(excinfo.value)
     finally:
         database.close()
+
+
+def _statuses_the_server_can_write() -> set[str]:
+    """Every value that can land in ``order_tracking_items.status``.
+
+    Two kinds of writer exist. Python assigns a ``TrackingStatus`` member
+    (``OrderTrackingItem.create``, ``submit_report``, ``_project_status``), and
+    the Excel adapters hardcode a literal inside a raw INSERT. Both are read
+    here, and the literals are kept only when they name a real ``TrackingStatus``
+    member, so a neighbouring ``'ACTIVE'`` or ``'QR_ISSUED'`` cannot sneak in.
+    """
+    from packages.domain.tracking import TrackingStatus
+
+    members = {member.name for member in TrackingStatus}
+    written: set[str] = set()
+    for path in (SOURCE_ROOT / "packages").rglob("*.py"):
+        written.update(
+            name for name in re.findall(r"TrackingStatus\.(\w+)", path.read_text(encoding="utf-8"))
+            if name in members
+        )
+    for path in (SOURCE_ROOT / "packages" / "excel").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if "INSERT INTO order_tracking_items" not in text:
+            continue
+        for match in re.finditer(r"INSERT INTO order_tracking_items", text):
+            window = text[match.start():match.start() + 900]
+            written.update(
+                name for name in re.findall(r"'(\w+)'", window) if name in members
+            )
+    return written
+
+
+def test_the_stepper_covers_every_status_the_server_can_write():
+    """The stepper branched on a vocabulary the server never writes.
+
+    ``updateStepper`` tested for ``APPROVED``, ``IN_PROGRESS``,
+    ``SHORTAGE_REPORTED`` and ``QC_NG_RETURNED_TO_MACHINING``. None of those is
+    ever written to ``order_tracking_items.status`` - the first two are not
+    statuses at all, and the last two are ``WorkflowEventType`` values the page
+    sends to the server, not statuses it reads back.
+
+    The statuses the server really writes - ``WAITING_QC``, ``REWORK``,
+    ``SHORTAGE``, ``QC_NG``, ``PACKING``, ``PARTIALLY_DELIVERED`` - matched no
+    branch and fell through to the default of step 2. An item waiting for QC,
+    failed at QC, being packed, or partly delivered all displayed "Gia cong",
+    and the alert styling never appeared for the two statuses that mean the
+    item went wrong.
+    """
+    written = _statuses_the_server_can_write()
+    assert written, "parsing found no writers - the guard itself is broken"
+
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    start = page.index("function updateStepper")
+    stepper = page[start:page.index("\n    function ", start)]
+
+    missing = sorted(name for name in written if f"status === '{name}'" not in stepper)
+    assert not missing, f"stepper khong map status that su: {missing}"
+
+    # event types are not statuses and must not drive the stepper
+    for event_type in ("SHORTAGE_REPORTED", "QC_NG_RETURNED_TO_MACHINING"):
+        assert f"status === '{event_type}'" not in stepper, (
+            f"{event_type} la WorkflowEventType, khong phai TrackingStatus"
+        )
+
+
+def test_an_item_imported_from_the_factory_sheet_can_be_read_back(tmp_path):
+    """The factory Excel import wrote a status the domain did not name.
+
+    ``import_factory_items_to_db`` writes ``'IN_PRODUCTION'`` into
+    ``order_tracking_items.status``, and both the portal and the export report
+    count that value - but ``TrackingStatus`` never named it, calling the same
+    state ``IN_PROCESS`` instead. Reading the row back goes through
+    ``TrackingRepository._item``, which does ``TrackingStatus(row["status"])``,
+    so every read of such an item raised ``ValueError``. The import reported
+    success and the item was then invisible to the picker, the list and the
+    scan, while the portal still counted it.
+    """
+    from config.environments import load_config
+    from dataclasses import replace as dc_replace
+    from packages.excel.factory_adapter import import_factory_items_to_db
+    from packages.persistence.database import create_database_runtime, engine_path
+    from packages.persistence.sqlalchemy_repository import Stage2Repository
+    from packages.persistence.tracking_repository import TrackingRepository
+    from packages.sqlengine import connect
+
+    db_file = tmp_path / "factory.sqlite"
+    config = dc_replace(load_config(), database_url=f"sqlite:///{db_file.as_posix()}")
+    runtime = create_database_runtime(config)
+    Stage2Repository(runtime).create_schema()
+
+    result = import_factory_items_to_db(
+        [{
+            "row_index": 1,
+            "company": "SHL",
+            "part_name": "Ban le truc",
+            "quantity": "10",
+            "unit": "EA",
+            "price": None,
+            "material": "AL6061",
+            "requester": "",
+            "surface_treatment": "",
+            "outsourced": False,
+            "size": "50 x 20",
+            "notes": "",
+            "delivery_schedule": "2026-11-01",
+            "sheet_name": "DAY",
+        }],
+        str(db_file),
+    )
+    assert result["imported_tracking_items"] == 1
+
+    repository = TrackingRepository(connect(engine_path(f"sqlite:///{db_file.as_posix()}")))
+
+    # the import claimed success, so the row must be readable
+    items = repository.list_items()
+    assert len(items) == 1
+    assert items[0].status.value == "IN_PRODUCTION"
+
+    # and reachable by the two lookups the page and the scan use
+    assert repository.get_item(items[0].internal_id).internal_id == items[0].internal_id
+    code = items[0].tracking_code
+    assert repository.scan_by_tracking_code(code)["tracking_code"] == code
