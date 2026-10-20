@@ -542,6 +542,15 @@
         <button onclick='copyItemToExcel()' type='button' style='font-size:12px;padding:6px 12px;background:var(--card-raised);border:1px solid var(--accent);color:var(--accent);border-radius:8px;'>📋 Copy Excel</button>
       </div>
 
+      <!-- A label printed before the part's details were edited still resolves by
+           tracking_code, so the scan succeeds while the printed name, customer or
+           product code no longer match. The server computes that as qr_identity_consistent
+           and nothing read it, so the operator was never told. -->
+      <div id='qr-mismatch' hidden style='margin-bottom:14px;background:rgba(239,68,68,0.12);border:1px solid var(--danger);padding:12px 14px;border-radius:10px;'>
+        <div style='font-size:12px;font-weight:800;color:var(--danger);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;'>⚠ MÃ QR KHÔNG KHỚp Đữ LIệU</div>
+        <div style='font-size:13px;color:var(--text);line-height:1.55;'>Tem này được in trước khi thông tin chi tiết bị thay đổi. Hệ thống vẫn tra đúng theo mã theo dõi, nhưng tên chi tiết, khách hàng hoặc mã sản phẩm in trên tem không còn khớp. Kiểm tra lại trước khi gia công.</div>
+      </div>
+
       <!-- WORKFLOW STEPPER -->
       <div id='stepper-box' style='margin-bottom:14px;background:rgba(0,0,0,0.3);padding:14px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.05);'>
         <div style='font-size:11px;font-weight:800;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px;letter-spacing:0.5px;'>TIẾN TRÌNH SẢN XUẤT 5 BƯỚC:</div>
@@ -962,6 +971,11 @@
         if (!r.ok) return notify('Không tìm thấy dữ liệu cho mã QR này.', true);
         playBeep();
         current = await r.json();
+        // Only a scan carries the flag; a pick builds its payload from the
+        // server, so it is consistent by construction and must not leave a
+        // stale warning on screen.
+        const mismatch = document.getElementById('qr-mismatch');
+        if (mismatch) mismatch.hidden = current.qr_identity_consistent !== false;
         await refreshProductCard();await loadProductFiles();
         document.querySelector('#info').hidden = false;
         document.querySelector('#actions').hidden = false;
@@ -1341,6 +1355,8 @@
         } catch (e) {}
       }
       document.getElementById('qr').value = payload;
+      const stale = document.getElementById('qr-mismatch');
+      if (stale) stale.hidden = true;
       resolveScan();
     }
 

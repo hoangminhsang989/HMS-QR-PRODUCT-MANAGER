@@ -760,6 +760,46 @@ def test_the_audit_row_keeps_the_old_and_new_value():
     )
 
 
+def test_the_scan_warns_when_the_label_no_longer_matches():
+    """A label printed before a part's details were edited still resolves, because
+    the scan looks the item up by tracking_code. The server notices the printed
+    name, customer or product code no longer match and reports that as
+    ``qr_identity_consistent`` - and until now nothing read the flag, so the
+    operator was shown a part with no sign its label was stale.
+
+    Working from a stale label is a correctness risk, not a cosmetic one, so the
+    page has to say so.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+
+    assert "id='qr-mismatch'" in page, (
+        "there is no element to carry the warning"
+    )
+
+    # The flag is only present on a scan response, so the read must live in
+    # resolveScan and must treat a missing flag as consistent rather than
+    # warning on every unrelated render.
+    resolve = page[page.index("async function resolveScan"):]
+    resolve = resolve[:resolve.index("async function ", resolve.index("async function ") + 1)]
+    assert "qr_identity_consistent" in resolve, (
+        "resolveScan ignores qr_identity_consistent, so a stale label looks fine"
+    )
+    assert "!== false" in resolve, (
+        "the comparison must be against false, so a response without the flag "
+        "does not raise a warning"
+    )
+
+    # A pick builds its payload from the server, so it is consistent by
+    # construction; without clearing it, a warning raised by an earlier scan
+    # would sit on screen through the next part.
+    pick = page[page.index("async function selectPartFromList"):]
+    pick = pick[:pick.index("function ", pick.index("function ") + 1)]
+    assert "qr-mismatch" in pick, (
+        "selectPartFromList does not clear the warning, so a stale warning "
+        "survives into the next part"
+    )
+
+
 def test_the_catalog_reads_the_customer_name_from_the_customer_record():
     """The catalog and the issued QR must agree on what a payload says.
 
