@@ -789,3 +789,28 @@ begin R010 without that separate authority.
     do chon nhan su truoc khi pick, dong audit ghi `actor: 'Nguyen Van A'`,
     va history hien thi dung ten do.
   - Full suite: **774 passed, 0 failed** (basetemp sach nen ca D2 cua pass).
+
+- **Noi that bai thay vi do loi cho ma QR — `7a73320`** (tim bang cach quet
+  moi `catch` trong page va hoi cai nao nuot loi that su):
+  - **Cap phat QR nuot loi cua chinh no**. Payload cua catalog chi scan duoc
+    khi QR cua item da ACTIVE, nen sau khi cap phat that bai, page van giu
+    ban preview do va lan quet tiep theo tra ve "Không tìm thấy dữ
+    liệu cho mã QR này" — **đổ lỗi cho mã QR** trong khi
+    thất bại thỹc là \u1edf bước ghi. Thủ công đi tìm
+    lỗi ở sai chỗ.
+  - **Picker cùng mặc**: catalog không tải được thì picker mở
+    ra rỗng và không nói gì — đọc thành "không có gì để
+    chọn" chứ không phải "không tới được máy chủ". Endpoint
+    này cũng trả 501 ngoài DEV, nên đó là trạng thái tới
+    được, không phải giả định.
+  - **Các catch im lặc khác giữ nguyên**, vì chúng là fallback
+    progressive-enhancement (jsqr rồi BarcodeDetector) và WebSocket tự
+    retry.
+  - Xac nhung khong regression: production that qua tunnel HTTPS that **28/28**.
+  - Full suite: **775 passed, 0 failed**.
+- **Hai trong ba loai audit event khong the xuat hien tu bat ky man hinh nao**
+  (ghi lai de khong ai mong doi thay chung): khong UI nao trong repo co the
+  reissue QR, doi ngay giao, hoac tao don moi — page khong goi, desktop khong
+  co action, portal cung khong. `QR_REISSUED` va `DELIVERY_DATE_CHANGED` chi
+  dat duoc qua API. Nhan tieng Viet va old/new value toi them cho chung van
+  đung, nhung khong the thay tu man hinh.

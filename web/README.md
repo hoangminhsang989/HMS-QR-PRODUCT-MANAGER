@@ -116,3 +116,10 @@ Moi ghi nhan trong luong tracking deu ghi operator duoc chon trong danh
 sach, khong phai tai khoan dang nhap — tren may dung chung, mot lan dang
 nhap nhieu tho tu chon ten minh. Header `X-Actor` uu tien operator do; chi
 khi chua chon ai no moi fallback ve tai khoan dang nhap.
+
+## Khi co loi
+
+Picker va cap phat QR deu noi ro buoc nao that bai, khong do loi cho buoc
+khac. Catalog khong tai duoc va cap phat QR khong duoc la hai thong bao
+rieng; neu chung im lang, lan quet tiep theo se bao "khong tim thay ma QR"
+du that bai o buoc ghi.
