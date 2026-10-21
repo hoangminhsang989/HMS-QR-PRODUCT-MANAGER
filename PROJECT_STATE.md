@@ -905,3 +905,23 @@ if (!r.ok) return;          // no picker, no message
 So a tap that could not load its list did **nothing at all**. Neither function had a `try/catch` either, so a dead network rejected a promise nobody was listening to. This is the same defect as `openPartPicker`, which `7a73320` already fixed — that fix covered the part picker and left these two behind.
 
 Verified in a real Chrome on three paths: a 500 response now shows **"Không tải được danh sách nhân sự. Kiểm tra kết nối tới máy chủ."** (and the process equivalent) with the picker correctly left hidden; a rejected fetch shows the same; and the happy path still loads (machining types: 8 options = placeholder + 7 seeded types). Full suite **782 passed, 0 failed**.
+
+## A malformed QR was reported as a missing one — pushed `SCANMSG`
+
+Found by following the envelope discovery in `bd0da42` to every other failure path. `resolveScan` answered **every** non-ok scan with one message:
+
+```js
+if (!r.ok) return notify('Không tìm thấy dữ liệu cho mã QR này.', true);
+```
+
+The scan input's placeholder is **"Dán mã QR hoặc nhập tay..."**, so a malformed payload is the likeliest failure — and it is not the same problem as a code that resolves to nothing. Proven against a real app, the endpoint answers three different ways:
+
+| Server | Page used to say |
+|---|---|
+| 422 `invalid QR payload` | "Không tìm thấy dữ liệu cho mã QR này." |
+| 422 `QR payload must contain exactly the canonical four fields` | "Không tìm thấy dữ liệu cho mã QR này." |
+| 404 `QR not found or revoked` | "Không tìm thấy dữ liệu cho mã QR này." ✓ |
+
+Only the third was true. So an operator who typed a code by hand and got it wrong was told the QR had no data — sending them to check the label when what was wrong was what they typed. This is the same defect class as `7a73320`, which fixed the *issue* side of the scan and left the *scan* side blaming the code.
+
+Verified in a real Chrome on all four paths: garbage now shows **"invalid QR payload"**, short JSON shows **"QR payload must contain exactly the canonical four fields"**, an unknown code still shows **"QR not found or revoked"**, and a real payload scans and loads the product card. Full suite **783 passed, 0 failed**.

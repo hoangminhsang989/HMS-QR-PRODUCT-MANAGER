@@ -984,7 +984,18 @@
       button.textContent = 'Đang tra cứu...';
       try {
         const r = await fetch(api + '/api/v1/scan?payload=' + encodeURIComponent(q));
-        if (!r.ok) return notify('Không tìm thấy dữ liệu cho mã QR này.', true);
+        if (!r.ok) {
+          // The input invites a code to be typed by hand, so a malformed
+          // payload is the likeliest failure here - and it is not the same
+          // problem as a code that resolves to nothing. Both used to be
+          // reported as "no data found for this QR code", which sends the
+          // operator to check the label when what is wrong is what they
+          // typed. The server names both; read it.
+          const e = await r.json();
+          const field = Array.isArray(e.detail) ? e.detail[0] : null;
+          const message = e.error?.message || e.detail?.message || field?.msg || 'Không tìm thấy dữ liệu cho mã QR này.';
+          return notify(message, true);
+        }
         playBeep();
         current = await r.json();
         // Only a scan carries the flag; a pick builds its payload from the

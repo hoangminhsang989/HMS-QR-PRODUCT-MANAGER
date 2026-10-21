@@ -128,6 +128,12 @@ Hai nut NGUOI DUNG va CONG DOAN truoc day cung im lang: bam vao khong mo
 duoc danh sach thi khong co picker cung khong co thong bao. Bay chung noi
 ro nguyen nhan, va picker van bi an khi khong tai duoc du lieu.
 
+O nhap ma QR co ghi "Dán mã QR hoặc nhập tay", nen go tay la duong thuong
+dung nhat. Truoc day mot ma nhap sai va mot ma khong ton tai deu bao "khong
+tim thay du lieu cho ma QR nay" - chi trong truong hợp thu hai moi dung.
+Bay trang doc thong bao cua may chu, nen ma nhap sai se noi dung ma do sai
+gi.
+
 So luong trong form su kien duoc kiem tra truoc khi gui. O so luong da duoc
 dien san tu chi tiet, nhung van xoa trang duoc, va mot o trong gui len thanh
 chuoi rong bi server tu choi bang 422 khong noi ro truong nao. Bay gay trang

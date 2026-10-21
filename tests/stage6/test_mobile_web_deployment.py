@@ -583,6 +583,32 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_a_malformed_qr_is_not_reported_as_a_missing_one():
+    """The scan input invites a code to be typed by hand, so a malformed
+    payload is the likeliest failure - and it is not the same problem as a code
+    that resolves to nothing. The server answers "invalid QR payload" and
+    "QR payload must contain exactly the canonical four fields" as 422s, and
+    "QR not found or revoked" as a 404. All three were reported as "Khong tim
+    thay du lieu cho ma QR nay", which sends the operator to check the label
+    when what is wrong is what they typed.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    scan = page[page.index("async function resolveScan"):]
+    scan = scan[:scan.index("\n    async function ", 10)]
+
+    assert "const message = e.error?.message" in scan, (
+        "the scan still discards the server's own diagnosis, so a malformed "
+        "payload is reported as a missing one"
+    )
+    assert "Array.isArray(e.detail)" in scan, (
+        "a 422 from request validation answers as {detail:[...]}, which the "
+        "page cannot read, so the field error is lost"
+    )
+    assert "Kh\u00f4ng t\u00ecm th\u1ea5y d\u1eef li\u1ec7u cho m\u00e3 QR n\u00e0y.'" in scan, (
+        "the fallback for a response with no readable message is gone"
+    )
+
+
 def test_the_operator_and_process_pickers_do_not_fail_silently():
     """The NGUOI DUNG and CONG DOAN pills each open a picker. Both fetched their
     list and returned on any non-ok response without a word, so a tap that could
