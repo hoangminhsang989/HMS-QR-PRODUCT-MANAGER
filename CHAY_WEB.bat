@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 title HMS QR Product Manager
-set "HMS_QR_TEST_ROOT=F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST"
+set "HMS_QR_TEST_ROOT=H:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST"
 set "HMS_QR_DATABASE_URL=sqlite:///D:/HMS-QR-DATA/hms_qr_shared.sqlite"
 set "HMS_QR_STORAGE_ROOT=D:\HMS-QR-DATA\storage"
 set "PYTHONDONTWRITEBYTECODE=1"

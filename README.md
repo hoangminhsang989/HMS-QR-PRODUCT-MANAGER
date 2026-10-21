@@ -53,6 +53,6 @@ enforced in the application/persistence layers.
 
 All test/runtime artifacts belong in:
 
-`F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST`
+`H:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST`
 
 The production tree must remain source/documentation only.

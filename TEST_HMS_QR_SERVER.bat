@@ -2,16 +2,16 @@
 setlocal
 title HMS QR Test Server
 set "HMS_QR_ENV=dev"
-set "HMS_QR_DATABASE_URL=sqlite:///F:/HMS-QR-TEST-RUNTIME/hms_qr_test.sqlite"
-set "HMS_QR_STORAGE_ROOT=F:\HMS-QR-TEST-RUNTIME\storage"
+set "HMS_QR_DATABASE_URL=sqlite:///H:/HMS-QR-TEST-RUNTIME/hms_qr_test.sqlite"
+set "HMS_QR_STORAGE_ROOT=H:\HMS-QR-TEST-RUNTIME\storage"
 set "HMS_QR_AUTH_SECRET=hms-qr-test-only-signing-secret-2026"
 set "HMS_QR_BOOTSTRAP_ADMIN_USERNAME=test-admin"
 set "HMS_QR_BOOTSTRAP_ADMIN_PASSWORD=test-password-123"
 set "HMS_QR_ALLOW_EMPTY_PASSWORDS=false"
 set "PYTHONDONTWRITEBYTECODE=1"
 
-if not exist "F:\HMS-QR-TEST-RUNTIME" mkdir "F:\HMS-QR-TEST-RUNTIME"
-if not exist "F:\HMS-QR-TEST-RUNTIME\storage" mkdir "F:\HMS-QR-TEST-RUNTIME\storage"
+if not exist "H:\HMS-QR-TEST-RUNTIME" mkdir "H:\HMS-QR-TEST-RUNTIME"
+if not exist "H:\HMS-QR-TEST-RUNTIME\storage" mkdir "H:\HMS-QR-TEST-RUNTIME\storage"
 
 netstat -ano | findstr /R /C:":8010 .*LISTENING" >nul
 if not errorlevel 1 (

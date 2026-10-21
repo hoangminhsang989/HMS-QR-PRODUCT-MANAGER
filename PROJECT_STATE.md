@@ -1199,4 +1199,43 @@ survives.
 Full suite through `CHAY_TEST.bat`: **789 passed, 0 failed, 0 skipped**
 in 385 s.
 
+---
+
+## Every launcher moved to `H:`, verified by running them
+
+`CHAY_TEST.bat` only owned the suite. Two launchers still pointed at `F:`,
+and a path that no test exercises is a path nobody notices is broken - so
+both were moved and then **run**, not just edited:
+
+| Launcher | Was | Now | Verified |
+| --- | --- | --- | --- |
+| `TEST_HMS_QR_SERVER.bat` | `F:\HMS-QR-TEST-RUNTIME` | `H:\HMS-QR-TEST-RUNTIME` | config loads, engine resolves to `H:...\\hms_qr_test-engine`, `create_schema()` and `bootstrap_admin()` both succeed |
+| `CHAY_WEB.bat` | `F:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST` | `H:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST` | config loads; **real data stays on `D:`** |
+
+`CHAY_WEB.bat` is the case worth reading twice. It sets `HMS_QR_TEST_ROOT`
+but its database and storage live on `D:\HMS-QR-DATA` - the root is there
+because DEV config demands an absolute one, not because anything is written
+to it. Moving it does not touch production data, and it must not.
+
+The full server was started on the new paths and probed: mobile page
+**HTTP 200**, 67534 bytes, and `POST /admin-api/api/v1/auth/login` returned
+**HTTP 200** with a token and a role. A launcher that only compiles is not a
+launcher that works.
+
+The `F:` hits left in the tree are not defects and were deliberately kept:
+
+- `docs/` and `PROJECT_STATE.md` are a **historical record**. Rewriting them
+  would erase what was true when the decision was made.
+- `tests/stage6/test_admin_authorization.py` uses `F:\machine-a-local` and
+  `F:\private\archive` to prove a secret does not leak into a rendered
+  page. `test_r011_provisioning.py` uses `F:\safe\..\escaped` to prove path
+  traversal is refused. These are **synthetic fixtures** - changing them
+  would change what the tests prove.
+- `test_r011_wp1a_r1a2_path_portability.py` keeps `F:` on purpose: its
+  `_known_roots()` exists to *forbid* those literals in tracked runtime
+  files, which is the gate that makes this whole move safe.
+
+Full suite through `CHAY_TEST.bat`: **789 passed, 0 failed, 0 skipped**
+in 359 s.
+
 Full suite **789 passed, 0 failed**.
