@@ -1196,14 +1196,28 @@
     }
 
     async function expandAttempts() {
-      maxAttempt = Math.min(99, maxAttempt + 3);
+      const wanted = Math.min(99, maxAttempt + 3);
       if (current && processId) {
-        await fetch(api + '/api/v1/tracking-items/' + current.internal_id + '/attempt-display/expand', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ machining_type_id: processId, new_max: maxAttempt, user_id: userId })
-        });
+        // The counter used to be advanced before the write, so a rejected
+        // expansion left the page showing attempt buttons the server never
+        // agreed to - and the operator was told nothing. expand_attempt
+        // rejects a non-monotonic new_max, so a reload after an earlier
+        // expansion is exactly this case. Advance only on success.
+        let r;
+        try {
+          r = await fetch(api + '/api/v1/tracking-items/' + current.internal_id + '/attempt-display/expand', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ machining_type_id: processId, new_max: wanted, user_id: userId })
+          });
+        } catch {
+          return notify('Không mở rộng được danh sách lần gia công.', true);
+        }
+        if (!r.ok) {
+          return notify(serverMessage(await r.json(), 'Không mở rộng được danh sách lần gia công.'), true);
+        }
       }
+      maxAttempt = wanted;
       renderAttempts();
     }
 

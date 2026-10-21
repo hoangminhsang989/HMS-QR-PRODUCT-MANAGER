@@ -604,6 +604,32 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_a_rejected_attempt_expansion_does_not_advance_the_page():
+    """expandAttempts advanced its counter before the write, so a rejected
+    expansion left the page showing attempt buttons the server never agreed to
+    - and the operator was told nothing. expand_attempt rejects a
+    non-monotonic new_max, so a reload after an earlier expansion is exactly
+    this case. Verified against a real app: the server stored 6 while the page
+    displayed 9 buttons and showed no message.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    body = _function_body(page, "expandAttempts")
+
+    assert "const wanted = Math.min(99, maxAttempt + 3)" in body, (
+        "the counter is still advanced before the write, so a rejected "
+        "expansion leaves the page showing buttons the server refused"
+    )
+    assert body.index("maxAttempt = wanted") > body.index("const wanted"), (
+        "the counter is assigned before the write completes"
+    )
+    assert "if (!r.ok)" in body, (
+        "the expansion write is not checked, so a rejection is silent"
+    )
+    assert "serverMessage(" in body, (
+        "a rejected expansion does not name the server's own reason"
+    )
+
+
 def test_a_failed_history_read_does_not_show_a_stale_record():
     """loadHistory had no else branch. A failed read left the previous rows on
     screen, which the operator reads as the current traceability record - and

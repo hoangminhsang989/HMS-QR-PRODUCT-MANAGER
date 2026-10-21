@@ -144,6 +144,11 @@ Viet lai o chung: mot ham doc thong bao loi cua server, mot ham doc o so
 luong. Truoc day moi cho tu viet lai mot ban, do cung la ly do loi xuat hien
 hai lan. Bay ghi them mot cho ghi moi la khong the quen duoc nua.
 
+Nut "xem them lan" truoc day tang so lan hien thi TRUOC khi gui len server va
+khong xem ket qua. Neu server tu choi (mo rong phai tang dan), trang van hien
+them ba nut ma server khong co, va operator khong biet gi. Bay gio chi tang
+khi server dong y, va thong bao loi lay nguyen loi do cua server.
+
 May chu tra loi loi trong hai dang: `_error()` boc thanh
 `{error:{message}}`, con `HTTPException` va kiem tra du lieu cua FastAPI tra
 ve `{detail:...}`. Trang doc ca hai, nen mot truong bi tu choi se hien dung

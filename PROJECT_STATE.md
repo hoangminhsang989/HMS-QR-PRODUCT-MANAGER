@@ -958,3 +958,30 @@ And `loadHistory` now names the failure and empties the panel: **"Không tải �
 The guards were rewritten to assert on the *shape* the fix now has — each call site uses the helper, and the helper is verified once. RED-verified in **3 directions**: removing the `else`, removing the shared quantity guard, and renaming the `serverMessage` helper — each fails the suite. Full suite **785 passed, 0 failed**.
 
 **This is the fix for the root cause of the last five bugs, not the fifth symptom.** The guards now make it impossible to add a write that reads only one envelope: there is no second copy to forget.
+
+## The attempt expansion advanced the page past what the server agreed to — pushed `EXPSILENT`
+
+`expandAttempts` (L1198) incremented its counter **before** the write and never looked at the response:
+
+```js
+maxAttempt = Math.min(99, maxAttempt + 3);
+if (current && processId) {
+  await fetch(... '/attempt-display/expand', { ... });   // no check
+}
+renderAttempts();
+```
+
+`expand_attempt` raises `TrackingError("attempt expansion must be monotonic and <= 99")`, so this is reachable, not theoretical: expand to 9, reload, expand again → 6 < 9 → the server refuses.
+
+Verified against a real app with the write forced to 400. **The server stored 6 while the page displayed 9 buttons, and the operator was shown nothing.** Three attempt buttons that do not exist server-side, sitting silently in front of the operator, who then taps one to report.
+
+The fix advances the counter **only on success**:
+
+- `const wanted = Math.min(99, maxAttempt + 3)` — computed, not assigned
+- `try/catch` around the fetch for a network failure
+- `if (!r.ok)` → `serverMessage(await r.json(), ...)` — the server's own reason
+- `maxAttempt = wanted` only after the write succeeded
+
+Verified in a real Chrome: rejected → operator sees **"attempt expansion must be monotonic and <= 99"** and the page keeps 6 buttons; two successive valid expansions → 6 then 9 buttons, DB stores 9, no error. Full suite **786 passed, 0 failed**.
+
+**This was the last unchecked write in the page.** Every mutating endpoint the operator can reach now reports its own failure.
