@@ -604,6 +604,55 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_the_operator_reachable_errors_are_written_in_vietnamese():
+    """The page, the portal and the desktop app are all in Vietnamese, and the
+    server already raises HTTPExceptions in Vietnamese. The domain layer did
+    not follow, so a factory operator who typed a quantity larger than the
+    item's was shown "report quantity exceeds tracking quantity" - accurate,
+    and unreadable to them.
+
+    These messages are not diagnostics: they travel straight from the domain
+    exception to the operator's screen through the page's shared error reader.
+    """
+    import re
+
+    pattern = re.compile(
+        r"(?:TrackingError|LookupError|ValueError|RuntimeError)\(\s*['\"]([^'\"]{6,})['\"]"
+    )
+    vietnamese = re.compile("[\u00c0-\u1ef9]")
+
+    # Diagnostics that never reach a screen: transaction-failure injection used
+    # by the concurrency tests, and a lookup only the revision endpoint makes.
+    internal = {
+        "injected transaction failure",
+        "injected workflow transaction failure",
+        "report not found",
+    }
+
+    sources = [
+        SOURCE_ROOT / "packages" / "domain",
+        SOURCE_ROOT / "packages" / "persistence" / "tracking_repository.py",
+        SOURCE_ROOT / "packages" / "persistence" / "workflow_repository.py",
+        SOURCE_ROOT / "packages" / "qr" / "payload.py",
+    ]
+
+    offenders = []
+    for source in sources:
+        paths = sorted(source.rglob("*.py")) if source.is_dir() else [source]
+        for path in paths:
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                for match in pattern.finditer(line):
+                    message = match.group(1)
+                    if message in internal or vietnamese.search(message):
+                        continue
+                    offenders.append(f"{path.relative_to(SOURCE_ROOT)}:{number} {message}")
+
+    assert not offenders, (
+        "these messages reach the operator's screen in English:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
 def test_a_rejected_attempt_expansion_does_not_advance_the_page():
     """expandAttempts advanced its counter before the write, so a rejected
     expansion left the page showing attempt buttons the server never agreed to

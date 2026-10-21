@@ -31,16 +31,16 @@ class QrPayloadService:
     def encode(self, payload: QrPayload) -> str:
         values = payload.as_dict()
         if any(not isinstance(value, str) or not value.strip() for value in values.values()):
-            raise TrackingError("QR payload fields must be non-empty strings")
+            raise TrackingError("Các trường trong mã QR không được để trống.")
         return json.dumps(values, ensure_ascii=False, separators=(",", ":"))
 
     def decode(self, encoded: str) -> QrPayload:
         try:
             values = json.loads(encoded)
         except (TypeError, json.JSONDecodeError) as exc:
-            raise TrackingError("invalid QR payload") from exc
+            raise TrackingError("Mã QR không hợp lệ.") from exc
         if not isinstance(values, dict) or tuple(values) != QR_PAYLOAD_FIELDS:
-            raise TrackingError("QR payload must contain exactly the canonical four fields")
+            raise TrackingError("Mã QR phải chứa đúng bốn trường quy định.")
         payload = QrPayload(**values)
         self.encode(payload)
         return payload

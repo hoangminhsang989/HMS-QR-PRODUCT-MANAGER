@@ -58,12 +58,12 @@ class TrackingWorkflowEvent:
         amount = qty(quantity) if kind in QUANTITY_EVENT_TYPES else None
         content = str(notes).strip() if notes is not None else None
         if kind == WorkflowEventType.GENERAL_REPORT and not content:
-            raise TrackingError("general report content is required")
+            raise TrackingError("Phải nhập nội dung báo cáo.")
         actor_name = str(actor_display_name).strip()
         if not actor_name:
-            raise TrackingError("actor display name is required")
+            raise TrackingError("Phải nhập tên người thực hiện.")
         if sequence_number < 1 or revision < 1:
-            raise TrackingError("invalid workflow event sequence or revision")
+            raise TrackingError("Thứ tự sự kiện hoặc bản sửa đổi không hợp lệ.")
         return cls(
             uuid4(), UUID(str(request_id)), UUID(str(tracking_item_id)), kind,
             amount, content, UUID(str(machining_type_id)) if machining_type_id else None,

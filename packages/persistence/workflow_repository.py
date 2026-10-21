@@ -33,7 +33,7 @@ class WorkflowRepository:
                 [str(event.tracking_item_id)],
             )
             if not items:
-                raise LookupError("tracking item not found")
+                raise LookupError("Không tìm thấy chi tiết.")
             item = items[0]
             existing = transaction.execute(
                 "SELECT * FROM tracking_workflow_events WHERE request_id = ?",
@@ -41,7 +41,7 @@ class WorkflowRepository:
             )
             if existing:
                 if not self._same_semantic_request(existing[0], event):
-                    raise TrackingError("idempotency request identity mismatch")
+                    raise TrackingError("Yêu cầu trùng lặp không khớp.")
                 return self._event(existing[0])
             self._validate_references(transaction, event)
             existing_sequences = transaction.execute(
@@ -80,7 +80,7 @@ class WorkflowRepository:
                 [str(event.tracking_item_id)],
             )
             if not originals or not items:
-                raise LookupError("workflow event not found")
+                raise LookupError("Không tìm thấy sự kiện.")
             original = originals[0]
             item = items[0]
             duplicate = transaction.execute(
@@ -94,10 +94,10 @@ class WorkflowRepository:
                     or row["sequence_number"] != event.sequence_number
                     or row["revision"] != event.revision
                 ):
-                    raise TrackingError("idempotency request identity mismatch")
+                    raise TrackingError("Yêu cầu trùng lặp không khớp.")
                 return self._event(row)
             if original["status"] != "ACTIVE":
-                raise TrackingError("only the current event revision can be revised")
+                raise TrackingError("Chỉ được sửa bản ghi mới nhất.")
             transaction.execute(
                 "UPDATE tracking_workflow_events SET status = ? WHERE internal_id = ?",
                 ["SUPERSEDED", str(original_id)],
@@ -124,7 +124,7 @@ class WorkflowRepository:
             "SELECT * FROM tracking_workflow_events WHERE internal_id = ?", [str(event_id)]
         )
         if not rows:
-            raise LookupError("workflow event not found")
+            raise LookupError("Không tìm thấy sự kiện.")
         return self._event(rows[0])
 
     def events(self, item_id, effective_only: bool = False):
@@ -149,7 +149,7 @@ class WorkflowRepository:
             [str(item_id)],
         )
         if not items:
-            raise LookupError("tracking item not found")
+            raise LookupError("Không tìm thấy chi tiết.")
         item = items[0]
         active = self.database.query(
             "SELECT * FROM tracking_workflow_events WHERE tracking_item_id = ?"
@@ -212,14 +212,14 @@ class WorkflowRepository:
         if incoming.quantity is not None and Decimal(incoming.quantity) > target:
             raise TrackingError(f"{incoming.event_type.value} quantity exceeds tracking quantity")
         if totals[WorkflowEventType.SHORTAGE_REPORTED] > target:
-            raise TrackingError("SHORTAGE_REPORTED quantity exceeds tracking quantity")
+            raise TrackingError("Số lượng báo thiếu vượt quá số lượng chi tiết.")
         available = target - totals[WorkflowEventType.SHORTAGE_REPORTED]
         packed = totals[WorkflowEventType.PACKED]
         delivered = totals[WorkflowEventType.DELIVERED]
         if available < 0 or packed > available:
-            raise TrackingError("packed quantity exceeds available quantity")
+            raise TrackingError("Số lượng đóng gói vượt quá số lượng hiện có.")
         if delivered > packed:
-            raise TrackingError("delivery requires sufficient packed quantity")
+            raise TrackingError("Giao hàng cần đủ số lượng đã đóng gói.")
         status_events = [
             row for row in simulated
             if WorkflowEventType(row["event_type"]) != WorkflowEventType.GENERAL_REPORT
@@ -235,19 +235,19 @@ class WorkflowRepository:
         if not session.execute(
             "SELECT internal_id FROM operators WHERE internal_id = ?", [str(event.actor_user_id)]
         ):
-            raise TrackingError("operator not found")
+            raise TrackingError("Không tìm thấy người dùng.")
         if event.machining_type_id and not session.execute(
             "SELECT internal_id FROM machining_types WHERE internal_id = ?",
             [str(event.machining_type_id)],
         ):
-            raise TrackingError("machining type not found")
+            raise TrackingError("Không tìm thấy công đoạn.")
         if event.process_report_id:
             report = session.execute(
                 "SELECT tracking_item_id FROM process_report_events WHERE internal_id = ?",
                 [str(event.process_report_id)],
             )
             if not report or report[0]["tracking_item_id"] != str(event.tracking_item_id):
-                raise TrackingError("related process report mismatch")
+                raise TrackingError("Báo cáo gia công liên quan không khớp.")
 
     @staticmethod
     def _same_semantic_request(row, event):

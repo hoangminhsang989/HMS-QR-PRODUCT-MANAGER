@@ -244,7 +244,7 @@ def test_overlapping_incompatible_idempotency_reuse_fails_closed(runtime):
         committed = tuple(outcome.value for outcome in outcomes if outcome.error is None)
         assert len(committed) == 1
         assert len(errors) == 1 and isinstance(errors[0], TrackingError)
-        assert "idempotency" in str(errors[0])
+        assert "trùng lặp" in str(errors[0])
         assert _event_count(runtime, request_id) == 1
 
 

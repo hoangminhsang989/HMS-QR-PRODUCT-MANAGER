@@ -153,3 +153,14 @@ May chu tra loi loi trong hai dang: `_error()` boc thanh
 `{error:{message}}`, con `HTTPException` va kiem tra du lieu cua FastAPI tra
 ve `{detail:...}`. Trang doc ca hai, nen mot truong bi tu choi se hien dung
 nguyen nhan tu may chu thay vi bi thay bang "Khong the ghi su kien".
+
+Lop domain truoc day viet loi bang tieng Anh, nen operator go so luong 100
+vao chi tiet co 10 thi thay "report quantity exceeds tracking quantity" -
+dung, nhung khong doc duoc. Bay 23 thong bao ma operator cham toi da duoc
+viet lai bang tieng Viet: domain, tracking/workflow repository va payload.
+Mot bai giu kiem tra quy uoc nay, nen them mot thong bao tieng Anh vao
+nhung file do la test do.
+
+Thong bao tieng Anh con lai la chan doan noi bo: loi cai dat giao dich trong
+test dong thoi, va `report not found` chi endpoint sua ban ghi goi - khong
+man hinh nao hien chung.

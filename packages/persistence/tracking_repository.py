@@ -62,9 +62,9 @@ class TrackingRepository:
         if not line or str(line[0]["po_id"]) != str(item.purchase_order_id) or str(
             line[0]["product_id"]
         ) != str(item.product_id):
-            raise TrackingError("tracking item relation mismatch")
+            raise TrackingError("Chi tiết không khớp với đơn hàng.")
         if not po or str(po[0]["customer_id"]) != str(item.customer_id):
-            raise TrackingError("tracking item customer mismatch")
+            raise TrackingError("Chi tiết không khớp với khách hàng.")
         with self.database.transaction() as transaction:
             transaction.execute(_insert("order_tracking_items", vals(item)), list(vals(item).values()))
         return item
@@ -98,7 +98,7 @@ class TrackingRepository:
                 "SELECT * FROM order_tracking_items WHERE tracking_code = ?", [str(identifier)]
             )
         if not rows:
-            raise LookupError("tracking item not found")
+            raise LookupError("Không tìm thấy chi tiết.")
         return self._item(rows[0])
 
     def list_items(self, search=None):
@@ -136,7 +136,7 @@ class TrackingRepository:
             [tracking_code, QRStatus.ACTIVE.value],
         )
         if not rows:
-            raise LookupError("QR not found or revoked")
+            raise LookupError("Không tìm thấy mã QR hoặc mã đã bị thu hồi.")
         item = self._item(rows[0])
         product = self.database.query(
             "SELECT product_code, part_name FROM products WHERE internal_id = ?",
@@ -323,7 +323,7 @@ class TrackingRepository:
     def expand_attempt(self, item_id, type_id, new_max, user_id=None):
         current = self.get_attempt_max(item_id, type_id)
         if new_max < current or new_max > 99:
-            raise TrackingError("attempt expansion must be monotonic and <= 99")
+            raise TrackingError("Số lần gia công chỉ được tăng dần và tối đa 99.")
         values = {
             "tracking_item_id": str(item_id), "machining_type_id": str(type_id),
             "max_visible_attempt": new_max, "updated_at": utc_now(),
@@ -357,9 +357,9 @@ class TrackingRepository:
             [str(event.tracking_item_id)],
         )
         if not rows:
-            raise LookupError("tracking item not found")
+            raise LookupError("Không tìm thấy chi tiết.")
         if event.quantity > rows[0]["quantity"]:
-            raise TrackingError("report quantity exceeds tracking quantity")
+            raise TrackingError("Số lượng báo cáo vượt quá số lượng chi tiết.")
         existing = self.database.query(
             "SELECT * FROM process_report_events WHERE request_id = ?", [str(event.request_id)]
         )

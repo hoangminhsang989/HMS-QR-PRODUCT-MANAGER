@@ -985,3 +985,40 @@ The fix advances the counter **only on success**:
 Verified in a real Chrome: rejected → operator sees **"attempt expansion must be monotonic and <= 99"** and the page keeps 6 buttons; two successive valid expansions → 6 then 9 buttons, DB stores 9, no error. Full suite **786 passed, 0 failed**.
 
 **This was the last unchecked write in the page.** Every mutating endpoint the operator can reach now reports its own failure.
+
+---
+
+## The domain layer answered the operator in a language they do not read
+
+Every failure path is now honest, so the next question is whether the operator
+can read it. The answer was no: `packages/domain`, both persistence repositories
+and `packages/qr/payload.py` raised 23 error messages in plain English, while the
+page, the portal, the desktop app and `app.py`'s own `HTTPException`s are all in
+Vietnamese. The operator who typed a quantity larger than the item's was shown
+"report quantity exceeds tracking quantity" - accurate, and unreadable to them.
+
+23 messages translated in place, matching the wording the server already uses
+(`app.py` has `Tệp {req.filename} không tồn tại.`). Verified against a real app:
+quantity 100 on an item of 10 → **"Số lượng báo cáo vượt quá số lượng chi tiết."**,
+0 rows in the database; corrected to 10 → "Đã xác nhận hoàn tất công đoạn.", 1 row,
+records `Decimal('10.0000')`.
+
+Four English strings remain, all diagnostics that never reach a screen:
+"injected transaction failure", "injected workflow transaction failure" (both
+raised only by the concurrency tests) and `report not found` (called only by the
+revision endpoint, which no UI reaches).
+
+One test dependency surfaced: `test_r010r2_postgresql_concurrency.py:247`
+asserted the substring `"idempotency"`, which the new message does not contain.
+The assertion now checks `"trùng lặp"`. A substring scan over the whole `tests/`
+tree looking for the *full* message text had missed it, because that test matched
+a single word of it - worth remembering when a message is renamed.
+
+The convention is now enforced, not just documented: a new guard scans
+`packages/domain/`, both repositories and `payload.py` and fails on any
+`TrackingError`/`LookupError`/`ValueError`/`RuntimeError` message that contains
+no Vietnamese diacritics and is not on the internal-diagnostics allowlist.
+RED-verified in one direction: reverting `quantity must be numeric` fails it
+(exit 1, "1 failed").
+
+Full suite **787 passed, 0 failed**.

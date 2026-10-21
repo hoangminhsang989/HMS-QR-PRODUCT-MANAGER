@@ -17,8 +17,8 @@ class ReportKind(StrEnum): ATTEMPT="ATTEMPT"; PROCESS_COMPLETED="PROCESS_COMPLET
 def utc_now(): return datetime.now(timezone.utc)
 def qty(value):
     try:q=Decimal(str(value))
-    except (InvalidOperation,TypeError,ValueError) as e: raise TrackingError("quantity must be numeric") from e
-    if not q.is_finite() or q<=0: raise TrackingError("quantity must be greater than 0")
+    except (InvalidOperation,TypeError,ValueError) as e: raise TrackingError("Số lượng phải là số.") from e
+    if not q.is_finite() or q<=0: raise TrackingError("Số lượng phải lớn hơn 0.")
     return q
 
 @dataclass(frozen=True,slots=True)
@@ -40,7 +40,7 @@ class Operator:
     internal_id: UUID; display_name: str; active: bool; created_at: datetime; updated_at: datetime
     @classmethod
     def create(cls,name):
-        if not str(name).strip(): raise TrackingError("display name required")
+        if not str(name).strip(): raise TrackingError("Phải nhập tên hiển thị.")
         t=utc_now(); return cls(uuid4(),str(name).strip(),True,t,t)
 
 @dataclass(frozen=True,slots=True)
@@ -52,6 +52,6 @@ class ProcessReportEvent:
     internal_id: UUID; request_id: UUID; tracking_item_id: UUID; machining_type_id: UUID; kind: ReportKind; attempt_number: int|None; quantity: Decimal; notes: str|None; actor_user_id: UUID; actor_display_name_snapshot: str; server_timestamp: datetime; client_timestamp: datetime|None; device_id: str|None; revision: int; supersedes_id: UUID|None; status: str
     @classmethod
     def create(cls,*,request_id,tracking_item_id,machining_type_id,kind,quantity,actor_user_id,actor_display_name,attempt_number=None,notes=None,client_timestamp=None,device_id=None,revision=1,supersedes_id=None):
-        if kind==ReportKind.ATTEMPT and (attempt_number is None or attempt_number<1): raise TrackingError("attempt number required")
+        if kind==ReportKind.ATTEMPT and (attempt_number is None or attempt_number<1): raise TrackingError("Phải nhập số lần gia công.")
         if kind==ReportKind.PROCESS_COMPLETED: attempt_number=None
         return cls(uuid4(),request_id,tracking_item_id,machining_type_id,kind,attempt_number,qty(quantity),notes,actor_user_id,actor_display_name,utc_now(),client_timestamp,device_id,revision,supersedes_id,"ACTIVE")
