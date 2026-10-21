@@ -1144,13 +1144,23 @@ by replacing the check with `if False` (exit 1, "1 failed").
 
 ### The suite is flaky, and the cause is not this change
 
-Three consecutive full runs gave three different results: `1 failed` (the
-D2 file), `342 passed / 447 errors`, and `789 passed`. `F:` holds 18
-corrupted `pytest-temp-*` directories that `Remove-Item -Recurse -Force`
-cannot delete ("The file or directory is corrupted and unreadable"); 20 of
-38 were removed and the failures moved around afterwards, which is the
-signature of a filesystem problem rather than a code problem. `chkdsk F: /f`
-is the fix and it needs LO - it is the same open item recorded earlier.
-Disk space is not the cause: 322 GB free.
+The decisive evidence came from checking the basetemp directories rather
+than guessing. The run that produced `447 errors` used
+`pytest-temp-final`, and that directory is **corrupted** - `Get-ChildItem`
+on it returns "The file or directory is corrupted and unreadable". The runs
+that passed (`diag3`, `clfull`) have readable basetemps. So `F:` corrupts
+the directory **while pytest is writing to it**, not before. Disk space is
+not the cause (322 GB free) and accumulated garbage is not the cause.
+`chkdsk F: /f` is the fix and it needs LO.
+
+Moving the suite off `F:` is **not** a workaround. The test root is not a
+scratch directory - `test_template_fidelity_reference.py` reads
+`<HMS_QR_TEST_ROOT>/reference/excel-template.xlsx`, so running with the root
+on `C:` silently turns that gate into a skip and changes which tests are
+even present. A `C:` run reported `test_d2_18` failing; run on `F:` with its
+fixture it passes in 27.7 s. Any conclusion drawn from a relocated test root
+is meaningless.
+
+Full suite on `F:` **789 passed, 0 failed, 0 skipped** in 1052 s.
 
 Full suite **789 passed, 0 failed**.
