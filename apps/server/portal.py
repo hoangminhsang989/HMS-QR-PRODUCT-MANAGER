@@ -13,6 +13,8 @@ import urllib.parse
 from fastapi.responses import HTMLResponse
 import qrcode
 
+from packages.domain.tracking import BEING_MACHINED
+
 from apps.server.tls import lan_url_scheme
 
 from apps.design_tokens import WEB_CSS_VARS
@@ -210,7 +212,7 @@ def get_stats() -> dict[str, int]:
             sc[status] = sc.get(status, 0) + 1
         return {
             "products": prods, "pos": pos, "tracking": tracking, "operators": ops, "machining": 7,
-            "in_prod": sc.get("IN_PRODUCTION", 0) + sc.get("IN_PROCESS", 0),
+            "in_prod": sum(sc.get(state.value, 0) for state in BEING_MACHINED),
             "qc": sc.get("QC_CHECKED", 0),
             "packed": sc.get("PACKED", 0),
             "deliv": sc.get("DELIVERED", 0),

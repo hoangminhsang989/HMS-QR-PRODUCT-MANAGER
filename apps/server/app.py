@@ -20,7 +20,7 @@ from packages.contracts.api import ProductPageResponse, ProductPatch, ProductPay
 from packages.domain.product import ProductStatus, ProductValidationError
 from packages.domain.stage2 import DeliveryScheduleEntry, POStatus, RunStatus, Stage2ValidationError, now_utc
 from packages.domain.repository import DuplicateProductCode, ProductConflict, ProductNotFound
-from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+from packages.persistence.engine_product_repository import EngineProductRepository
 from packages.persistence.database import (
     DatabaseRuntime,
     create_database_runtime,
@@ -31,7 +31,7 @@ from packages.persistence.database import (
 )
 from packages.application.stage2_service import Stage2Service
 from packages.contracts.stage2 import CustomerPatch, CustomerPayload, DeliveryData, POData, POLineData, RunData, dump
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.stage2_repository import Stage2Repository
 from packages.application.tracking_service import TrackingService
 from packages.contracts.tracking import AttemptExpand,DateChange,NewOrder,OperatorCreate,PreferenceSet,ReportRevision,ReportSubmit,TrackingCreate,WorkflowEventRevision,WorkflowEventSubmit
 from packages.domain.tracking import MachiningType,Operator,TrackingError
@@ -138,7 +138,7 @@ def build_api(
     if service is None:
         config = app_config or load_config()
         runtime = database_runtime or create_database_runtime(config)
-        repository = SqlAlchemyProductRepository(runtime)
+        repository = EngineProductRepository(runtime)
         service = ProductService(repository)
     else:
         runtime = database_runtime

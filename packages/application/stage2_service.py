@@ -3,7 +3,7 @@ from datetime import date
 from datetime import date
 from uuid import UUID
 from packages.domain.stage2 import *
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.stage2_repository import Stage2Repository
 
 class Stage2Service:
     def __init__(self, repository: Stage2Repository): self.repository=repository; self.codes=Stage2CodeService()

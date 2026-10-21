@@ -34,8 +34,8 @@ from packages.persistence.database import (
     sqlite_path,
 )
 from packages.persistence.managed_file_repository import ManagedFileRepository
-from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.engine_product_repository import EngineProductRepository
+from packages.persistence.stage2_repository import Stage2Repository
 from packages.persistence.store_forward_repository import StoreForwardRepository
 from packages.persistence.tracking_repository import TrackingRepository
 from packages.persistence.workflow_repository import WorkflowRepository
@@ -222,7 +222,7 @@ def test_shared_engine_is_one_database_for_every_repository(tmp_path):
             WorkflowRepository(runtime),
             ManagedFileRepository(runtime),
             StoreForwardRepository(runtime),
-            SqlAlchemyProductRepository(runtime),
+            EngineProductRepository(runtime),
         )
         assert all(repository.database is database for repository in repositories)
         assert database.readiness()["state"] == "READY"
@@ -308,7 +308,7 @@ def test_product_master_engine_api_and_type_round_trip(tmp_path, monkeypatch):
             ).json()["total"] == 1
             assert client.get("/health/readiness/database").status_code == 200
 
-        repository = SqlAlchemyProductRepository(runtime)
+        repository = EngineProductRepository(runtime)
         product = repository.get_by_code(code)
         assert product.quantity == Decimal("12.3400")
         assert product.outsourced is True

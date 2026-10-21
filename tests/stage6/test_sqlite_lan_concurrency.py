@@ -10,8 +10,8 @@ import threading
 from config.environments import AppConfig, Environment
 from packages.domain.product import Product, ProductStatus
 from packages.persistence.database import create_database_runtime
-from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.engine_product_repository import EngineProductRepository
+from packages.persistence.stage2_repository import Stage2Repository
 
 
 def _runtime(tmp_path: Path, name: str):
@@ -22,7 +22,7 @@ def _runtime(tmp_path: Path, name: str):
 
 def _seed(runtime, product_code: str, quantity: int) -> None:
     now = datetime.now(timezone.utc)
-    SqlAlchemyProductRepository(runtime.database).create(Product(
+    EngineProductRepository(runtime.database).create(Product(
         internal_id=UUID(int=quantity), product_code=product_code, company="HMS",
         part_name="Plate", quantity=quantity, unit="pcs", material=None,
         requester=None, surface_treatment=None, outsourced=False, size=None,

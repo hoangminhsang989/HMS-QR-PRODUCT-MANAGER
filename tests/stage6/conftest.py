@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from packages.persistence.managed_file_repository import ManagedFileRepository
-from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+from packages.persistence.engine_product_repository import EngineProductRepository
 from packages.persistence.store_forward_repository import StoreForwardRepository
 from packages.domain.product import Product, ProductStatus
 from packages.domain.store_forward import StorageConfiguration
@@ -30,7 +30,7 @@ def _engine_database(tmp_path, name):
 
 
 def _seed_product(database, product_id, product_code, part_name):
-    repository = SqlAlchemyProductRepository(database)
+    repository = EngineProductRepository(database)
     now = datetime.now(timezone.utc)
     repository.create(Product(
         internal_id=uuid4().__class__(product_id),

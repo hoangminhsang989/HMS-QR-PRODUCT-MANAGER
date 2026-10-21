@@ -1062,9 +1062,14 @@
       }
       let activeIdx = 2;
       let isAlert = false;
+      // The factory import used to write IN_PRODUCTION while every other writer wrote IN_PROCESS.
+      // Both spellings mean the same state, and rows already stored still carry either one, so the
+      // page has to accept both. The Python side keeps this list in BEING_MACHINED
+      // (packages/domain/tracking.py); the two have to stay in step.
+      const beingMachined = ['IN_PROCESS', 'IN_PRODUCTION'];
       if (status === 'NEW') {
         activeIdx = 1;
-      } else if (status === 'IN_PRODUCTION' || status === 'IN_PROCESS') {
+      } else if (beingMachined.indexOf(status) !== -1) {
         activeIdx = 2;
       } else if (status === 'QC_CHECKED' || status === 'WAITING_QC') {
         activeIdx = 3;

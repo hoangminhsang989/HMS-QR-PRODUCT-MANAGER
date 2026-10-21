@@ -1239,3 +1239,50 @@ Full suite through `CHAY_TEST.bat`: **789 passed, 0 failed, 0 skipped**
 in 359 s.
 
 Full suite **789 passed, 0 failed**.
+
+## "Being machined" had two names, and every reader paid for it
+
+`TrackingStatus` carried both `IN_PROCESS` and `IN_PRODUCTION` - one state, two
+spellings. The factory Excel import wrote `IN_PRODUCTION`; `_project_status` and
+`submit_report` wrote `IN_PROCESS`. Nothing enforced either spelling, so the
+split was settled in the readers, each of which had to add the two back
+together: the portal KPI (`portal.py`), the Excel export KPI
+(`export_report.py`), and the page stepper branched on either. Three copies of
+the same sum, and the next reader would have needed a fourth.
+
+`IN_PROCESS` is now the only spelling written. It was chosen because it is what
+the derived-status path produces - `_project_status` defaults to it and
+`submit_report` writes it - so it is the path most queries already travel. The
+factory import was the only writer using the other spelling and is the one that
+changed.
+
+`IN_PRODUCTION` stays in the enum. Rows already stored still carry it, and
+dropping the member would make those rows raise `ValueError` on read rather
+than read as the state they are in - the same failure `c220655` fixed from the
+other direction. `BEING_MACHINED` (`packages/domain/tracking.py`) is the single
+place that knows both spellings mean the same thing; the portal and the export
+now sum over it instead of hand-adding two lookups.
+
+The page keeps its own `beingMachined` array because it cannot import from
+Python. The two have to stay in step, and the guard asserts the array holds
+exactly the two members rather than leaving it to drift.
+
+A guard caught a mistake in this change before the suite ever ran: the patch
+left the `DELIVERED` line indented six spaces inside a four-space enum body, so
+`packages/domain/tracking.py` raised `IndentationError` on import. Both new
+guards failed on it immediately. That is what they are for.
+
+Guards added, each RED-verified in several directions:
+
+- `test_being_machined_has_one_name_and_one_place_that_knows_the_other` - the
+  readers no longer hand-add the two spellings, the page still accepts both, and
+  the factory import no longer writes the legacy one.
+- `test_every_written_tracking_status_is_a_real_enum_member` - matches the
+  literal in the `status` column *by position* rather than scraping every
+  quoted uppercase word in the file, because the same INSERT also writes
+  `ACTIVE` into `qr_status`.
+- `test_the_stepper_covers_every_status_the_server_can_write` - extended so
+  membership in `beingMachined` counts as covering a status, and so the array is
+  asserted to hold exactly the two members.
+
+Full suite through `CHAY_TEST.bat`: **791 passed, 0 failed**.

@@ -12,6 +12,13 @@ class TrackingStatus(StrEnum):
     QC_CHECKED="QC_CHECKED"; QC_NG="QC_NG"; REWORK="REWORK"; SHORTAGE="SHORTAGE"
     PACKING="PACKING"; PACKED="PACKED"; PARTIALLY_DELIVERED="PARTIALLY_DELIVERED"
     DELIVERED="DELIVERED"; HOLD="HOLD"; CANCELLED="CANCELLED"
+
+# `IN_PRODUCTION` is a legacy spelling. The factory Excel import wrote it while every other writer
+# produced `IN_PROCESS`, so one state carried two names and each reader had to add them back
+# together - a sum that is easy to forget in the next reader. `IN_PROCESS` is now the only
+# spelling written; `IN_PRODUCTION` stays in the enum so rows already stored still parse, and
+# this set is the single place that knows both spellings mean the same thing.
+BEING_MACHINED = frozenset({TrackingStatus.IN_PROCESS, TrackingStatus.IN_PRODUCTION})
 class QRStatus(StrEnum): ACTIVE="ACTIVE"; REVOKED="REVOKED"
 class ReportKind(StrEnum): ATTEMPT="ATTEMPT"; PROCESS_COMPLETED="PROCESS_COMPLETED"
 def utc_now(): return datetime.now(timezone.utc)

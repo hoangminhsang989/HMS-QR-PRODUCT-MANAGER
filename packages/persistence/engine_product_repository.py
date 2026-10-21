@@ -28,7 +28,7 @@ _SORT_COLUMNS = (
 _SEARCH_COLUMNS = ("product_code", "part_name", "company", "material")
 
 
-class SqlAlchemyProductRepository(ProductRepository):
+class EngineProductRepository(ProductRepository):
     """Product Master persistence on the in-process HMS SQL engine."""
 
     def __init__(self, database, session_factory=None) -> None:
@@ -204,4 +204,4 @@ class SqlAlchemyProductRepository(ProductRepository):
         )
 
 
-__all__ = ["SqlAlchemyProductRepository"]
+__all__ = ["EngineProductRepository"]

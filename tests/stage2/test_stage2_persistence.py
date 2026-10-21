@@ -5,8 +5,8 @@ from uuid import UUID
 from packages.application.stage2_service import Stage2Service
 from packages.domain.product import Product, ProductStatus
 from packages.domain.stage2 import Stage2ValidationError
-from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.engine_product_repository import EngineProductRepository
+from packages.persistence.stage2_repository import Stage2Repository
 
 
 def test_sqlalchemy_sqlite_relationships_and_overallocation(tmp_path: Path):
@@ -14,7 +14,7 @@ def test_sqlalchemy_sqlite_relationships_and_overallocation(tmp_path: Path):
     repo.create_schema()
     product_id = "00000000-0000-0000-0000-000000000001"
     now = datetime.now(timezone.utc)
-    SqlAlchemyProductRepository(repo.database).create(Product(
+    EngineProductRepository(repo.database).create(Product(
         internal_id=UUID(product_id), product_code="SP-1", company="HMS",
         part_name="Plate", quantity=100, unit="pcs", material=None, requester=None,
         surface_treatment=None, outsourced=False, size=None, notes=None,

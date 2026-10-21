@@ -5,7 +5,7 @@ from apps.server.admin import admin_page, build_admin_api
 from config.environments import AppConfig, Environment
 from packages.application.server_auth import AuthenticationError, ServerAuthService
 from packages.persistence.database import create_database_runtime
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.stage2_repository import Stage2Repository
 
 
 def test_server_admin_bootstraps_accounts_and_restricts_admin_routes(tmp_path, monkeypatch):

@@ -26,7 +26,7 @@ REM through Stage2Repository.create_schema(), so this step only has to make sure
 REM the database directory exists and the schema is current before the
 REM administrator is bootstrapped.
 echo Applying test database migrations...
-py -3.14 -c "from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.sqlalchemy_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()"
+py -3.14 -c "from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.stage2_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()"
 if errorlevel 1 (
   echo Migration failed. The test server was not started.
   pause

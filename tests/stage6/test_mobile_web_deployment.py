@@ -509,7 +509,7 @@ def _isolated_app(tmp_path, monkeypatch):
     from config.environments import load_config
     from packages.application.server_auth import ServerAuthService
     from packages.persistence.database import create_database_runtime
-    from packages.persistence.sqlalchemy_repository import Stage2Repository
+    from packages.persistence.stage2_repository import Stage2Repository
 
     monkeypatch.setenv("HMS_QR_BOOTSTRAP_ADMIN_USERNAME", "admin")
     monkeypatch.setenv("HMS_QR_BOOTSTRAP_ADMIN_PASSWORD", "bootstrap-password")
@@ -602,6 +602,86 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
             assert payload["customer_name"] == "Công ty Biên"
     finally:
         runtime.dispose()
+
+
+def test_being_machined_has_one_name_and_one_place_that_knows_the_other():
+    """`IN_PRODUCTION` and `IN_PROCESS` were two names for one state, and the
+    split was paid for in every reader: the portal added them back together,
+    the Excel export added them back together, and the page branched on either.
+    Three copies of the same sum, and a fourth reader would have to remember to
+    write a fourth.
+
+    The factory import was the only writer using the legacy spelling, so it now
+    writes `IN_PROCESS` like everything else. `IN_PRODUCTION` stays in the enum
+    because rows already stored still carry it - dropping the member would make
+    those rows fail to parse rather than read as the state they are in.
+
+    `BEING_MACHINED` is the single place that knows both spellings exist.
+    """
+    from packages.domain.tracking import BEING_MACHINED, TrackingStatus
+
+    assert {state.value for state in BEING_MACHINED} == {"IN_PROCESS", "IN_PRODUCTION"}
+    # Both spellings resolve to the same enum members, so a reader that sums
+    # over the set gets one count per row whichever spelling is stored.
+    assert TrackingStatus.IN_PROCESS in BEING_MACHINED
+    assert TrackingStatus.IN_PRODUCTION in BEING_MACHINED
+
+    # No reader may add the two spellings together by hand any more.
+    for path, needles in (
+        ("apps/server/portal.py", ('sc.get("IN_PRODUCTION", 0) + sc.get("IN_PROCESS", 0)',)),
+        ("packages/excel/export_report.py", ('status_counts.get("IN_PRODUCTION", 0) + status_counts.get("IN_PROCESS", 0)',)),
+        ("web/index.html", ("status === 'IN_PRODUCTION' || status === 'IN_PROCESS'",)),
+    ):
+        body = (SOURCE_ROOT / path).read_text(encoding="utf-8")
+        for needle in needles:
+            assert needle not in body, f"{path} still hand-adds the two spellings"
+
+    # The page must still accept both, because stored rows carry either.
+    page = (SOURCE_ROOT / "web/index.html").read_text(encoding="utf-8")
+    assert "beingMachined.indexOf(status) !== -1" in page
+    assert "'IN_PROCESS'" in page and "'IN_PRODUCTION'" in page
+
+    # And the last legacy writer is gone.
+    adapter = (SOURCE_ROOT / "packages/excel/factory_adapter.py").read_text(encoding="utf-8")
+    assert "'IN_PRODUCTION'" not in adapter, "the factory import still writes the legacy spelling"
+
+
+def test_every_written_tracking_status_is_a_real_enum_member():
+    """The factory import writes its status as a raw SQL literal rather than
+    through the enum, which is how it drifted to a second spelling in the first
+    place. So the literal lands in the ``status`` column positionally, and the
+    only thing worth checking is that what sits in that position names a member
+    the enum actually has.
+
+    Matching by position rather than by scraping every quoted uppercase word in
+    the file: the same statement also writes ``ACTIVE`` into ``qr_status``, and a
+    wider net reports the columns this guard has no opinion about.
+    """
+    from packages.domain.tracking import TrackingStatus
+
+    adapter = (SOURCE_ROOT / "packages/excel/factory_adapter.py").read_text(encoding="utf-8")
+    start = adapter.find("INSERT INTO order_tracking_items")
+    assert start != -1, "the factory import no longer writes order_tracking_items directly"
+    values_at = adapter.find("VALUES", start)
+    statement = adapter[start : adapter.find(")", values_at) + 1]
+
+    columns = [c.strip() for c in re.search(r"\(([^)]*)\)", statement).group(1).split(",")]
+    body = statement[values_at - start:]
+    literals = re.findall(r"'(?:[^']|'')*'|\?", body)
+    assert len(columns) == len(literals), (
+        f"column count {len(columns)} != value count {len(literals)}"
+    )
+
+    known = {status.value for status in TrackingStatus}
+    for column, literal in zip(columns, literals):
+        if column != "status" or literal == "?":
+            continue
+        value = literal[1:-1]
+        assert value in known, f"status literal {value!r} is not a TrackingStatus member"
+
+    # And the literal it writes is the canonical spelling, not the legacy one.
+    status_index = columns.index("status")
+    assert literals[status_index].strip("'") == "IN_PROCESS"
 
 
 def test_expanding_attempts_on_a_missing_item_names_the_item_not_a_foreign_key(tmp_path, monkeypatch):
@@ -1476,7 +1556,7 @@ def test_the_engine_migration_script_satisfies_the_production_schema_check(tmp_p
     script = (
         "from config.environments import load_config;"
         "from packages.persistence.database import create_database_runtime, require_database_schema_current;"
-        "from packages.persistence.sqlalchemy_repository import Stage2Repository;"
+        "from packages.persistence.stage2_repository import Stage2Repository;"
         "runtime=create_database_runtime(load_config());"
         "Stage2Repository(runtime).create_schema();"
         "require_database_schema_current(runtime);"
@@ -1669,8 +1749,20 @@ def test_the_stepper_covers_every_status_the_server_can_write():
     start = page.index("function updateStepper")
     stepper = page[start:page.index("\n    function ", start)]
 
-    missing = sorted(name for name in written if f"status === '{name}'" not in stepper)
+    # ``IN_PROCESS`` and ``IN_PRODUCTION`` are one state under two names, so the page handles
+    # both through a shared array rather than two identical branches. Membership in that array
+    # counts as covering a status exactly as a literal branch does.
+    grouped = re.search(r"const beingMachined = \[([^\]]*)\]", stepper)
+    grouped_names = set(re.findall(r"'(\w+)'", grouped.group(1))) if grouped else set()
+
+    def covered(name: str) -> bool:
+        return f"status === '{name}'" in stepper or name in grouped_names
+
+    missing = sorted(name for name in written if not covered(name))
     assert not missing, f"stepper khong map status that su: {missing}"
+
+    # the two spellings must be grouped together, not left to two branches that can drift
+    assert grouped_names == {"IN_PROCESS", "IN_PRODUCTION"}
 
     # event types are not statuses and must not drive the stepper
     for event_type in ("SHORTAGE_REPORTED", "QC_NG_RETURNED_TO_MACHINING"):
@@ -1695,7 +1787,7 @@ def test_an_item_imported_from_the_factory_sheet_can_be_read_back(tmp_path):
     from dataclasses import replace as dc_replace
     from packages.excel.factory_adapter import import_factory_items_to_db
     from packages.persistence.database import create_database_runtime, engine_path
-    from packages.persistence.sqlalchemy_repository import Stage2Repository
+    from packages.persistence.stage2_repository import Stage2Repository
     from packages.persistence.tracking_repository import TrackingRepository
     from packages.sqlengine import connect
 
@@ -1730,7 +1822,11 @@ def test_an_item_imported_from_the_factory_sheet_can_be_read_back(tmp_path):
     # the import claimed success, so the row must be readable
     items = repository.list_items()
     assert len(items) == 1
-    assert items[0].status.value == "IN_PRODUCTION"
+    # The import used to write ``IN_PRODUCTION`` while every other writer wrote ``IN_PROCESS``,
+    # so one state carried two names and each reader had to add them back together. The import
+    # now writes the canonical spelling; ``IN_PRODUCTION`` stays a member so rows already stored
+    # still parse, and ``BEING_MACHINED`` is the one place that knows both mean the same thing.
+    assert items[0].status.value == "IN_PROCESS"
 
     # and reachable by the two lookups the page and the scan use
     assert repository.get_item(items[0].internal_id).internal_id == items[0].internal_id

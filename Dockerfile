@@ -29,4 +29,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # Migrations run before the API so a fresh container never serves a stale schema.
 # Alembic is gone from the runtime; the engine migrations are what
 # require_database_schema_current verifies against.
-CMD ["sh", "-c", "py -3.14 -c \"from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.sqlalchemy_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()\" && exec uvicorn apps.server.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "py -3.14 -c \"from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.stage2_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()\" && exec uvicorn apps.server.app:app --host 0.0.0.0 --port ${PORT:-8000}"]

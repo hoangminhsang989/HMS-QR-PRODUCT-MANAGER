@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QApplication
 from apps.desktop.stage2_window import Stage2Window
 from packages.excel.stage2_export import Stage2ExcelExporter
 from packages.domain.stage2 import Customer, PurchaseOrder, PurchaseOrderLine
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.stage2_repository import Stage2Repository
 
 
 def _run_clean_engine_migrations(database: Path) -> None:

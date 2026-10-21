@@ -1621,7 +1621,7 @@ class ServerToolWindow(QMainWindow):
         script = (
             "from config.environments import load_config;"
             "from packages.persistence.database import create_database_runtime;"
-            "from packages.persistence.sqlalchemy_repository import Stage2Repository;"
+            "from packages.persistence.stage2_repository import Stage2Repository;"
             "runtime=create_database_runtime(load_config());"
             "Stage2Repository(runtime).create_schema();"
             "runtime.dispose()"

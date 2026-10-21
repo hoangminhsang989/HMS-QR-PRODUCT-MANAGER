@@ -34,7 +34,7 @@ from packages.domain.tracking import Operator, TrackingError
 from packages.domain.workflow import WorkflowEventType
 from packages.persistence.database import DatabaseRuntime
 from packages.persistence.managed_file_repository import ManagedFileRepository
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.stage2_repository import Stage2Repository
 from packages.persistence.store_forward_repository import StoreForwardRepository
 from packages.persistence.tracking_repository import TrackingRepository
 from packages.persistence.workflow_repository import WorkflowRepository

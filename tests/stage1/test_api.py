@@ -8,7 +8,7 @@ from packages.application.server_auth import ServerAuthService
 from packages.application.product_service import ProductService
 from packages.persistence.database import create_database_runtime
 from packages.persistence.sqlite_product_repository import SQLiteProductRepository
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.stage2_repository import Stage2Repository
 from packages.persistence.tracking_repository import TrackingRepository
 from packages.application.tracking_service import TrackingService
 

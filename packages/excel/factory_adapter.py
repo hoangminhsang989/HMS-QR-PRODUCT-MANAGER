@@ -366,7 +366,7 @@ def import_factory_items_to_db(
                     internal_id, tracking_code, purchase_order_id, purchase_order_line_id,
                     product_id, customer_id, quantity, unit, delivery_date, status,
                     qr_public_id, qr_status, created_at, updated_at, created_by, updated_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN_PRODUCTION', ?, 'ACTIVE', ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN_PROCESS', ?, 'ACTIVE', ?, ?, ?, ?)
             """, [tracking_id, tracking_code, po_id, line_id, prod_id, cust_id, str(qty), item["unit"], today_iso, qr_pub_id, now_iso, now_iso, actor, actor])
 
             # 5. Tracking Audit event

@@ -4,8 +4,8 @@ import pytest
 
 from packages.domain.stage2 import Customer, PurchaseOrder, PurchaseOrderLine, POStatus
 from packages.domain.product import Product, ProductStatus
-from packages.persistence.sqlalchemy_repository import Stage2Repository
-from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+from packages.persistence.stage2_repository import Stage2Repository
+from packages.persistence.engine_product_repository import EngineProductRepository
 from packages.persistence.tracking_repository import TrackingRepository
 from packages.application.tracking_service import TrackingService
 from uuid import UUID
@@ -26,7 +26,7 @@ def tracking_env(tmp_path):
         notes=None, active=True, created_at=now, updated_at=now,
         created_by="u", updated_by="u",
     ))
-    SqlAlchemyProductRepository(repo2.database).create(Product(
+    EngineProductRepository(repo2.database).create(Product(
         internal_id=UUID(pid), product_code="SP-T", company="HMS", part_name="Plate",
         quantity=100, unit="pcs", material="SUS304", requester=None,
         surface_treatment="Anodized", outsourced=False, size="10x20x30",

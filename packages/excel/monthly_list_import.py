@@ -18,8 +18,8 @@ from packages.domain.tracking import utc_now
 from packages.excel.factory_adapter import _extract_from_rows
 from packages.persistence.database import create_database_runtime
 from packages.persistence.managed_file_repository import ManagedFileRepository
-from packages.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
-from packages.persistence.sqlalchemy_repository import Stage2Repository
+from packages.persistence.engine_product_repository import EngineProductRepository
+from packages.persistence.stage2_repository import Stage2Repository
 from packages.storage.managed_files import ManagedFileService
 from packages.storage.service import FilesystemStorage
 
@@ -168,7 +168,7 @@ def import_monthly_lists(
     _ensure_manifest(database_path)
     runtime = create_database_runtime_for_shared_sqlite(database_path)
     Stage2Repository(runtime).create_schema()
-    service = ProductService(SqlAlchemyProductRepository(runtime))
+    service = ProductService(EngineProductRepository(runtime))
     storage_root.mkdir(parents=True, exist_ok=True)
     files = ManagedFileService(
         ManagedFileRepository(runtime), FilesystemStorage(storage_root, create_root=False)

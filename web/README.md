@@ -110,6 +110,16 @@ item no tra ve khong. Tem in trước khi thông tin chi tiết bị sửa van r
 duợc, vi scan tra item bằng `tracking_code`. Khi không khớp, page hiện canh bao
 trong the san pham; pick chi tiet khac xoa no, vi payload của pick do server tao.
 
+## Trang thai "dang gia cong" chi con mot cach viet
+
+Truoc day mot chi tiet co the mang trang thai `IN_PROCESS` hoac
+`IN_PRODUCTION` tuy noi ghi vao: import Excel xuat ghi `IN_PRODUCTION`, con
+duong tinh trang tu dong ghi `IN_PROCESS`. Vi the moi cho doc deu phai cong
+ca hai lai - portal cong, bao cao Excel cong, va trang web phan nhanh tren
+ca hai. Gio chi con `IN_PROCESS` duoc ghi. `IN_PRODUCTION` van nam trong
+`TrackingStatus` vi dong da luu truoc day van con mang chu do, va
+`BEING_MACHINED` la cho duy nhat biet hai cach viet la mot trang thai.
+
 ## Ai la nguoi thuc hien
 
 Moi ghi nhan trong luong tracking deu ghi operator duoc chon trong danh
