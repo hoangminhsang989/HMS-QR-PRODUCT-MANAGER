@@ -1286,3 +1286,29 @@ Guards added, each RED-verified in several directions:
   asserted to hold exactly the two members.
 
 Full suite through `CHAY_TEST.bat`: **791 passed, 0 failed**.
+
+## The dead function is gone, and so is the reason a second one would survive
+
+`load_shared_summaries` in `apps/desktop/tracking_window.py` was defined and
+never called. Its docstring described loading central summaries "without
+opening a client-side database" - but `TrackingWindow` takes its rows from the
+`summary_rows` constructor argument, so the docstring documented an approach the
+app had already moved off. A scan of every module-level function in
+`apps/desktop/` found it was the only one with no caller, so it was the only
+removal to make.
+
+The guard that keeps it gone counts each name across the repository and reports
+any that appears exactly once - a definition with no caller. Two things had to be
+got right, and both were found by RED-verifying rather than by reasoning:
+
+The guard's own docstring names the function it removed, so counting that file
+masked the exact case it exists to catch - the dead code came back and the guard
+stayed green. Only this guard's file is skipped, and the comment says why.
+Skipping all of `tests/` was the first attempt and was wrong in the other
+direction: `desktop_credentials` in `apps/desktop/__main__.py` is called only
+from tests, and that is a caller. Excluding every test would have reported a
+live function as dead.
+
+Dunder names are skipped because the interpreter calls them, not this codebase.
+
+Full suite through `CHAY_TEST.bat`: **792 passed, 0 failed**.

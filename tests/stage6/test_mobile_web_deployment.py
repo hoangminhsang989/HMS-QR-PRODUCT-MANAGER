@@ -684,6 +684,51 @@ def test_every_written_tracking_status_is_a_real_enum_member():
     assert literals[status_index].strip("'") == "IN_PROCESS"
 
 
+def test_no_module_level_function_in_the_desktop_app_is_unreferenced():
+    """A function nothing calls is not documentation - it is a claim the code no
+    longer keeps.
+
+    ``load_shared_summaries`` in ``apps/desktop/tracking_window.py`` was defined,
+    never called, and described itself as the way to load central summaries
+    "without opening a client-side database". The window that would have used it
+    takes its rows from ``summary_rows`` instead, so the docstring described an
+    approach the app had already moved off. Removing it is safe; what is not safe
+    is leaving a second one to accumulate.
+
+    The check is a name count across the whole repository. A name that appears
+    exactly once has a definition and no caller. Dunder names are skipped because
+    they are called by the interpreter, not by this codebase.
+    """
+    import subprocess
+
+    offenders = []
+    for path in sorted((SOURCE_ROOT / "apps" / "desktop").rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"^(?:async\s+)?def\s+(\w+)\s*\(", text, re.M):
+            name = match.group(1)
+            if name.startswith("__"):
+                continue
+            counted = subprocess.run(
+                ["git", "grep", "-c", name], cwd=SOURCE_ROOT,
+                capture_output=True, text=True,
+            ).stdout
+            total = sum(
+                int(line.rsplit(":", 1)[-1])
+                for line in counted.splitlines()
+                # Only this guard file is skipped, and only because its docstring names
+                # the function it removed - counting it would mask exactly the case it
+                # exists to catch. Every other test still counts: a function called from a
+                # test has a caller, and excluding all of tests/ would report those as dead.
+                if line.strip()
+                and line.rsplit(":", 1)[-1].strip().isdigit()
+                and not line.startswith("tests/stage6/test_mobile_web_deployment.py")
+            )
+            if total <= 1:
+                offenders.append(f"{path.relative_to(SOURCE_ROOT)}:{name}")
+
+    assert not offenders, "module-level function with no caller: " + ", ".join(offenders)
+
+
 def test_expanding_attempts_on_a_missing_item_names_the_item_not_a_foreign_key(tmp_path, monkeypatch):
     """``submit_report`` and ``expand_attempt`` both write to a child table keyed
     by the tracking item, but only the first one checked the item exists.

@@ -6,11 +6,6 @@ from packages.domain.workflow import WorkflowEventType
 from packages.domain.product import format_quantity
 from apps.design_tokens import PY_SIDE_THEME, STATUS_COLORS
 
-def load_shared_summaries(server_url, access_token):
-    """Load central tracking summaries without opening a client-side database."""
-    from packages.application.tracking_api_client import TrackingApiClient
-    return TrackingApiClient(server_url, access_token=access_token).list_tracking()
-
 class WorkflowActionDialog(QDialog):
     def __init__(self,title,quantity_required=True,parent=None):
         super().__init__(parent);self.setWindowTitle(title);form=QFormLayout(self);self.quantity=QLineEdit();self.notes=QLineEdit()
