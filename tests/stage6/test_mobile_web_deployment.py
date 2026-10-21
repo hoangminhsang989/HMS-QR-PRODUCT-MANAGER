@@ -583,6 +583,32 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_a_machining_report_names_its_own_failure():
+    """submitReport is the second write that pre-fills its quantity from the
+    item and sends the input's .value as a string. An emptied field therefore
+    reaches the server as "" and is rejected as a 422 - and the page's message
+    was fixed, so the operator was told the report failed without being told
+    why. This is the same defect bd0da42 fixed in sendWorkflow.
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    report = page[page.index("async function submitReport"):]
+    report = report[:report.index("\n    async function ", 10)]
+
+    assert "isNaN(Number(qty))" in report, (
+        "the quantity is sent without being checked, so clearing the field "
+        "reaches the server as an empty string and comes back as a 422 that "
+        "names no field"
+    )
+    assert "const message = e.error?.message" in report, (
+        "the report failure still discards the server's own diagnosis, so a "
+        "rejected field is reported as a generic failure"
+    )
+    assert "Array.isArray(e.detail)" in report, (
+        "a 422 from request validation answers as {detail:[...]}, which the "
+        "page cannot read, so the field error is lost"
+    )
+
+
 def test_a_malformed_qr_is_not_reported_as_a_missing_one():
     """The scan input invites a code to be typed by hand, so a malformed
     payload is the likeliest failure - and it is not the same problem as a code

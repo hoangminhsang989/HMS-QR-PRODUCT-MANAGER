@@ -925,3 +925,19 @@ The scan input's placeholder is **"Dán mã QR hoặc nhập tay..."**, so a mal
 Only the third was true. So an operator who typed a code by hand and got it wrong was told the QR had no data — sending them to check the label when what was wrong was what they typed. This is the same defect class as `7a73320`, which fixed the *issue* side of the scan and left the *scan* side blaming the code.
 
 Verified in a real Chrome on all four paths: garbage now shows **"invalid QR payload"**, short JSON shows **"QR payload must contain exactly the canonical four fields"**, an unknown code still shows **"QR not found or revoked"**, and a real payload scans and loads the product card. Full suite **783 passed, 0 failed**.
+
+## The machining report had the same defect twice over — pushed `REPORTMSG`
+
+`bd0da42` fixed the empty-quantity / unread-envelope pair in `sendWorkflow`. `submitReport` is the **other** write with the same shape: `#qty` (`web/index.html:602`) is pre-filled from the item (L1009) and sent as `document.querySelector('#qty').value`, a **string**. An emptied field reaches the server as `""`.
+
+Proven against a real app: `quantity: ""` on `/tracking/api/v1/process-reports` → **HTTP 422 `{"detail": [...]}`**, while `"10"` → 200. And `submitReport`'s error branch was worse than `sendWorkflow`'s — it read nothing at all:
+
+```js
+} else {
+  notify('Không thể ghi báo cáo gia công.', true);
+}
+```
+
+So the operator who cleared `#qty` and tapped "Đã xác nhận hoàn tất công đoạn" was told the report failed, with no diagnosis. Both halves fixed the same way: a client-side guard on the quantity, and an extraction that reads both envelopes.
+
+Verified in a real Chrome on three paths: cleared `#qty` → **"Vui lòng nhập số lượng lớn hơn 0."**; valid quantity → **"Đã xác nhận hoàn tất công đoạn."** with the new row in the history; and `ATTEMPT` through `submitAttempt(1)` is guarded identically. Full suite **784 passed, 0 failed**.

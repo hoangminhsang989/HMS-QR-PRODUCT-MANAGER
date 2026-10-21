@@ -134,11 +134,11 @@ tim thay du lieu cho ma QR nay" - chi trong truong hợp thu hai moi dung.
 Bay trang doc thong bao cua may chu, nen ma nhap sai se noi dung ma do sai
 gi.
 
-So luong trong form su kien duoc kiem tra truoc khi gui. O so luong da duoc
-dien san tu chi tiet, nhung van xoa trang duoc, va mot o trong gui len thanh
-chuoi rong bi server tu choi bang 422 khong noi ro truong nao. Bay gay trang
-tu bao "Vui long nhap so luong lon hon 0" thay vi de operator nhan mot thong
-bao chung.
+Ca hai o so luong (su kien va bao cao gia cong) deu duoc dien san tu chi
+tiet, nhung van xoa trang duoc, va deu gui len dang chuoi. Mot o trong bi
+server tu choi bang 422 khong noi ro truong nao. Bay hai cho deu kiem tra
+truoc khi gui, va deu tu bao "Vui long nhap so luong lon hon 0" thay vi de
+operator nhan mot thong bao chung.
 
 May chu tra loi loi trong hai dang: `_error()` boc thanh
 `{error:{message}}`, con `HTTPException` va kiem tra du lieu cua FastAPI tra

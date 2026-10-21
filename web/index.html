@@ -1203,6 +1203,13 @@
 
     async function submitReport(kind, n) {
       if (!current || !userId || !processId) return notify('Vui lòng chọn Người dùng và Công đoạn trước.', true);
+      // #qty is pre-filled from the item but stays editable, and it is sent
+      // as a string, so an emptied field reaches the server as "" and is
+      // rejected as a 422 that names no field. Catch it here instead.
+      const qty = document.querySelector('#qty').value.trim();
+      if (!qty || isNaN(Number(qty)) || Number(qty) <= 0) {
+        return notify('Vui lòng nhập số lượng lớn hơn 0.', true);
+      }
       const body = {
         request_id: crypto.randomUUID(),
         tracking_item_id: current.internal_id,
@@ -1224,7 +1231,14 @@
         await loadHistory();
         notify(kind === 'ATTEMPT' ? `Đã ghi nhận lần ${n}.` : 'Đã xác nhận hoàn tất công đoạn.');
       } else {
-        notify('Không thể ghi báo cáo gia công.', true);
+        // #qty is pre-filled from the item but stays editable, and it is
+        // sent as a string, so an emptied field reaches the server as ""
+        // and is rejected as a 422. The message used to be fixed, so the
+        // operator was told the report failed without being told why.
+        const e = await r.json();
+        const field = Array.isArray(e.detail) ? e.detail[0] : null;
+        const message = e.error?.message || e.detail?.message || field?.msg || 'Không thể ghi báo cáo gia công.';
+        notify(message, true);
       }
     }
 
