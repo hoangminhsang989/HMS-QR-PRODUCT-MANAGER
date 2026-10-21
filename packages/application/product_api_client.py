@@ -27,7 +27,7 @@ class ProductApiClient:
     def __init__(self, base_url: str, *, access_token: str | None = None, timeout: float = 15.0) -> None:
         self.base_url = base_url.rstrip("/")
         if not self.base_url.startswith(("http://", "https://")):
-            raise ValueError("HMS_QR_SERVER_URL must start with http:// or https://.")
+            raise ValueError("Địa chỉ HMS QR Server phải bắt đầu bằng http:// hoặc https://.")
         self.timeout = timeout
         self.access_token = access_token
         self._versions: dict[str, datetime] = {}
@@ -105,7 +105,7 @@ class ProductApiClient:
                 message = error.get("message") if isinstance(error, dict) else str(error)
             except (UnicodeDecodeError, json.JSONDecodeError):
                 message = None
-            raise ProductApiError(message or f"Server returned HTTP {exc.code}.") from exc
+            raise ProductApiError(message or f"Server trung tâm trả về lỗi HTTP {exc.code}.") from exc
         except URLError as exc:
             raise ProductApiError("Không thể kết nối tới server trung tâm.") from exc
 

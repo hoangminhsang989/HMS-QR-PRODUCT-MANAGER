@@ -1022,3 +1022,72 @@ RED-verified in one direction: reverting `quantity must be numeric` fails it
 (exit 1, "1 failed").
 
 Full suite **787 passed, 0 failed**.
+
+---
+
+## The desktop app put a raw exception into a Vietnamese dialog
+
+The mobile operator's messages were done, so the audit widened to the other
+two surfaces. `apps/desktop` is clean: 30 `QMessageBox` bodies in Vietnamese,
+and no `except` block anywhere interpolates `str(e)` into a dialog. The five
+English hits a naive scan reports are Qt standard button text - "AutoSum",
+"Copy worksheet", "Production Run" - in the *title* slot, over Vietnamese
+bodies.
+
+The API clients were not. `product_master_window.py:2611` catches
+`Exception as exc` and puts `str(exc)` in the dialog, and `stage2_window.py`
+does the same with `Stage2ApiError`. Every message those four clients raise
+is therefore user-presentable, whatever their class docstrings claim.
+
+The reachable one mattered. All four clients end their `HTTPError` handler
+with `raise ...ApiError(message or f"Server returned HTTP {exc.code}.")` -
+the fallback fires whenever the central server answers with a body that is
+not JSON, and that English string landed in a Vietnamese dialog. Nine
+messages translated across `file_api_client.py`, `product_api_client.py`,
+`stage2_api_client.py` and `tracking_api_client.py`; all 17 raise sites in
+that package are now Vietnamese.
+
+The other five were constructor guards, unreachable through
+`desktop_server_url()` - `normalize_server_url` (`server_discovery.py:37`)
+already raises `"Địa chỉ HMS QR Server không hợp lệ."` before a client is
+ever built. They are translated anyway rather than left as a trap, because
+the same `str(exc)` path would show them if the call sites ever change.
+
+A second guard covers this package. RED-verified in one direction: reverting
+the `Server returned HTTP` fallback fails it (exit 1, "1 failed").
+
+### What the remaining 133 English messages are
+
+A full scan of `packages/` and `apps/` outside `tests/` finds 133 English
+raise sites. None of them reach a user:
+
+- **`packages/deployment/*`** - preflight, provisioning, lifecycle, plans.
+  Run by HMS staff on the factory machine, output read from a console.
+- **`packages/backup/service.py`**, **`packages/storage/*`**,
+  **`packages/labels/service.py`** - backup verification, storage keys, NAS.
+- **`packages/persistence/managed_file_repository.py`**,
+  **`store_forward_repository.py`**, **`sqlalchemy_*.py`** - Stage 2 entities
+  the mobile page never touches: customers, purchase orders, delivery
+  schedules, production runs, managed files.
+- **`packages/application/workflow_services.py`** - the revision endpoint,
+  which no UI reaches.
+- **`packages/excel/template_adapter.py`** - template guards for the Excel
+  importer.
+- **`apps/desktop/credentials.py`** - DPAPI failures.
+
+Four are test injection (`injected transaction failure`,
+`injected workflow transaction failure`) or revision-only (`report not found`).
+
+### Two filenames that lie
+
+`packages/persistence/sqlalchemy_repository.py` and
+`sqlalchemy_product_repository.py` are live - `app.py:23,34`,
+`monthly_list_import.py`, `stage2_service.py` and every test conftest import
+them - but they contain **zero** occurrences of the string `sqlalchemy`.
+They use `packages.sqlengine`. The names are leftovers from before the
+engine cutover and are a trap for the next reader. Renaming touches
+`Dockerfile`, `render.yaml`, `TEST_HMS_QR_SERVER.bat`, `apps/server/tool.py`
+and 11 test files, so it is left for LO to approve rather than folded into
+an error-message change.
+
+Full suite **788 passed, 0 failed**.

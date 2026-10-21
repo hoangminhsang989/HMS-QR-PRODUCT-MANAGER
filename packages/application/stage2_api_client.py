@@ -41,7 +41,7 @@ class Stage2ApiClient:
                 message = detail.get("message") if isinstance(detail, dict) else str(detail)
             except (UnicodeDecodeError, json.JSONDecodeError):
                 message = None
-            raise Stage2ApiError(message or f"Server returned HTTP {exc.code}.") from exc
+            raise Stage2ApiError(message or f"Server trung tâm trả về lỗi HTTP {exc.code}.") from exc
         except URLError as exc:
             raise Stage2ApiError("Không thể kết nối tới server trung tâm.") from exc
 

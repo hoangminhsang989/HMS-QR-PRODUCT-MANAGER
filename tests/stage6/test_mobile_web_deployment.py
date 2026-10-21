@@ -604,6 +604,44 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_the_desktop_app_api_clients_answer_in_vietnamese():
+    """The desktop app shows a raw exception to its user.
+
+    ``product_master_window.py:2611`` catches ``Exception as exc`` and puts
+    ``str(exc)`` in the dialog, and ``stage2_window.py`` does the same with
+    ``Stage2ApiError``. So every message these clients raise is
+    user-presentable, whatever the class docstring claims.
+
+    The reachable one mattered: all four clients fall back to
+    "Server returned HTTP {code}." when the central server answers with a body
+    that is not JSON, and that English string landed in a Vietnamese dialog.
+    The rest were constructor guards, unreachable through
+    ``desktop_server_url()`` - but the same ``str(exc)`` path would have shown
+    them, so they are translated too rather than left as a trap.
+    """
+    import re
+
+    vietnamese = re.compile("[\u00c0-\u1ef9]")
+    pattern = re.compile(
+        r"raise (?:\w*ApiError|\w*Error|ValueError)\(([^\n]{0,140})"
+    )
+
+    clients = sorted((SOURCE_ROOT / "packages" / "application").glob("*_api_client.py"))
+    assert clients, "no API clients found - the glob moved"
+
+    offenders = []
+    for path in clients:
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for match in pattern.finditer(line):
+                if not vietnamese.search(match.group(1)):
+                    offenders.append(f"{path.name}:{number} {match.group(1).strip()[:80]}")
+
+    assert not offenders, (
+        "the desktop app shows these to its user in English:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
 def test_the_operator_reachable_errors_are_written_in_vietnamese():
     """The page, the portal and the desktop app are all in Vietnamese, and the
     server already raises HTTPExceptions in Vietnamese. The domain layer did
