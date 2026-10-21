@@ -941,3 +941,20 @@ Proven against a real app: `quantity: ""` on `/tracking/api/v1/process-reports` 
 So the operator who cleared `#qty` and tapped "Đã xác nhận hoàn tất công đoạn" was told the report failed, with no diagnosis. Both halves fixed the same way: a client-side guard on the quantity, and an extraction that reads both envelopes.
 
 Verified in a real Chrome on three paths: cleared `#qty` → **"Vui lòng nhập số lượng lớn hơn 0."**; valid quantity → **"Đã xác nhận hoàn tất công đoạn."** with the new row in the history; and `ATTEMPT` through `submitAttempt(1)` is guarded identically. Full suite **784 passed, 0 failed**.
+
+## The history read showed a stale record — and the fix was shared, not copied — pushed `HISTREFAC`
+
+`183ebd2` closed the empty-quantity / unread-envelope defect in `submitReport` by copying what `bd0da42` had written into `sendWorkflow`. That left the page with **three identical copies** of the envelope read and **two identical copies** of the quantity guard — and the copy is exactly why the bug existed twice.
+
+So the next defect was found the same way: `loadHistory` (L1245) had `if (r.ok) { ... }` and **no `else`**. A failed read left the previous rows on screen. `submitReport` awaits `loadHistory` *before* it reports success, so a stale panel sits right under "Đã xác nhận hoàn tất công đoạn." Verified in a real Chrome: with the history read forced to 500, the operator saw the success message and the panel still showed the old rows — the report had in fact landed.
+
+Both were fixed by **extracting the shared helpers**, so the class cannot recur by copy:
+
+- `serverMessage(body, fallback)` reads both envelopes in one place. Four call sites now.
+- `readQuantity(selector)` reads a quantity input and returns a number or `null`. Two call sites.
+
+And `loadHistory` now names the failure and empties the panel: **"Không tải được nhật ký."** rather than showing a stale record as if it were current.
+
+The guards were rewritten to assert on the *shape* the fix now has — each call site uses the helper, and the helper is verified once. RED-verified in **3 directions**: removing the `else`, removing the shared quantity guard, and renaming the `serverMessage` helper — each fails the suite. Full suite **785 passed, 0 failed**.
+
+**This is the fix for the root cause of the last five bugs, not the fifth symptom.** The guards now make it impossible to add a write that reads only one envelope: there is no second copy to forget.

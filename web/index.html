@@ -857,6 +857,26 @@
       toastTimer = setTimeout(() => toast.classList.remove('visible'), 3000);
     }
 
+    // The server answers a failure in one of two envelopes: _error() wraps
+    // it as {error:{message}}, while an HTTPException or a rejected body
+    // arrives as {detail:...} - a dict for the former, a list of field
+    // errors for the latter. Every write reads both here, so a rejected
+    // field is reported in the server's own words instead of being
+    // flattened into one fixed message.
+    function serverMessage(body, fallback) {
+      const field = Array.isArray(body && body.detail) ? body.detail[0] : null;
+      return (body && (body.error?.message || body.detail?.message || field?.msg)) || fallback;
+    }
+
+    // The quantity inputs are pre-filled from the item but stay editable,
+    // and they are sent as strings, so an emptied field reaches the server
+    // as "" and is rejected as a 422 that names no field.
+    function readQuantity(selector) {
+      const raw = document.querySelector(selector).value.trim();
+      const value = Number(raw);
+      return raw && !isNaN(value) && value > 0 ? value : null;
+    }
+
     function escapeHtml(value) {
       const node = document.createElement('span');
       node.textContent = String(value ?? '');
@@ -992,9 +1012,7 @@
           // operator to check the label when what is wrong is what they
           // typed. The server names both; read it.
           const e = await r.json();
-          const field = Array.isArray(e.detail) ? e.detail[0] : null;
-          const message = e.error?.message || e.detail?.message || field?.msg || 'Không tìm thấy dữ liệu cho mã QR này.';
-          return notify(message, true);
+          return notify(serverMessage(e, 'Không tìm thấy dữ liệu cho mã QR này.'), true);
         }
         playBeep();
         current = await r.json();
@@ -1133,8 +1151,7 @@
     async function sendWorkflow() {
       if (!current || !userId || !workflowType) return notify('Vui lòng chọn Người dùng trước khi gửi.', true);
       if (workflowType !== 'GENERAL_REPORT') {
-        const qty = document.querySelector('#workflow-qty').value.trim();
-        if (!qty || isNaN(Number(qty)) || Number(qty) <= 0) {
+        if (readQuantity('#workflow-qty') === null) {
           return notify('Vui lòng nhập số lượng lớn hơn 0.', true);
         }
       }
@@ -1162,15 +1179,7 @@
       });
       if (!r.ok) {
         const e = await r.json();
-        // The server answers in two envelopes. _error() wraps as
-        // {error:{message}}, while HTTPException and FastAPI's own request
-        // validation answer as {detail:...} - a dict for HTTPException, a
-        // list of field errors for a rejected body. Reading only the first
-        // shape turned every rejected field into a message that names
-        // nothing the operator can fix.
-        const field = Array.isArray(e.detail) ? e.detail[0] : null;
-        const message = e.error?.message || e.detail?.message || field?.msg || 'Không thể ghi sự kiện.';
-        return notify(message, true);
+        notify(serverMessage(e, 'Không thể ghi sự kiện.'), true);
       }
       playBeep();
       document.querySelector('#workflow-form').hidden = true;
@@ -1206,8 +1215,7 @@
       // #qty is pre-filled from the item but stays editable, and it is sent
       // as a string, so an emptied field reaches the server as "" and is
       // rejected as a 422 that names no field. Catch it here instead.
-      const qty = document.querySelector('#qty').value.trim();
-      if (!qty || isNaN(Number(qty)) || Number(qty) <= 0) {
+      if (readQuantity('#qty') === null) {
         return notify('Vui lòng nhập số lượng lớn hơn 0.', true);
       }
       const body = {
@@ -1236,9 +1244,7 @@
         // and is rejected as a 422. The message used to be fixed, so the
         // operator was told the report failed without being told why.
         const e = await r.json();
-        const field = Array.isArray(e.detail) ? e.detail[0] : null;
-        const message = e.error?.message || e.detail?.message || field?.msg || 'Không thể ghi báo cáo gia công.';
-        notify(message, true);
+        notify(serverMessage(e, 'Không thể ghi báo cáo gia công.'), true);
       }
     }
 
@@ -1263,6 +1269,13 @@
         document.querySelector('#history').innerHTML = d.items.length ? d.items.map(x =>
           `<li><span class='history-kind'>${escapeHtml(names[x.event_type] || x.event_type)}</span> — ${new Date(x.server_timestamp).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} — <b>${escapeHtml(x.actor_display_name_snapshot)}</b>${(x.quantity !== null && x.quantity !== undefined && x.quantity !== '') ? ' — SL: ' + escapeHtml(formatQty(x.quantity)) : ''}${x.notes ? ' — ' + escapeHtml(x.notes) : ''}</li>`
         ).join('') : "<li style='color:var(--text-muted);text-align:center;'>Chưa có nhật ký cho chi tiết này.</li>";
+      } else {
+        // A failed read used to leave the previous rows on screen, which
+        // the operator reads as the current traceability record - and the
+        // report that was just written is not in it. Say the read failed
+        // and empty the panel rather than show a stale record.
+        document.querySelector('#history').innerHTML = "<li style='color:var(--text-muted);text-align:center;'>Không tải được nhật ký.</li>";
+        notify(serverMessage(await r.json(), 'Không tải được nhật ký.'), true);
       }
     }
 

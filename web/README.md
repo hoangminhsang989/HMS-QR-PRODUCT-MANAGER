@@ -140,6 +140,10 @@ server tu choi bang 422 khong noi ro truong nao. Bay hai cho deu kiem tra
 truoc khi gui, va deu tu bao "Vui long nhap so luong lon hon 0" thay vi de
 operator nhan mot thong bao chung.
 
+Viet lai o chung: mot ham doc thong bao loi cua server, mot ham doc o so
+luong. Truoc day moi cho tu viet lai mot ban, do cung la ly do loi xuat hien
+hai lan. Bay ghi them mot cho ghi moi la khong the quen duoc nua.
+
 May chu tra loi loi trong hai dang: `_error()` boc thanh
 `{error:{message}}`, con `HTTPException` va kiem tra du lieu cua FastAPI tra
 ve `{detail:...}`. Trang doc ca hai, nen mot truong bi tu choi se hien dung

@@ -24,6 +24,27 @@ from fastapi.testclient import TestClient
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 MOBILE_PAGE = SOURCE_ROOT / "web" / "index.html"
 
+
+def _function_body(page, name):
+    """Return the body of a function in the page's inline script.
+
+    Slicing on the next function declaration is not enough - some functions
+    are followed by a statement, not a declaration. A function ends at the
+    line that closes it at its own indentation.
+    """
+    start = page.index(f"function {name}(")
+    body_start = page.index("{", start)
+    depth = 0
+    for position in range(body_start, len(page)):
+        if page[position] == "{":
+            depth += 1
+        elif page[position] == "}":
+            depth -= 1
+            if depth == 0:
+                return page[start:position + 1]
+    raise AssertionError(f"{name}: no closing brace")
+
+
 # Which base each fetch variable resolves to. ``serverOrigin`` is the app root,
 # so ``/api/v1/qr-catalog`` and ``/api/v1/scan-image`` live there, NOT under
 # ``/tracking`` - getting that wrong returns 404 and silently kills the part
@@ -583,6 +604,30 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_a_failed_history_read_does_not_show_a_stale_record():
+    """loadHistory had no else branch. A failed read left the previous rows on
+    screen, which the operator reads as the current traceability record - and
+    the report that was just written is not in it. submitReport awaits
+    loadHistory before it reports success, so a stale panel is shown right
+    under "Da xac nhan hoan tat cong doan".
+    """
+    page = MOBILE_PAGE.read_text(encoding="utf-8")
+    history = _function_body(page, "loadHistory")
+
+    assert "} else {" in history, (
+        "the history read still has no failure branch, so a failed read "
+        "leaves the previous rows on screen and the operator reads a stale "
+        "record as the current one"
+    )
+    assert "Không tải được nhật ký" in history, (
+        "the failure branch does not name what failed, so a rejected history "
+        "read is indistinguishable from an empty one"
+    )
+    assert "serverMessage(" in history, (
+        "the history read discards the server's own diagnosis"
+    )
+
+
 def test_a_machining_report_names_its_own_failure():
     """submitReport is the second write that pre-fills its quantity from the
     item and sends the input's .value as a string. An emptied field therefore
@@ -594,18 +639,18 @@ def test_a_machining_report_names_its_own_failure():
     report = page[page.index("async function submitReport"):]
     report = report[:report.index("\n    async function ", 10)]
 
-    assert "isNaN(Number(qty))" in report, (
+    assert "readQuantity('#qty')" in report, (
         "the quantity is sent without being checked, so clearing the field "
         "reaches the server as an empty string and comes back as a 422 that "
         "names no field"
     )
-    assert "const message = e.error?.message" in report, (
+    assert "serverMessage(e," in report, (
         "the report failure still discards the server's own diagnosis, so a "
         "rejected field is reported as a generic failure"
     )
-    assert "Array.isArray(e.detail)" in report, (
-        "a 422 from request validation answers as {detail:[...]}, which the "
-        "page cannot read, so the field error is lost"
+    assert "function serverMessage" in page, (
+        "the two envelopes are no longer read in one shared place, so the "
+        "next write will miss the second one"
     )
 
 
@@ -622,11 +667,12 @@ def test_a_malformed_qr_is_not_reported_as_a_missing_one():
     scan = page[page.index("async function resolveScan"):]
     scan = scan[:scan.index("\n    async function ", 10)]
 
-    assert "const message = e.error?.message" in scan, (
+    assert "serverMessage(e," in scan, (
         "the scan still discards the server's own diagnosis, so a malformed "
         "payload is reported as a missing one"
     )
-    assert "Array.isArray(e.detail)" in scan, (
+    reader = _function_body(page, "serverMessage")
+    assert "Array.isArray(body && body.detail)" in reader, (
         "a 422 from request validation answers as {detail:[...]}, which the "
         "page cannot read, so the field error is lost"
     )
@@ -672,9 +718,9 @@ def test_an_empty_quantity_is_caught_before_the_round_trip():
     """
     page = MOBILE_PAGE.read_text(encoding="utf-8")
     send = page[page.index("async function sendWorkflow"):]
-    send = send[:send.index("\n    async function ", 10)]
+    send = _function_body(page, "sendWorkflow")
 
-    assert "isNaN(Number(qty))" in send, (
+    assert "readQuantity('#workflow-qty')" in send, (
         "the quantity is sent without being checked, so clearing the field "
         "reaches the server as an empty string and comes back as a 422 that "
         "names no field"
@@ -693,14 +739,17 @@ def test_the_page_reads_the_servers_second_error_envelope():
     fell through to a message that names nothing the operator can fix.
     """
     page = MOBILE_PAGE.read_text(encoding="utf-8")
-    send = page[page.index("async function sendWorkflow"):]
-    send = send[:send.index("\n    async function ", 10)]
 
-    assert "Array.isArray(e.detail)" in send, (
+    assert "serverMessage(e," in _function_body(page, "sendWorkflow"), (
+        "the event write no longer reads the server's own diagnosis"
+    )
+    # The two envelopes are read in one place now, so assert on that place.
+    reader = _function_body(page, "serverMessage")
+    assert "Array.isArray(body && body.detail)" in reader, (
         "a 422 from request validation answers as {detail:[...]}, which the "
         "page cannot read, so a rejected field is reported as a generic failure"
     )
-    assert "e.detail?.message" in send, (
+    assert "body.detail?.message" in reader, (
         "an HTTPException answers as {detail:{message}}, which the page cannot "
         "read, so the server's own diagnosis is discarded"
     )
