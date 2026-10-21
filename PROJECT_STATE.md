@@ -1312,3 +1312,45 @@ live function as dead.
 Dunder names are skipped because the interpreter calls them, not this codebase.
 
 Full suite through `CHAY_TEST.bat`: **792 passed, 0 failed**.
+
+
+## History grew without a ceiling, and the ceiling was never the problem
+
+`GET /tracking/api/v1/tracking-items/{item_id}/history` returns every event for one
+item with no pagination. The endpoint lives at `apps/server/app.py:430` and answers
+`{"items": list(history_service.history(item_id))}` — no `limit`, no `offset`, no
+cursor.
+
+`TrackingHistoryService.history()` at `packages/application/workflow_services.py:76`
+merges three sources and sorts by `server_timestamp`:
+
+- workflow events from `workflow_repository.history()`
+- process report events from `tracking_repository.history()`
+- audit events from `tracking_repository.audit_events()`
+
+All three repository queries already filter by `item_id`:
+`tracking_repository.py:393` (`process_report_events`),
+`tracking_repository.py:401` (`tracking_audit_events`),
+`workflow_repository.py:191` (workflow events). None of them scans the whole table.
+
+Realistic per-item volume is small: workflow events ~5-10, process reports ~5-20,
+audit events ~1-5. The endpoint is per-item, not list-all. A ceiling was never the
+problem, so no pagination was added. This section records the decision.
+
+
+## The fourteen PostgreSQL staging scripts are gone — `b02d0b8`
+
+Engine cutover `8b86526` retired the last PostgreSQL install path, which left
+fourteen staging scripts in `scripts/` that nothing could ever call again. Before
+deleting, each was verified unreferenced:
+
+- `_run_pg_installer` was only called by `_launch_stage_installer.ps1`, which was
+  itself being deleted — a self-contained cluster.
+- No source file, test, or doc named any of the fourteen by filename.
+- `C:\HMS-QR-STAGING` no longer exists on disk.
+- One grep hit in `tests/stage6/test_r011_d2_os_trusted_one_shot.py` was a false
+  positive: the function name `test_d2_03_no_mutable_file_first_stage_handoff`
+  contains the substring "stage_handoff" but references no script.
+
+Fourteen files removed, 298 deletions. Committed and pushed as `b02d0b8`.
+
