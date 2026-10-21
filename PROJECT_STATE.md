@@ -1163,4 +1163,40 @@ is meaningless.
 
 Full suite on `F:` **789 passed, 0 failed, 0 skipped** in 1052 s.
 
+---
+
+## The test root moved to `H:`, and the suite got 3x faster
+
+Moving off `F:` turned out to be both safe and worth far more than
+avoiding the corruption. The same suite: **1052 s on `F:`** against
+**313 s on `H:`**. The corrupted directories were not only failing runs,
+they were costing most of the wall clock.
+
+Nothing in the suite requires the root to be `F:`. The tests take their
+paths from `tmp_path` and `require_test_root()`, and the only literal
+`F:` paths are in `test_r011_wp1a_r1a2_path_portability.py`, where
+`_known_roots()` exists to **forbid** those literals in tracked runtime
+files rather than to require them. So the portability gate is the reason
+the move is clean, not an obstacle to it.
+
+What does travel with the root is `reference/excel-template.xlsx`. The
+fidelity gate reads `<HMS_QR_TEST_ROOT>/reference/excel-template.xlsx`,
+and without it the gate **skips** - a green suite that has quietly stopped
+checking. This was caught the cheap way: a first attempt with the root on
+`C:` reported `test_d2_18` failing, and it passed on `F:` with its fixture.
+A relocated root is not a valid experiment until the fixtures move too.
+
+`CHAY_TEST.bat` now owns the three variables that make the suite honest:
+`HMS_QR_TEST_ROOT`, `HMS_QR_EXCEL_REFERENCE_TEMPLATE` and `PYTHONPATH`.
+It refuses to run when the reference template is missing, because that
+failure mode is invisible in the summary line. Two details worth keeping:
+`%DATE%` is locale-dependent and contains separators on this machine, so
+parsing it puts slashes in the basetemp path and creates nested
+directories - the script uses `%RANDOM%%RANDOM%` instead and refuses a
+collision. And it leaves the basetemp in place on failure so the evidence
+survives.
+
+Full suite through `CHAY_TEST.bat`: **789 passed, 0 failed, 0 skipped**
+in 385 s.
+
 Full suite **789 passed, 0 failed**.
