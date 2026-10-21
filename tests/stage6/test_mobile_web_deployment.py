@@ -604,6 +604,46 @@ def test_a_partial_product_cannot_issue_a_qr_but_never_breaks_the_catalog(tmp_pa
         runtime.dispose()
 
 
+def test_expanding_attempts_on_a_missing_item_names_the_item_not_a_foreign_key(tmp_path, monkeypatch):
+    """``submit_report`` and ``expand_attempt`` both write to a child table keyed
+    by the tracking item, but only the first one checked the item exists.
+
+    ``expand_attempt`` went straight to the INSERT, so an unknown item id hit
+    ``attempt_display_state``'s foreign key. ``IntegrityError`` has no handler
+    in ``app.py`` - the four registered handlers cover
+    ``ProductValidationError``/``DuplicateProductCode``/``ProductConflict``/
+    ``ProductNotFound`` on the root app and ``Stage2ValidationError``/
+    ``ValueError``/``LookupError`` on Stage 2 and tracking - so the operator got
+    an unhandled 500 instead of a reason.
+
+    The page only reaches this after loading an item, so it is a latent gap
+    rather than a daily failure. It is the same class of defect as everything
+    else here, and the fix is the two lines ``submit_report`` already had.
+    """
+    app, runtime = _isolated_app(tmp_path, monkeypatch)
+    try:
+        with TestClient(app) as client:
+            headers = _login(client)
+            types = client.get("/tracking/api/v1/machining-types", headers=headers).json()
+            machining_id = types["items"][0]["internal_id"]
+
+            missing = "00000000-0000-0000-0000-000000000000"
+            response = client.post(
+                f"/tracking/api/v1/tracking-items/{missing}/attempt-display/expand",
+                headers=headers,
+                json={"new_max": 6, "machining_type_id": machining_id},
+            )
+
+            assert response.status_code == 404, (
+                f"expected 404 naming the item, got {response.status_code}: {response.text[:200]}"
+            )
+            body = response.json()
+            message = (body.get("error") or {}).get("message")
+            assert message == "Không tìm thấy chi tiết.", message
+    finally:
+        runtime.dispose()
+
+
 def test_the_desktop_app_api_clients_answer_in_vietnamese():
     """The desktop app shows a raw exception to its user.
 

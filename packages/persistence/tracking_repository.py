@@ -321,6 +321,11 @@ class TrackingRepository:
         return rows[0]["max_visible_attempt"] if rows else 3
 
     def expand_attempt(self, item_id, type_id, new_max, user_id=None):
+        if not self.database.query(
+            "SELECT internal_id FROM order_tracking_items WHERE internal_id = ?",
+            [str(item_id)],
+        ):
+            raise LookupError("Không tìm thấy chi tiết.")
         current = self.get_attempt_max(item_id, type_id)
         if new_max < current or new_max > 99:
             raise TrackingError("Số lần gia công chỉ được tăng dần và tối đa 99.")

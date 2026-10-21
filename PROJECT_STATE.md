@@ -1091,3 +1091,66 @@ and 11 test files, so it is left for LO to approve rather than folded into
 an error-message change.
 
 Full suite **788 passed, 0 failed**.
+
+---
+
+## The translated messages were proven to arrive, not just to exist
+
+Translating a message only helps if it reaches the screen, and the chain has
+four links that can each drop it: the raise site, the exception handler,
+`_error()`'s envelope, and the page's reader. Verified against a running
+server, all four links:
+
+| Path | Result |
+| --- | --- |
+| `LookupError` (workflow-summary, missing item) | 404 **"Không tìm thấy chi tiết."** |
+| `TrackingError` (report quantity exceeds) | 422 **"Số lượng báo cáo vượt quá số lượng chi tiết."** |
+| QR not JSON | 422 **"Mã QR không hợp lệ."** |
+| QR wrong field count | 422 **"Mã QR phải chứa đúng bốn trường quy định."** |
+| QR empty field | 422 **"Các trường trong mã QR không được để trống."** |
+| QR unknown code | 404 **"Không tìm thấy mã QR hoặc mã đã bị thu hồi."** |
+
+The three apps are separate FastAPI instances - root (v1.0) at `/`, Stage 2
+(v2.0) at `/stage2`, tracking (v3.0) at `/tracking` - so the duplicate
+`LookupError` registrations (`app.py:275` on Stage 2, `app.py:356` on
+tracking) do not shadow each other. Both route `str(exc)` into `_error()`,
+which is what carries the Vietnamese through.
+
+Two of my own verification attempts were wrong before they were right, and
+both are worth recording: the page scans by text at
+`/tracking/api/v1/scan?payload=...`, while `/api/v1/scan-image` takes a
+**multipart file** for camera capture - two different endpoints that look
+interchangeable by name. And `TestClient` on a hand-built app does not have
+the module-level routes (`app.py:737` registers `/api/v1/scan-image` on the
+module-level `app`, not on what `build_api()` returns), so those checks have
+to run against a real uvicorn.
+
+### `expand_attempt` wrote before it looked
+
+`submit_report` checks the item exists before writing; `expand_attempt` did
+not. It went straight to the INSERT, so an unknown item id hit
+`attempt_display_state`'s foreign key - and `IntegrityError` has **no
+handler** in `app.py`. The four registered handlers cover
+`ProductValidationError`/`DuplicateProductCode`/`ProductConflict`/
+`ProductNotFound` on the root app and `Stage2ValidationError`/`ValueError`/
+`LookupError` on Stage 2 and tracking, so the operator got an unhandled 500
+instead of a reason.
+
+The page only reaches this after loading an item, so it is a latent gap
+rather than a daily failure - but it is the same class of defect as
+everything else in this log, and the fix is the two lines `submit_report`
+already had. Now 404 **"Không tìm thấy chi tiết."**. Guard RED-verified
+by replacing the check with `if False` (exit 1, "1 failed").
+
+### The suite is flaky, and the cause is not this change
+
+Three consecutive full runs gave three different results: `1 failed` (the
+D2 file), `342 passed / 447 errors`, and `789 passed`. `F:` holds 18
+corrupted `pytest-temp-*` directories that `Remove-Item -Recurse -Force`
+cannot delete ("The file or directory is corrupted and unreadable"); 20 of
+38 were removed and the failures moved around afterwards, which is the
+signature of a filesystem problem rather than a code problem. `chkdsk F: /f`
+is the fix and it needs LO - it is the same open item recorded earlier.
+Disk space is not the cause: 322 GB free.
+
+Full suite **789 passed, 0 failed**.
