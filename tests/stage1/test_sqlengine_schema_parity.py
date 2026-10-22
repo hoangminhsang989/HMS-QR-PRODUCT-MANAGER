@@ -1,6 +1,6 @@
 """Schema contract: the engine migrations must reproduce the frozen ORM contract.
 
-This was the cutover gate.  It ran the seven engine migrations against a fresh
+This was the cutover gate.  It ran the eight engine migrations against a fresh
 database and compared the result, table by table, against the SQLAlchemy ORM
 metadata the application used at cutover.  The ORM models are gone now, so the
 expected contract is frozen here as a literal: any future migration that
@@ -473,6 +473,45 @@ EXPECTED_TABLES = {
             ('user_id', 'operators', 'internal_id'),
         ),
     },
+    "license_keys": {
+        "columns": (
+            ('activated_at', 'DATETIME', True),
+            ('created_at', 'DATETIME', False),
+            ('customer_email', 'TEXT', True),
+            ('expires_at', 'DATETIME', True),
+            ('hwid', 'TEXT', True),
+            ('key_id', 'TEXT', False),
+            ('license_key', 'TEXT', False),
+            ('payment_id', 'TEXT', True),
+            ('product_tier', 'TEXT', False),
+            ('status', 'TEXT', False),
+        ),
+        "pk": ['key_id'],
+        "unique": (
+            ('license_key',),
+        ),
+        "fk": (
+        ),
+    },
+    "payments": {
+        "columns": (
+            ('amount', 'INTEGER', False),
+            ('confirmed_at', 'DATETIME', True),
+            ('created_at', 'DATETIME', False),
+            ('currency', 'TEXT', False),
+            ('customer_email', 'TEXT', True),
+            ('payment_id', 'TEXT', False),
+            ('qr_payload', 'TEXT', True),
+            ('status', 'TEXT', False),
+            ('vietqr_reference', 'TEXT', True),
+            ('webhook_payload', 'TEXT', True),
+        ),
+        "pk": ['payment_id'],
+        "unique": (
+        ),
+        "fk": (
+        ),
+    },
 }
 
 def _build_database(tmp_path: Path):
@@ -490,10 +529,10 @@ def engine_schema(tmp_path_factory):
     database.close()
 
 
-def test_all_seven_migrations_apply(engine_schema):
+def test_all_eight_migrations_apply(engine_schema):
     database, migrations = engine_schema
-    assert [version for version, _, _ in migrations] == [1, 2, 3, 4, 5, 6, 7]
-    assert applied_versions(database) == {1, 2, 3, 4, 5, 6, 7}
+    assert [version for version, _, _ in migrations] == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert applied_versions(database) == {1, 2, 3, 4, 5, 6, 7, 8}
 
 
 def test_table_set_matches_the_frozen_contract(engine_schema):
@@ -540,4 +579,4 @@ def test_schema_survives_reopen(engine_schema):
     database.close()
     reopened = connect(database.path)
     assert set(reopened.table_names()) - {"_hms_migrations"} == set(EXPECTED_TABLES)
-    assert applied_versions(reopened) == {1, 2, 3, 4, 5, 6, 7}
+    assert applied_versions(reopened) == {1, 2, 3, 4, 5, 6, 7, 8}

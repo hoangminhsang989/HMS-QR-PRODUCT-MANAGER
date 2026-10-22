@@ -1961,6 +1961,8 @@ def render_portal_html() -> str:
       <button class="nav-tab" onclick="switchTab('tab-qr')">🏷️ STUDIO IN NHÃN QR ({stats['tracking']})</button>
       <button class="nav-tab" onclick="switchTab('tab-excel')">📋 DÁN & ĐỒNG BỘ EXCEL</button>
       <button class="nav-tab" onclick="switchTab('tab-connect')">📶 KẾT NỐI CAMERA DI ĐỘNG</button>
+      <button class="nav-tab" onclick="switchTab('tab-payment')">💳 THANH TOÁN VIETQR</button>
+      <button class="nav-tab" onclick="switchTab('tab-license')">🔑 KÍCH HOẠT BẢN QUYỀN</button>
     </div>
 
     <!-- TAB 1: LIVE FEED & MONITORING -->
@@ -2416,6 +2418,58 @@ def render_portal_html() -> str:
         </div>
       </div>
     </div>
+    <div id="tab-payment" class="tab-pane">
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 class="card-title"><span>💳</span> THANH TOÁN VIETQR</h2>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:13px; color:var(--text-muted);">Số tiền (VNĐ)</label>
+            <input id="payment-amount" type="number" min="1" style="min-width: 260px; padding: 8px 12px;" placeholder="Nhập số tiền">
+
+            <label style="display:block; margin-bottom:6px; font-size:13px; color:var(--text-muted);">Email nhận key</label>
+            <input id="payment-email" type="email" style="min-width: 260px; padding: 8px 12px;" placeholder="email@example.com">
+
+            <label style="display:block; margin-bottom:6px; font-size:13px; color:var(--text-muted);">Gói</label>
+            <select id="payment-tier" style="min-width: 260px; padding: 8px 12px;">
+              <option value="standard">Standard</option>
+              <option value="pro">Pro</option>
+            </select>
+
+            <button type="button" class="btn btn-primary btn-sm" onclick="createPayment()">Tạo thanh toán</button>
+          </div>
+          <div id="payment-result" style="display:none;">
+            <img id="payment-qr-img" style="max-width:100%; border-radius:8px;" alt="VietQR">
+            <div id="payment-info" style="margin-top:10px; font-size:13px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="tab-license" class="tab-pane">
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 class="card-title"><span>🔑</span> KÍCH HOẠT BẢN QUYỀN</h2>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:13px; color:var(--text-muted);">License key</label>
+            <input id="license-key" type="text" style="min-width: 260px; padding: 8px 12px;" placeholder="HMSQR-XXXX-XXXX-XXXX-XXXX">
+
+            <label style="display:block; margin-bottom:6px; font-size:13px; color:var(--text-muted);">HWID</label>
+            <input id="license-hwid" type="text" style="min-width: 260px; padding: 8px 12px;" placeholder="Machine ID">
+
+            <label style="display:block; margin-bottom:6px; font-size:13px; color:var(--text-muted);">Email</label>
+            <input id="license-email" type="email" style="min-width: 260px; padding: 8px 12px;" placeholder="email@example.com">
+
+            <button type="button" class="btn btn-primary btn-sm" onclick="activateLicense()">Kích hoạt</button>
+          </div>
+          <div id="license-result" style="display:none; padding:10px 14px; border-radius:8px; font-size:13px;"></div>
+        </div>
+      </div>
+    </div>
   </main>
 
   <!-- PRINTABLE HIDDEN CONTAINER -->
@@ -2443,7 +2497,64 @@ def render_portal_html() -> str:
         t.style.display = 'block';
         setTimeout(() =\u003e {{ t.style.display = 'none'; }}, 2200);
       }});
+      }}
+      return;
     }}
+
+  async function createPayment() {{
+    const amount = parseInt(document.getElementById('payment-amount').value, 10);
+    const email = document.getElementById('payment-email').value.trim();
+    const tier = document.getElementById('payment-tier').value;
+    const result = document.getElementById('payment-result');
+    const info = document.getElementById('payment-info');
+    const qrImg = document.getElementById('payment-qr-img');
+    if (!amount || amount <= 0) {{ info.textContent = 'Vui lòng nhập số tiền hợp lệ.'; result.style.display = 'block'; return; }}
+    if (!email) {{ info.textContent = 'Vui lòng nhập email nhận key.'; result.style.display = 'block'; return; }}
+    try {{
+      const res = await fetch('/api/v1/payments/create', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ amount, customer_email: email, product_tier: tier }})
+      }});
+      if (!res.ok) throw new Error('Tạo thanh toán thất bại');
+      const data = await res.json();
+      qrImg.src = data.qr_payload;
+      qrImg.style.display = 'block';
+      info.innerHTML = 'Mã thanh toán: ' + data.payment_id + '<br>Số tiền: ' + data.amount.toLocaleString('vi-VN') + ' VNĐ<br>Nội dung: ' + data.vietqr_reference + '<br>Trạng thái: ' + data.status;
+      result.style.display = 'block';
+    }} catch (err) {{
+      qrImg.style.display = 'none';
+      info.textContent = 'Lỗi: ' + err.message;
+      result.style.display = 'block';
+    }}
+  }}
+
+  async function activateLicense() {{
+    const key = document.getElementById('license-key').value.trim();
+    const hwid = document.getElementById('license-hwid').value.trim();
+    const email = document.getElementById('license-email').value.trim();
+    const result = document.getElementById('license-result');
+    if (!key) {{ result.textContent = 'Vui lòng nhập license key.'; result.style.display = 'block'; return; }}
+    if (!hwid) {{ result.textContent = 'Vui lòng nhập HWID.'; result.style.display = 'block'; return; }}
+    try {{
+      const res = await fetch('/api/v1/license/activate', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ license_key: key, hwid, customer_email: email || null }})
+      }});
+      if (!res.ok) {{ const d = await res.json(); throw new Error(d.detail || 'Kích hoạt thất bại'); }}
+      const data = await res.json();
+      result.textContent = 'Kích hoạt thành công! Key: ' + data.license_key + ' | Thời gian: ' + data.activated_at;
+      result.style.background = 'var(--success)';
+      result.style.color = '#fff';
+      result.style.display = 'block';
+    }} catch (err) {{
+      result.textContent = 'Lỗi: ' + err.message;
+      result.style.background = 'var(--danger)';
+      result.style.color = '#fff';
+      result.style.display = 'block';
+    }}
+  }}
 
     async function downloadExcelReport(e) {{
       e.preventDefault();

@@ -24,6 +24,7 @@ REVISIONS = (
     (5, "0005_store_forward"),
     (6, "0006_outsourced_company"),
     (7, "0007_server_accounts"),
+    (8, "0008_license_payments"),
 )
 
 VERSION_TABLE = "_hms_migrations"
@@ -50,10 +51,11 @@ TABLES_0003 = TABLES_0002 | {"tracking_workflow_events"}
 TABLES_0004 = TABLES_0003 | {"managed_files", "product_file_relations"}
 TABLES_0005 = TABLES_0004 | {"storage_configurations", "archive_transfer_jobs"}
 TABLES_0007 = TABLES_0005 | {"user_accounts", "server_settings"}
+TABLES_0008 = TABLES_0007 | {"license_keys", "payments"}
 TABLES_BY_REVISION = dict(
     zip(
         (version for version, _ in REVISIONS),
-        (TABLES_0001, TABLES_0002, TABLES_0003, TABLES_0004, TABLES_0005, TABLES_0005, TABLES_0007),
+        (TABLES_0001, TABLES_0002, TABLES_0003, TABLES_0004, TABLES_0005, TABLES_0005, TABLES_0007, TABLES_0008),
     )
 )
 
@@ -78,6 +80,8 @@ COLUMNS = {
     "archive_transfer_jobs": {"internal_id", "managed_file_id", "configuration_id", "state", "attempt_count", "next_retry_at", "last_attempt_at", "last_error_code", "last_error_summary", "remote_verified_at", "grace_expires_at", "local_purged_at", "lease_token", "lease_expires_at", "created_at", "updated_at"},
     "user_accounts": {"internal_id", "username", "password_hash", "role", "active", "created_at", "updated_at"},
     "server_settings": {"setting_key", "setting_value", "updated_at"},
+    "license_keys": {"key_id", "license_key", "product_tier", "status", "created_at", "activated_at", "expires_at", "customer_email", "payment_id", "hwid"},
+    "payments": {"payment_id", "amount", "currency", "status", "vietqr_reference", "qr_payload", "created_at", "confirmed_at", "webhook_payload", "customer_email"},
 }
 
 PRIMARY_KEYS = {
@@ -89,6 +93,8 @@ PRIMARY_KEYS.update({
     "user_preferences": ("user_id",),
     "attempt_display_state": ("tracking_item_id", "machining_type_id"),
     "server_settings": ("setting_key",),
+    "license_keys": ("key_id",),
+    "payments": ("payment_id",),
 })
 
 FOREIGN_KEY_COUNTS = {
@@ -101,6 +107,8 @@ FOREIGN_KEY_COUNTS = {
     "managed_files": 1, "product_file_relations": 2,
     "storage_configurations": 0, "archive_transfer_jobs": 2,
     "user_accounts": 0, "server_settings": 0,
+    "license_keys": 0,
+    "payments": 0,
 }
 
 UNIQUE_SETS = {
@@ -117,6 +125,8 @@ UNIQUE_SETS = {
     "product_file_relations": {("managed_file_id",)},
     "archive_transfer_jobs": {("managed_file_id",)},
     "user_accounts": {("username",)},
+    "license_keys": {("license_key",)},
+    "payments": set(),
 }
 
 
@@ -179,7 +189,7 @@ def test_engine_boundaries_apply_one_version_at_a_time(tmp_path: Path):
             _assert_boundary(database, version)
 
         assert run_migrations(database, migrations, now=_now) == []
-        _assert_boundary(database, 7)
+        _assert_boundary(database, 8)
     finally:
         database.close()
 
