@@ -384,3 +384,15 @@ class TestLicenseApi:
             json={"payment_id": "nope", "status": "success", "amount": 100000},
         )
         assert resp.status_code == 400
+
+
+class TestVietQrConfig:
+    def test_env_vars_used_when_no_explicit_args(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HMS_QR_VIETQR_BANK_ID", "TESTBANK")
+        monkeypatch.setenv("HMS_QR_VIETQR_ACCOUNT_NUMBER", "1234567890")
+        monkeypatch.setenv("HMS_QR_VIETQR_ACCOUNT_NAME", "Test Account")
+        service = _service(tmp_path)
+        result = service.create_payment(customer_email="test@example.com", amount=100000)
+        assert "TESTBANK" in result["qr_payload"]
+        assert "1234567890" in result["qr_payload"]
+        assert "Test Account" in result["qr_payload"]

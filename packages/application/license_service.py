@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import secrets
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -24,9 +25,13 @@ class LicenseService:
         template: str = "compact",
     ) -> None:
         self._db = database
-        self._bank_id = bank_id
-        self._account_number = account_number
-        self._account_name = account_name
+        self._bank_id = bank_id or os.environ.get("HMS_QR_VIETQR_BANK_ID", "")
+        self._account_number = account_number or os.environ.get(
+            "HMS_QR_VIETQR_ACCOUNT_NUMBER", ""
+        )
+        self._account_name = account_name or os.environ.get(
+            "HMS_QR_VIETQR_ACCOUNT_NAME", ""
+        )
         self._template = template
 
     def create_payment(
