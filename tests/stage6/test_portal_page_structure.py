@@ -84,7 +84,11 @@ def test_every_pane_has_a_nav_button_to_reach_it(monkeypatch):
 
 
 def test_the_portal_has_the_tabs_it_is_supposed_to_have(monkeypatch):
-    """The tab set is the contract: five functional tabs plus license activation."""
+    """The tab set is the contract: the four functional tabs.
+
+    The payment tab went with the QR payment code, and the license tab went with
+    the license system - nothing in the product ever consumed a license.
+    """
 
     html = _rendered(monkeypatch)
     assert _nav_targets(html) == {
@@ -92,7 +96,6 @@ def test_the_portal_has_the_tabs_it_is_supposed_to_have(monkeypatch):
         "tab-qr",
         "tab-excel",
         "tab-connect",
-        "tab-license",
     }
 
 
@@ -103,10 +106,11 @@ def test_the_removed_payment_tab_is_not_reachable(monkeypatch):
     assert "payment-qr-img" not in html
 
 
-def test_the_license_tab_is_still_wired(monkeypatch):
+def test_the_removed_license_tab_is_not_reachable(monkeypatch):
     html = _rendered(monkeypatch)
-    assert "activateLicense" in html
-    assert "/api/v1/license/activate" in html
+    assert "tab-license" not in html
+    assert "activateLicense" not in html
+    assert "license-key" not in html
 
 
 def test_div_tags_are_balanced(monkeypatch):

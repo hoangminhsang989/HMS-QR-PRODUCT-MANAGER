@@ -15,9 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from config.environments import AppConfig, Environment, load_config
-from packages.application.license_service import LicenseError, LicenseService
 from packages.application.product_service import ProductService
-from packages.contracts.api import LicenseActivatePayload, LicenseValidatePayload, ProductPageResponse, ProductPatch, ProductPayload, ProductResponse, to_response
+from packages.contracts.api import ProductPageResponse, ProductPatch, ProductPayload, ProductResponse, to_response
 from packages.domain.product import ProductStatus, ProductValidationError
 from packages.domain.stage2 import DeliveryScheduleEntry, POStatus, RunStatus, Stage2ValidationError, now_utc
 from packages.domain.repository import DuplicateProductCode, ProductConflict, ProductNotFound
@@ -444,7 +443,6 @@ def _error(code: int, error_code: str, message: str, details: dict[str, str] | N
 
 SERVER_APP_CONFIG = load_config()
 SERVER_DATABASE_RUNTIME = create_database_runtime(SERVER_APP_CONFIG)
-SERVER_LICENSE_SERVICE = LicenseService(SERVER_DATABASE_RUNTIME.database)
 if SERVER_APP_CONFIG.environment is not Environment.DEV:
     require_database_ready(SERVER_DATABASE_RUNTIME)
     require_database_schema_current(SERVER_DATABASE_RUNTIME)
@@ -702,27 +700,6 @@ def qr_catalog(search: str | None = None, limit: int = 150):
             "qr_payload": enc,
         })
     return {"total": len(catalog), "items": catalog}
-
-@app.post("/api/v1/license/validate")
-def license_validate(payload: LicenseValidatePayload) -> dict[str, object]:
-    try:
-        return SERVER_LICENSE_SERVICE.validate_license(
-            license_key=payload.license_key,
-            hwid=payload.hwid,
-        )
-    except LicenseError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-@app.post("/api/v1/license/activate")
-def license_activate(payload: LicenseActivatePayload) -> dict[str, object]:
-    try:
-        return SERVER_LICENSE_SERVICE.activate_license(
-            license_key=payload.license_key,
-            hwid=payload.hwid,
-            customer_email=payload.customer_email,
-        )
-    except LicenseError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 @app.get("/api/v1/export/excel")
 def export_excel():

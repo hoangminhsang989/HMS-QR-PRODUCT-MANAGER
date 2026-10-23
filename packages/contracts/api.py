@@ -80,19 +80,3 @@ class ProductPageResponse(BaseModel):
 
 def to_response(product: Product) -> ProductResponse:
     return ProductResponse.model_validate(product)
-
-class LicenseValidatePayload(BaseModel):
-    """Strict payload for validating a license key on the server."""
-    model_config = ConfigDict(extra="forbid")
-
-    license_key: str = Field(min_length=1, max_length=128)
-    hwid: str = Field(min_length=1, max_length=256)
-
-
-class LicenseActivatePayload(BaseModel):
-    """Strict payload for activating a license key and binding hardware ID."""
-    model_config = ConfigDict(extra="forbid")
-
-    license_key: str = Field(min_length=1, max_length=128)
-    hwid: str = Field(min_length=1, max_length=256)
-    customer_email: str | None = Field(default=None, max_length=256)

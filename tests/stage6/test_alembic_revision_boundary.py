@@ -99,8 +99,8 @@ def test_engine_migration_versions_are_ordered_and_unique():
     assert versions == sorted(versions)
     assert len(set(versions)) == len(versions)
     assert versions[0] == 1
-    assert versions[-1] == 8
 
+    assert versions[-1] == 7
 
 def test_stage6_version_boundary_and_schema_contract(tmp_path: Path):
     migrations = _migrations()

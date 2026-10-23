@@ -171,7 +171,7 @@ def test_production_database_schema_must_match_deployed_engine_head(tmp_path):
 
     database = Database(tmp_path / "schema-current-engine")
     try:
-        _stamp(database, [(8, "0008_license_keys")])
+        _stamp(database, [(7, "0007_server_accounts")])
         require_database_schema_current(_prod_runtime(database))
     finally:
         database.close()
