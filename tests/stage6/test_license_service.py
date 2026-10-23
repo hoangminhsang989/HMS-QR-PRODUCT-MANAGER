@@ -17,16 +17,10 @@ from conftest import _engine_database
 from fastapi.testclient import TestClient
 
 from apps.server.app import SERVER_LICENSE_SERVICE, app
-from packages.application.license_service import (
-    LicenseError,
-    LicenseService,
-    PaymentError,
-)
+from packages.application.license_service import LicenseError, LicenseService
 from packages.contracts.api import (
     LicenseActivatePayload,
     LicenseValidatePayload,
-    PaymentCreatePayload,
-    PaymentWebhookPayload,
 )
 
 
@@ -39,7 +33,6 @@ def _seed_pending_license(
     database,
     *,
     license_key="HMSQR-AAAA-BBBB-CCCC-DDDD",
-    payment_id="pay-001",
     customer_email="test@example.com",
     product_tier="standard",
 ):
@@ -48,9 +41,9 @@ def _seed_pending_license(
     with database.transaction() as tx:
         tx.execute(
             "INSERT INTO license_keys (key_id, license_key, product_tier, status,"
-            " created_at, customer_email, payment_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [key_id, license_key, product_tier, "pending", now, customer_email, payment_id],
+            " created_at, customer_email)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            [key_id, license_key, product_tier, "pending", now, customer_email],
         )
 
 
@@ -61,15 +54,14 @@ def _seed_active_license(
     hwid="HWID-001",
     expires_at=None,
     customer_email="test@example.com",
-    payment_id="pay-001",
 ):
     key_id = "key-" + license_key[:8]
     now = datetime.now(timezone.utc).isoformat()
     with database.transaction() as tx:
         tx.execute(
             "INSERT INTO license_keys (key_id, license_key, product_tier, status,"
-            " created_at, activated_at, expires_at, customer_email, payment_id, hwid)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " created_at, activated_at, expires_at, customer_email, hwid)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 key_id,
                 license_key,
@@ -79,87 +71,31 @@ def _seed_active_license(
                 now,
                 expires_at,
                 customer_email,
-                payment_id,
                 hwid,
             ],
         )
-
-
-class TestCreatePayment:
-    def test_create_payment_returns_qr_payload(self, tmp_path):
-        service = _service(tmp_path)
-        result = service.create_payment(
-            customer_email="buyer@example.com", amount=500000, product_tier="standard"
-        )
-        assert result["amount"] == 500000
-        assert result["currency"] == "VND"
-        assert result["status"] == "pending"
-        assert result["customer_email"] == "buyer@example.com"
-        assert result["vietqr_reference"]
-        assert result["qr_payload"].startswith("https://img.vietqr.io/image/")
-        assert result["payment_id"]
-
-    def test_create_payment_persists_row(self, tmp_path):
-        service = _service(tmp_path)
-        result = service.create_payment(
-            customer_email="buyer@example.com", amount=250000
-        )
-        rows = service._db.query(
-            "SELECT * FROM payments WHERE payment_id = ?", [result["payment_id"]]
-        )
-        assert len(rows) == 1
-        assert rows[0]["amount"] == 250000
-        assert rows[0]["status"] == "pending"
-
-    def test_create_payment_reference_matches_payment_id(self, tmp_path):
-        service = _service(tmp_path)
-        result = service.create_payment(
-            customer_email="buyer@example.com", amount=100000
-        )
-        assert result["vietqr_reference"] == result["payment_id"][:8].upper()
-
-
-class TestConfirmPayment:
-    def test_confirm_unknown_payment_raises(self, tmp_path):
-        service = _service(tmp_path)
-        with pytest.raises(PaymentError, match="Payment not found"):
-            service.confirm_payment(payment_id="nope", webhook_payload="{}")
-
-    def test_confirm_payment_generates_license(self, tmp_path):
-        service = _service(tmp_path)
-        payment = service.create_payment(
-            customer_email="buyer@example.com", amount=500000
-        )
-        result = service.confirm_payment(
-            payment_id=payment["payment_id"], webhook_payload='{"status":"success"}'
-        )
-        assert result["status"] == "confirmed"
-        assert result["license_key"].startswith("HMSQR-")
-
-    def test_confirm_payment_twice_returns_same_license(self, tmp_path):
-        service = _service(tmp_path)
-        payment = service.create_payment(
-            customer_email="buyer@example.com", amount=500000
-        )
-        first = service.confirm_payment(
-            payment_id=payment["payment_id"], webhook_payload="{}"
-        )
-        second = service.confirm_payment(
-            payment_id=payment["payment_id"], webhook_payload="{}"
-        )
-        assert first["license_key"] == second["license_key"]
 
 
 class TestGenerateLicenseKey:
     def test_generate_returns_formatted_key(self, tmp_path):
         service = _service(tmp_path)
         key = service.generate_license_key(
-            payment_id="pay-x", customer_email="a@b.com", product_tier="standard"
+            customer_email="a@b.com", product_tier="standard"
         )
         assert key.startswith("HMSQR-")
         assert len(key) == len("HMSQR-") + 24
 
-    def test_generate_existing_payment_returns_same_key(self, tmp_path):
+    def test_generate_without_a_payment_id(self, tmp_path):
+        """The QR payment flow is gone, so a key no longer needs a payment."""
+
+        service = _service(tmp_path)
+        key = service.generate_license_key(customer_email="a@b.com")
+        rows = service._db.query(
+            "SELECT payment_id FROM license_keys WHERE license_key = ?", [key]
+        )
+        assert rows[0]["payment_id"] is None
+
+    def test_generate_is_idempotent_per_payment_id(self, tmp_path):
         service = _service(tmp_path)
         first = service.generate_license_key(
             payment_id="pay-y", customer_email="a@b.com"
@@ -168,6 +104,21 @@ class TestGenerateLicenseKey:
             payment_id="pay-y", customer_email="a@b.com"
         )
         assert first == second
+
+    def test_generate_persists_row(self, tmp_path):
+        service = _service(tmp_path)
+        key = service.generate_license_key(
+            customer_email="persist@example.com", product_tier="pro"
+        )
+        rows = service._db.query(
+            "SELECT product_tier, status, customer_email FROM license_keys"
+            " WHERE license_key = ?",
+            [key],
+        )
+        assert len(rows) == 1
+        assert rows[0]["product_tier"] == "pro"
+        assert rows[0]["status"] == "pending"
+        assert rows[0]["customer_email"] == "persist@example.com"
 
 
 class TestActivateLicense:
@@ -282,22 +233,14 @@ class TestValidateLicense:
 
 
 class TestFullFlow:
-    def test_payment_to_activation_to_validation(self, tmp_path):
+    def test_issue_activation_to_validation(self, tmp_path):
         service = _service(tmp_path)
-        payment = service.create_payment(
-            customer_email="flow@example.com", amount=500000
-        )
-        confirmed = service.confirm_payment(
-            payment_id=payment["payment_id"], webhook_payload='{"ok":true}'
-        )
-        license_key = confirmed["license_key"]
+        license_key = service.generate_license_key(customer_email="flow@example.com")
         activated = service.activate_license(
             license_key=license_key, hwid="HW-FLOW"
         )
         assert activated["status"] == "active"
-        validated = service.validate_license(
-            license_key=license_key, hwid="HW-FLOW"
-        )
+        validated = service.validate_license(license_key=license_key, hwid="HW-FLOW")
         assert validated["valid"] is True
         assert validated["license_key"] == license_key
 
@@ -343,56 +286,11 @@ class TestLicenseApi:
         assert resp.status_code == 200
         assert resp.json()["status"] == "active"
 
-    def test_api_payment_create(self, client_and_service):
-        client, service = client_and_service
-        resp = client.post(
-            "/api/v1/payments/create",
-            json={
-                "amount": 500000,
-                "customer_email": "api@example.com",
-                "product_tier": "standard",
-            },
-        )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["amount"] == 500000
-        assert body["currency"] == "VND"
-        assert body["qr_payload"].startswith("https://")
+    def test_api_license_service_is_wired_without_payment_config(self):
+        """The service no longer takes VietQR credentials."""
 
-    def test_api_webhook_confirms_and_returns_license(self, client_and_service):
-        client, service = client_and_service
-        payment = service.create_payment(
-            customer_email="hook@example.com", amount=500000
-        )
-        resp = client.post(
-            "/api/v1/payments/webhook",
-            json={
-                "payment_id": payment["payment_id"],
-                "status": "success",
-                "amount": 500000,
-            },
-        )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] == "confirmed"
-        assert body["license_key"].startswith("HMSQR-")
+        import inspect
 
-    def test_api_webhook_unknown_payment_returns_400(self, client_and_service):
-        client, service = client_and_service
-        resp = client.post(
-            "/api/v1/payments/webhook",
-            json={"payment_id": "nope", "status": "success", "amount": 100000},
-        )
-        assert resp.status_code == 400
-
-
-class TestVietQrConfig:
-    def test_env_vars_used_when_no_explicit_args(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("HMS_QR_VIETQR_BANK_ID", "TESTBANK")
-        monkeypatch.setenv("HMS_QR_VIETQR_ACCOUNT_NUMBER", "1234567890")
-        monkeypatch.setenv("HMS_QR_VIETQR_ACCOUNT_NAME", "Test Account")
-        service = _service(tmp_path)
-        result = service.create_payment(customer_email="test@example.com", amount=100000)
-        assert "TESTBANK" in result["qr_payload"]
-        assert "1234567890" in result["qr_payload"]
-        assert "Test Account" in result["qr_payload"]
+        parameters = inspect.signature(LicenseService.__init__).parameters
+        assert set(parameters) == {"self", "database"}
+        assert SERVER_LICENSE_SERVICE is not None

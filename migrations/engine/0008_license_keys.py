@@ -1,4 +1,4 @@
-MIGRATION_ID = "0008_license_payments"
+MIGRATION_ID = "0008_license_keys"
 
 LICENSE_KEYS = """
 CREATE TABLE license_keys (
@@ -16,22 +16,6 @@ CREATE TABLE license_keys (
 )
 """
 
-PAYMENTS = """
-CREATE TABLE payments (
-    payment_id TEXT PRIMARY KEY,
-    amount INTEGER NOT NULL,
-    currency TEXT NOT NULL,
-    status TEXT NOT NULL,
-    vietqr_reference TEXT,
-    qr_payload TEXT,
-    created_at DATETIME NOT NULL,
-    confirmed_at DATETIME,
-    webhook_payload TEXT,
-    customer_email TEXT
-)
-"""
-
 
 def upgrade(transaction):
     transaction.execute(LICENSE_KEYS)
-    transaction.execute(PAYMENTS)

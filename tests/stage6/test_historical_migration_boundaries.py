@@ -24,7 +24,7 @@ REVISIONS = (
     (5, "0005_store_forward"),
     (6, "0006_outsourced_company"),
     (7, "0007_server_accounts"),
-    (8, "0008_license_payments"),
+    (8, "0008_license_keys"),
 )
 
 VERSION_TABLE = "_hms_migrations"
@@ -51,7 +51,7 @@ TABLES_0003 = TABLES_0002 | {"tracking_workflow_events"}
 TABLES_0004 = TABLES_0003 | {"managed_files", "product_file_relations"}
 TABLES_0005 = TABLES_0004 | {"storage_configurations", "archive_transfer_jobs"}
 TABLES_0007 = TABLES_0005 | {"user_accounts", "server_settings"}
-TABLES_0008 = TABLES_0007 | {"license_keys", "payments"}
+TABLES_0008 = TABLES_0007 | {"license_keys"}
 TABLES_BY_REVISION = dict(
     zip(
         (version for version, _ in REVISIONS),
@@ -81,7 +81,6 @@ COLUMNS = {
     "user_accounts": {"internal_id", "username", "password_hash", "role", "active", "created_at", "updated_at"},
     "server_settings": {"setting_key", "setting_value", "updated_at"},
     "license_keys": {"key_id", "license_key", "product_tier", "status", "created_at", "activated_at", "expires_at", "customer_email", "payment_id", "hwid"},
-    "payments": {"payment_id", "amount", "currency", "status", "vietqr_reference", "qr_payload", "created_at", "confirmed_at", "webhook_payload", "customer_email"},
 }
 
 PRIMARY_KEYS = {
@@ -94,7 +93,6 @@ PRIMARY_KEYS.update({
     "attempt_display_state": ("tracking_item_id", "machining_type_id"),
     "server_settings": ("setting_key",),
     "license_keys": ("key_id",),
-    "payments": ("payment_id",),
 })
 
 FOREIGN_KEY_COUNTS = {
@@ -108,7 +106,6 @@ FOREIGN_KEY_COUNTS = {
     "storage_configurations": 0, "archive_transfer_jobs": 2,
     "user_accounts": 0, "server_settings": 0,
     "license_keys": 0,
-    "payments": 0,
 }
 
 UNIQUE_SETS = {
@@ -126,7 +123,6 @@ UNIQUE_SETS = {
     "archive_transfer_jobs": {("managed_file_id",)},
     "user_accounts": {("username",)},
     "license_keys": {("license_key",)},
-    "payments": set(),
 }
 
 

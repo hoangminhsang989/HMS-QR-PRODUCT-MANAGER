@@ -1961,7 +1961,6 @@ def render_portal_html() -> str:
       <button class="nav-tab" onclick="switchTab('tab-qr')">🏷️ STUDIO IN NHÃN QR ({stats['tracking']})</button>
       <button class="nav-tab" onclick="switchTab('tab-excel')">📋 DÁN & ĐỒNG BỘ EXCEL</button>
       <button class="nav-tab" onclick="switchTab('tab-connect')">📶 KẾT NỐI CAMERA DI ĐỘNG</button>
-      <button class="nav-tab" onclick="switchTab('tab-payment')">💳 THANH TOÁN VIETQR</button>
       <button class="nav-tab" onclick="switchTab('tab-license')">🔑 KÍCH HOẠT BẢN QUYỀN</button>
     </div>
 
@@ -2418,35 +2417,6 @@ def render_portal_html() -> str:
         </div>
       </div>
     </div>
-    <div id="tab-payment" class="tab-pane">
-      <div class="card">
-        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-          <h2 class="card-title"><span>💳</span> THANH TOÁN VIETQR</h2>
-        </div>
-
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
-          <div>
-            <label style="display:block; margin-bottom:6px; font-size:13px; color:var(--text-muted);">Số tiền (VNĐ)</label>
-            <input id="payment-amount" type="number" min="1" style="min-width: 260px; padding: 8px 12px;" placeholder="Nhập số tiền">
-
-            <label style="display:block; margin-bottom:6px; font-size:13px; color:var(--text-muted);">Email nhận key</label>
-            <input id="payment-email" type="email" style="min-width: 260px; padding: 8px 12px;" placeholder="email@example.com">
-
-            <label style="display:block; margin-bottom:6px; font-size:13px; color:var(--text-muted);">Gói</label>
-            <select id="payment-tier" style="min-width: 260px; padding: 8px 12px;">
-              <option value="standard">Standard</option>
-              <option value="pro">Pro</option>
-            </select>
-
-            <button type="button" class="btn btn-primary btn-sm" onclick="createPayment()">Tạo thanh toán</button>
-          </div>
-          <div id="payment-result" style="display:none;">
-            <img id="payment-qr-img" style="max-width:100%; border-radius:8px;" alt="VietQR">
-            <div id="payment-info" style="margin-top:10px; font-size:13px;"></div>
-          </div>
-        </div>
-      </div>
-    </div>
     <div id="tab-license" class="tab-pane">
       <div class="card">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -2483,7 +2453,13 @@ def render_portal_html() -> str:
     function switchTab(tabId) {{
       document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-      event.currentTarget.classList.add('active');
+      // Find the button by the tab it opens instead of the implicit global
+      // ``event``: that object only exists inside an inline onclick handler, so
+      // any programmatic call threw ReferenceError. The inline handler's
+      // currentTarget is exactly this button, so behaviour is unchanged.
+      const btn = [...document.querySelectorAll('.nav-tab')]
+        .find(b => b.getAttribute('onclick') === "switchTab('" + tabId + "')");
+      if (btn) btn.classList.add('active');
       const target = document.getElementById(tabId);
       if (target) target.classList.add('active');
       if (tabId === 'tab-qr' && allCatalogItems.length === 0) {{
@@ -2497,37 +2473,7 @@ def render_portal_html() -> str:
         t.style.display = 'block';
         setTimeout(() =\u003e {{ t.style.display = 'none'; }}, 2200);
       }});
-      }}
-      return;
     }}
-
-  async function createPayment() {{
-    const amount = parseInt(document.getElementById('payment-amount').value, 10);
-    const email = document.getElementById('payment-email').value.trim();
-    const tier = document.getElementById('payment-tier').value;
-    const result = document.getElementById('payment-result');
-    const info = document.getElementById('payment-info');
-    const qrImg = document.getElementById('payment-qr-img');
-    if (!amount || amount <= 0) {{ info.textContent = 'Vui lòng nhập số tiền hợp lệ.'; result.style.display = 'block'; return; }}
-    if (!email) {{ info.textContent = 'Vui lòng nhập email nhận key.'; result.style.display = 'block'; return; }}
-    try {{
-      const res = await fetch('/api/v1/payments/create', {{
-        method: 'POST',
-        headers: {{ 'Content-Type': 'application/json' }},
-        body: JSON.stringify({{ amount, customer_email: email, product_tier: tier }})
-      }});
-      if (!res.ok) throw new Error('Tạo thanh toán thất bại');
-      const data = await res.json();
-      qrImg.src = data.qr_payload;
-      qrImg.style.display = 'block';
-      info.innerHTML = 'Mã thanh toán: ' + data.payment_id + '<br>Số tiền: ' + data.amount.toLocaleString('vi-VN') + ' VNĐ<br>Nội dung: ' + data.vietqr_reference + '<br>Trạng thái: ' + data.status;
-      result.style.display = 'block';
-    }} catch (err) {{
-      qrImg.style.display = 'none';
-      info.textContent = 'Lỗi: ' + err.message;
-      result.style.display = 'block';
-    }}
-  }}
 
   async function activateLicense() {{
     const key = document.getElementById('license-key').value.trim();

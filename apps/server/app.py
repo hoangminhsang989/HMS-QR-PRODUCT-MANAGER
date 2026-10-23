@@ -15,9 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from config.environments import AppConfig, Environment, load_config
-from packages.application.license_service import LicenseError, LicenseService, PaymentError
+from packages.application.license_service import LicenseError, LicenseService
 from packages.application.product_service import ProductService
-from packages.contracts.api import LicenseActivatePayload, LicenseValidatePayload, PaymentCreatePayload, PaymentWebhookPayload, ProductPageResponse, ProductPatch, ProductPayload, ProductResponse, to_response
+from packages.contracts.api import LicenseActivatePayload, LicenseValidatePayload, ProductPageResponse, ProductPatch, ProductPayload, ProductResponse, to_response
 from packages.domain.product import ProductStatus, ProductValidationError
 from packages.domain.stage2 import DeliveryScheduleEntry, POStatus, RunStatus, Stage2ValidationError, now_utc
 from packages.domain.repository import DuplicateProductCode, ProductConflict, ProductNotFound
@@ -722,27 +722,6 @@ def license_activate(payload: LicenseActivatePayload) -> dict[str, object]:
             customer_email=payload.customer_email,
         )
     except LicenseError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-@app.post("/api/v1/payments/create")
-def payment_create(payload: PaymentCreatePayload) -> dict[str, object]:
-    try:
-        return SERVER_LICENSE_SERVICE.create_payment(
-            customer_email=payload.customer_email,
-            amount=payload.amount,
-            product_tier=payload.product_tier,
-        )
-    except PaymentError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-@app.post("/api/v1/payments/webhook")
-def payment_webhook(payload: PaymentWebhookPayload) -> dict[str, object]:
-    try:
-        return SERVER_LICENSE_SERVICE.confirm_payment(
-            payment_id=payload.payment_id,
-            webhook_payload=payload.model_dump_json(),
-        )
-    except PaymentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 @app.get("/api/v1/export/excel")

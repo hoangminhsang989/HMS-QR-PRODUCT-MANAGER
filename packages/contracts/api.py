@@ -96,22 +96,3 @@ class LicenseActivatePayload(BaseModel):
     license_key: str = Field(min_length=1, max_length=128)
     hwid: str = Field(min_length=1, max_length=256)
     customer_email: str | None = Field(default=None, max_length=256)
-
-
-class PaymentCreatePayload(BaseModel):
-    """Strict payload for creating a payment and generating a VietQR code."""
-    model_config = ConfigDict(extra="forbid")
-
-    amount: int = Field(gt=0)
-    customer_email: str = Field(max_length=256)
-    product_tier: str = Field(default="standard", max_length=64)
-
-
-class PaymentWebhookPayload(BaseModel):
-    """Strict payload for receiving a payment gateway webhook callback."""
-    model_config = ConfigDict(extra="forbid")
-
-    payment_id: str = Field(min_length=1, max_length=128)
-    status: str = Field(max_length=32)
-    amount: int = Field(gt=0)
-    vietqr_reference: str | None = Field(default=None, max_length=256)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import secrets
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -10,119 +9,38 @@ class LicenseError(Exception):
     pass
 
 
-class PaymentError(Exception):
-    pass
-
-
 class LicenseService:
-    def __init__(
-        self,
-        database,
-        *,
-        bank_id: str = "",
-        account_number: str = "",
-        account_name: str = "",
-        template: str = "compact",
-    ) -> None:
+    """Issues and validates license keys.
+
+    There is no payment path here. LO asked for the VietQR QR-payment code to be
+    removed, and with it the ``payments`` table, the two payment routes and the
+    portal's payment tab. What is left is the license system itself, because the
+    portal's "KICH HOAT BAN QUYEN" tab still needs a key to activate.
+
+    Consequence worth knowing: with no payment flow there is no self-service way
+    to obtain a key. ``generate_license_key`` is the only issuer and it takes an
+    optional ``payment_id`` that is stored for reference only - nothing reads it
+    back and no table constrains it. A key is issued by whoever can call this
+    method.
+    """
+
+    def __init__(self, database) -> None:
         self._db = database
-        self._bank_id = bank_id or os.environ.get("HMS_QR_VIETQR_BANK_ID", "")
-        self._account_number = account_number or os.environ.get(
-            "HMS_QR_VIETQR_ACCOUNT_NUMBER", ""
-        )
-        self._account_name = account_name or os.environ.get(
-            "HMS_QR_VIETQR_ACCOUNT_NAME", ""
-        )
-        self._template = template
-
-    def create_payment(
-        self,
-        *,
-        customer_email: str,
-        amount: int,
-        product_tier: str = "standard",
-    ) -> dict:
-        payment_id = str(uuid4())
-        now = datetime.now(timezone.utc).isoformat()
-        vietqr_reference = payment_id[:8].upper()
-        qr_payload = self._build_vietqr_url(amount, vietqr_reference)
-        with self._db.transaction() as tx:
-            tx.execute(
-                "INSERT INTO payments (payment_id, amount, currency, status, "
-                "vietqr_reference, qr_payload, created_at, customer_email) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [
-                    payment_id,
-                    amount,
-                    "VND",
-                    "pending",
-                    vietqr_reference,
-                    qr_payload,
-                    now,
-                    customer_email,
-                ],
-            )
-        return {
-            "payment_id": payment_id,
-            "amount": amount,
-            "currency": "VND",
-            "status": "pending",
-            "vietqr_reference": vietqr_reference,
-            "qr_payload": qr_payload,
-            "created_at": now,
-            "customer_email": customer_email,
-        }
-
-    def confirm_payment(self, *, payment_id: str, webhook_payload: str) -> dict:
-        rows = self._db.query(
-            "SELECT payment_id, amount, currency, status, created_at, customer_email "
-            "FROM payments WHERE payment_id = ?",
-            [payment_id],
-        )
-        if not rows:
-            raise PaymentError(f"Payment not found: {payment_id}")
-        payment = rows[0]
-        if payment["status"] == "confirmed":
-            existing = self._db.query(
-                "SELECT license_key FROM license_keys WHERE payment_id = ?",
-                [payment_id],
-            )
-            return {
-                "payment_id": payment_id,
-                "status": "confirmed",
-                "license_key": existing[0]["license_key"] if existing else None,
-            }
-        now = datetime.now(timezone.utc).isoformat()
-        with self._db.transaction() as tx:
-            tx.execute(
-                "UPDATE payments SET status = ?, confirmed_at = ?, webhook_payload = ? "
-                "WHERE payment_id = ?",
-                ["confirmed", now, webhook_payload, payment_id],
-            )
-        license_key = self.generate_license_key(
-            payment_id=payment_id,
-            customer_email=payment["customer_email"],
-            product_tier="standard",
-        )
-        return {
-            "payment_id": payment_id,
-            "status": "confirmed",
-            "confirmed_at": now,
-            "license_key": license_key,
-        }
 
     def generate_license_key(
         self,
         *,
-        payment_id: str,
+        payment_id: str | None = None,
         customer_email: str,
         product_tier: str = "standard",
     ) -> str:
-        existing = self._db.query(
-            "SELECT license_key FROM license_keys WHERE payment_id = ?",
-            [payment_id],
-        )
-        if existing:
-            return existing[0]["license_key"]
+        if payment_id is not None:
+            existing = self._db.query(
+                "SELECT license_key FROM license_keys WHERE payment_id = ?",
+                [payment_id],
+            )
+            if existing:
+                return existing[0]["license_key"]
         key_id = str(uuid4())
         license_key = self._format_key()
         now = datetime.now(timezone.utc).isoformat()
@@ -157,10 +75,10 @@ class LicenseService:
         if lic["hwid"] and lic["hwid"] != hwid:
             raise LicenseError("License bound to different machine")
         if lic["expires_at"]:
-            expires = lic["expires_at"]
-            if isinstance(expires, str):
-                expires = datetime.fromisoformat(expires)
-            if expires < datetime.now(timezone.utc):
+            # The engine deserializes DATETIME columns to tz-aware ``datetime``
+            # objects and rejects non-ISO text on write, so the comparison below
+            # is always between two aware datetimes.
+            if lic["expires_at"] < datetime.now(timezone.utc):
                 raise LicenseError("License expired")
         return {
             "valid": True,
@@ -205,14 +123,6 @@ class LicenseService:
             "activated_at": now,
             "hwid": hwid,
         }
-
-    def _build_vietqr_url(self, amount: int, reference: str) -> str:
-        add_info = f"HMSQR {reference}"
-        return (
-            f"https://img.vietqr.io/image/"
-            f"{self._bank_id}-{self._account_number}-{self._template}.png"
-            f"?amount={amount}&addInfo={add_info}&accountName={self._account_name}"
-        )
 
     @staticmethod
     def _format_key() -> str:

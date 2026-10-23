@@ -493,25 +493,6 @@ EXPECTED_TABLES = {
         "fk": (
         ),
     },
-    "payments": {
-        "columns": (
-            ('amount', 'INTEGER', False),
-            ('confirmed_at', 'DATETIME', True),
-            ('created_at', 'DATETIME', False),
-            ('currency', 'TEXT', False),
-            ('customer_email', 'TEXT', True),
-            ('payment_id', 'TEXT', False),
-            ('qr_payload', 'TEXT', True),
-            ('status', 'TEXT', False),
-            ('vietqr_reference', 'TEXT', True),
-            ('webhook_payload', 'TEXT', True),
-        ),
-        "pk": ['payment_id'],
-        "unique": (
-        ),
-        "fk": (
-        ),
-    },
 }
 
 def _build_database(tmp_path: Path):
