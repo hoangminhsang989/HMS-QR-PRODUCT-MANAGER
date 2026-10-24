@@ -1,4 +1,4 @@
-﻿"""Client SDK for the HMS licence system.
+"""Client SDK for the HMS licence system.
 
 `LicenseClient` is the single entry point a licensed application needs:
 
@@ -278,9 +278,9 @@ class LicenseClient:
 
         * `no-license` — there is no licence file yet (activate or import one).
         * `hwid-mismatch` — the file is unreadable, its signature does not
-          verify, or it belongs to another machine — including a licence the
-          server hands us for another machine. Fail closed: the customer
-          has to activate again.
+          verify, or it belongs to another machine or another product —
+          including a licence the server hands us for another machine. Fail
+          closed: the customer has to activate again.
         * `hwid-error` — the machine fingerprint could not be computed
           (`HwidError`). Task 12's UI treats it like `no-license`.
         * `ok` / `grace` / `expired` — the local decision, confirmed by the
@@ -313,6 +313,11 @@ class LicenseClient:
         except HwidError:
             return "hwid-error"
         if payload.hwid != hwid:
+            return "hwid-mismatch"
+        if payload.product != self.product:
+            # A licence for another product does not license this one, even
+            # when the machine matches and the signature is genuine. Renaming
+            # the file cannot change what it licenses.
             return "hwid-mismatch"
 
         local = license_status(payload, _now(), revoked=False)
