@@ -1,10 +1,14 @@
 import os
+import sys
+from collections.abc import Mapping
 
 from PySide6.QtWidgets import QApplication, QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
 from packages.application.product_api_client import ProductApiClient
 from packages.application.file_api_client import FileApiClient
 from packages.application.server_discovery import discover_server_url, normalize_server_url, resolve_server_url, save_server_url, server_is_ready
+from .license_dialogs import QtLicenseUi
+from .license_gate import DesktopLicenseGate, build_client, gate_is_active
 from .product_master_window import run
 from .credentials import delete_credentials, load_credentials, save_credentials
 
@@ -118,8 +122,40 @@ def desktop_credentials(**kwargs) -> tuple[str, str]:
     return username, password
 
 
+def _license_gate_allows_start(
+    env: Mapping[str, str] | None = None,
+    *,
+    ui_factory=QtLicenseUi,
+    error_view=QMessageBox.critical,
+) -> bool:
+    """True when the licence gate lets this launch through, False to exit.
+
+    Kept out of the ``__main__`` block so the enforcement itself is testable:
+    an active gate whose client reports a locked status must return False
+    without a server being contacted and without a single window being built.
+    ``ui_factory`` is injectable so a test never has to drive a real dialog.
+    """
+    if not gate_is_active(env):
+        return True
+    source = dict(os.environ if env is None else env)
+    try:
+        client = build_client(source)
+    except (ImportError, ValueError) as exc:
+        error_view(None, "Lỗi cấu hình bản quyền", str(exc))
+        return False
+    if client is None or not DesktopLicenseGate(client).startup_check(ui=ui_factory(client)):
+        return False
+    return True
+
+
 if __name__ == "__main__":
     app = QApplication.instance() or QApplication([])
+    # The licence gate runs before anything else touches the network or builds a
+    # window: a customer whose licence is expired, revoked or missing must be
+    # stopped here, not logged in and then told. `ce9f3eb` removed an earlier
+    # licence system precisely because nothing ever consumed it.
+    if not _license_gate_allows_start():
+        sys.exit(0)
     server_url = desktop_server_url(configured_url=os.environ.get("HMS_QR_SERVER_URL", ""))
     product_service = ProductApiClient(server_url)
     username, password, remember = desktop_login_details(
