@@ -60,6 +60,7 @@ _REVOKED_REASONS = frozenset({"revoked", "key_revoked", "activation_revoked"})
 #: documented return set and is reported as `network_error`.
 _ACTIVATE_ERRORS = {
     "invalid_key": "invalid_key",
+    "product_mismatch": "product_mismatch",
     "devices_exceeded": "devices_exceeded",
     "key_revoked": "key_revoked",
     "activation_revoked": "key_revoked",

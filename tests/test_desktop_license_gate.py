@@ -352,6 +352,7 @@ def test_a_ui_that_blows_up_refuses_the_start_instead_of_crashing():
         ("invalid_key", "Mã kích hoạt không đúng. Kiểm tra lại ký tự đã nhập."),
         ("devices_exceeded", "Mã kích hoạt đã dùng hết số máy cho phép."),
         ("key_revoked", "Mã kích hoạt đã bị thu hồi."),
+        ("product_mismatch", "Ma kich ho?t thu?c ph?n m?m khac, khong dung du?c cho ph?n m?m nay."),
         ("key_expired", "Mã kích hoạt đã hết hạn."),
         ("network_error", "Không kết nối được Máy chủ bản quyền. Kiểm tra mạng rồi thử lại."),
         ("rate_limited", "Không kích hoạt được. Thử lại hoặc liên hệ nhà cung cấp."),
