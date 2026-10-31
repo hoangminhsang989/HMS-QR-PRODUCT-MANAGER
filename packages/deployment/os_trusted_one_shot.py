@@ -33,7 +33,7 @@ SERVICE_ACCOUNT = r"HMS-PC\HMSQRService"
 SERVICE_SID = "S-1-5-21-170807328-2858633000-3406472961-1009"
 STAGING_ROLE = "staging"
 STAGING_NAMESPACE = ".hms-qr-d2"
-REVIEWED_LINEAGE_PARENT = "3f3c2406e26c1796d5b7509ac2eee5902080955a"
+REVIEWED_LINEAGE_PARENT = "bec5ff9b8533b96c8afba6a707a69006a041204d"
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 TRUSTED_STAGE0_PATH = _REPOSITORY_ROOT / "scripts" / "r011_d2_stage0.ps1"
 TRUSTED_PAYLOAD_PATH = _REPOSITORY_ROOT / "scripts" / "r011_d2_protected_payload.ps1"
@@ -57,7 +57,7 @@ TRUSTED_BUNDLE_FILES: Final[Mapping[str, str]] = MappingProxyType(
         "packages/deployment/secret_store.py": "b2b4b63cbfe4e49a327b6ba21623007fa241e83dba7aaa7cf15543a5c24ee087",
     }
 )
-TRUST_MANIFEST_SHA256 = "a96a8be0ba3a684ad7e35a53b33c20979432cdcdfb0a8668ef458a9a754c81ac"
+TRUST_MANIFEST_SHA256 = "c4b272e21c5997250de1b57a044827ef0fad02a1138d2948c46940f9b15ae04a"
 PROVISIONER_ARGUMENTS = (
     "-B", "-m", "packages.deployment.provisioning", "--target-root", "{target_root}",
     "--service-account", "{service_account}", "--roles", *REQUIRED_ROLES, "--apply",
