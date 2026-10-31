@@ -249,7 +249,7 @@ def test_the_release_payload_actually_serves_the_mobile_pages(tmp_path):
     # drive rather than inside it.
     from config.paths import require_test_root
 
-    runtime = Path(str(require_test_root())).anchor / "HMS-QR-SERVE-PROBE-RUNTIME"
+    runtime = Path(Path(str(require_test_root())).anchor) / "HMS-QR-SERVE-PROBE-RUNTIME"
     shutil.rmtree(runtime, ignore_errors=True)
     runtime.mkdir(parents=True, exist_ok=True)
 
