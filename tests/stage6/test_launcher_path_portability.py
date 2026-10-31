@@ -191,6 +191,50 @@ LIVE_DOCUMENTS = (
 )
 
 
+# A document records what was true when it was written; an instruction tells the
+# reader what to type now. Only the second kind breaks when a drive disappears,
+# and only the second kind can be checked without rewriting history: a line that
+# assigns an environment variable or changes directory is something a reader will
+# copy verbatim, so it has to name a drive that exists.
+ACTIONABLE = re.compile(
+    r"(?<![A-Za-z0-9])((?:PYTHONPATH|HMS_QR_TEST_ROOT|HMS_QR_DATABASE_URL|"
+    r"HMS_QR_STORAGE_ROOT|HMS_QR_D2_RUNTIME_ARCHIVE)\s*=|cd\s+/d\s+)([A-Za-z]):[\\/]"
+)
+
+def test_no_document_tells_the_reader_to_type_a_dead_drive() -> None:
+    r"""The plan still said ``PYTHONPATH=E:\QR`` after that drive was gone.
+
+    ``E:\QR`` stopped existing when the repository moved to
+    ``D:\PHAN MEM QUAN LY QR``. The design spec carries a dated note saying so
+    and keeps the old paths in its status tables, which is correct - they are a
+    record of what was verified. But the plan's "Global Constraints" section is
+    an instruction, and any agent following it would have run every command with
+    a ``PYTHONPATH`` that resolves to nothing.
+
+    ``test_live_documents_name_no_drive_this_machine_lacks`` cannot catch that,
+    because it scans two named documents and the plan is not one of them, and
+    scanning every document for every drive letter would condemn the spec's
+    history tables. This checks the narrow thing that actually breaks: an
+    assignment or a directory change naming a drive this machine does not have.
+    """
+    offenders = []
+    for document in sorted(ROOT.rglob("*.md")):
+        if any(part in {".git", ".opencode", "node_modules"} for part in document.parts):
+            continue
+        text = document.read_text(encoding="utf-8", errors="replace")
+        for number, line in enumerate(text.splitlines(), 1):
+            for variable, drive in ACTIONABLE.findall(line):
+                if Path(f"{drive.upper()}:{os.sep}").is_dir():
+                    continue
+                offenders.append(
+                    f"{document.relative_to(ROOT)}:{number}: {variable.strip()} -> {drive.upper()}:\\"
+                )
+    assert not offenders, (
+        "these documents tell the reader to type a path on a drive this machine "
+        "does not have:\n  " + "\n  ".join(offenders)
+    )
+
+
 @pytest.mark.parametrize("name", LIVE_DOCUMENTS)
 def test_live_documents_name_no_drive_this_machine_lacks(name: str) -> None:
     """A README that sends the reader to a dead drive fails on the first command.

@@ -7,9 +7,16 @@
 **Tech Stack:** Python 3.14, PySide6, FastAPI/uvicorn, `packages/hms_license` (SDK đã có), pytest
 **Spec:** `docs/superpowers/specs/2026-10-28-ban-quyen-server-tool-2-duong-ket-noi-design.md`
 
+> Ghi chú về đường dẫn (2026-10-31): kế hoạch này được viết khi repo HMS-QR
+> nằm ở `E:\QR`. Ổ `E:` đó không còn tồn tại trên máy này — repo đã được chuyển
+> sang `D:\PHAN MEM QUAN LY QR`. Dòng `PYTHONPATH` trong "Global Constraints"
+> bên dưới là hướng dẫn thao tác, không phải bản ghi lịch sử, nên nó đã được trỏ
+> về vị trí hiện tại; các bảng hiện trạng khác trong tài liệu này giữ nguyên
+> đường dẫn cũ vì đó là những gì đã kiểm tra thật vào ngày 2026-10-28.
+
 ## Global Constraints
 
-- Mọi lần chạy test: `HMS_QR_TEST_ROOT` trỏ ra ngoài repo (config/paths.py từ chối trỏ vào repo), `PYTHONPATH=E:\QR`, `PYTHONDONTWRITEBYTECODE=1`, `PYTHONIOENCODING=utf-8`, chạy `py -3.14 -m pytest`.
+- Mọi lần chạy test: `HMS_QR_TEST_ROOT` trỏ ra ngoài repo (config/paths.py từ chối trỏ vào repo), `PYTHONPATH=D:\PHAN MEM QUAN LY QR`, `PYTHONDONTWRITEBYTECODE=1`, `PYTHONIOENCODING=utf-8`, chạy `py -3.14 -m pytest`.
 - **TUYỆT ĐỐI không** đưa token cấm vào source: guard `tests/stage6/test_no_license_system.py` và `tests/stage6/test_no_qr_payment.py` quét **toàn bộ file trong repo** (trừ `.git/`, `.opencode/`, `__pycache__`, file nhị phân) tìm chuỗi cấm của hệ thống license/thanh toán đã xoá. Danh sách chính xác nằm ở `FORBIDDEN_TOKENS` trong hai file guard đó — **đọc trước khi viết code**, đừng chép danh sách vào tài liệu (chính danh sách đó làm guard fail).
 - SDK `packages/hms_license` **không sửa** (`GRACE_DAYS = 5` để nguyên, HMS-CAM đang dùng). Ân hạn 15 ngày do HMS-QR tự tính.
 - Port: LAN API `8010`, discovery UDP `8011`, web/tunnel dev `8000`.
