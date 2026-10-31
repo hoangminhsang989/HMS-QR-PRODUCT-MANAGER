@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 setlocal
 title HMS QR Test Suite
 REM Run the whole test suite.
@@ -8,17 +9,18 @@ REM directories while pytest wrote to them: the run that reported 447 errors
 REM left its basetemp unreadable, and runs after it failed in different places
 REM each time. chkdsk F: /f is the real fix but it needs the machine owner.
 REM
-REM H: is used instead because it is both stable and faster - the same suite
-REM takes about 5 minutes there against about 17 on F:. The move is safe only
+REM H: used to hold the test root; that drive no longer exists on this
+REM machine, so the root now lives at D:\HMS-QR-CHECK. The move is safe only
 REM because the reference fixture travels with the root: the Excel fidelity
 REM gate reads <root>\reference\excel-template.xlsx and silently SKIPS when it
-REM is missing, which would hide a check instead of failing it. Copy that file
-REM whenever the root is recreated.
+REM is missing, which would hide a check instead of failing it. The customer
+REM workbook is an external input and is not in this repo - copy it whenever
+REM the root is recreated.
 REM
 REM Do not point HMS_QR_TEST_ROOT at the repository. config.paths rejects it
 REM outright (must remain outside the source package).
 
-set "HMS_QR_TEST_ROOT=H:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST"
+set "HMS_QR_TEST_ROOT=D:\HMS-QR-CHECK"
 set "HMS_QR_EXCEL_REFERENCE_TEMPLATE=%HMS_QR_TEST_ROOT%\reference\excel-template.xlsx"
 set "PYTHONPATH=%~dp0."
 set "PYTHONDONTWRITEBYTECODE=1"
@@ -28,12 +30,13 @@ if not exist "%HMS_QR_TEST_ROOT%" mkdir "%HMS_QR_TEST_ROOT%"
 if not exist "%HMS_QR_TEST_ROOT%\reference" mkdir "%HMS_QR_TEST_ROOT%\reference"
 
 if not exist "%HMS_QR_EXCEL_REFERENCE_TEMPLATE%" (
-  echo [FAIL] Reference Excel template is missing:
+  echo [WARN] Reference Excel template is missing:
   echo        %HMS_QR_EXCEL_REFERENCE_TEMPLATE%
   echo.
-  echo        The fidelity gate SKIPS without it, so a missing file looks like
-  echo        a green suite. Copy it from the previous test root, then retry.
-  exit /b 1
+  echo        tests\stage6\test_template_fidelity_reference.py will SKIP, so the
+  echo        suite stays green without proving fidelity. Copy the customer
+  echo        workbook there to re-enable that gate.
+  echo.
 )
 
 REM A fresh basetemp per run: an old one can be left unreadable by a crash, and

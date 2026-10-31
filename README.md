@@ -53,6 +53,11 @@ enforced in the application/persistence layers.
 
 All test/runtime artifacts belong in:
 
-`H:\PHAN-MEM-QUAN-LY-QR-FILE-CHAY-TEST`
+`D:\HMS-QR-CHECK`
+
+Set it with `HMS_QR_TEST_ROOT`; every root launcher already does. The
+reference Excel template is an external customer workbook and is not in
+this repository - copy it to `D:\HMS-QR-CHECK\reference\excel-template.xlsx`
+to re-enable the fidelity gate, which skips without it.
 
 The production tree must remain source/documentation only.

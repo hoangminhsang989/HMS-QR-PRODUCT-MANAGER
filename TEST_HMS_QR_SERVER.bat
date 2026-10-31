@@ -1,21 +1,23 @@
 @echo off
+chcp 65001 >nul
 setlocal
 title HMS QR Test Server
+cd /d "%~dp0"
 set "HMS_QR_ENV=dev"
-set "HMS_QR_DATABASE_URL=sqlite:///H:/HMS-QR-TEST-RUNTIME/hms_qr_test.sqlite"
-set "HMS_QR_STORAGE_ROOT=H:\HMS-QR-TEST-RUNTIME\storage"
+set "HMS_QR_DATABASE_URL=sqlite:///D:/HMS-QR-TEST-RUNTIME/hms_qr_test.sqlite"
+set "HMS_QR_STORAGE_ROOT=D:\HMS-QR-TEST-RUNTIME\storage"
 set "HMS_QR_AUTH_SECRET=hms-qr-test-only-signing-secret-2026"
 set "HMS_QR_BOOTSTRAP_ADMIN_USERNAME=test-admin"
 set "HMS_QR_BOOTSTRAP_ADMIN_PASSWORD=test-password-123"
 set "HMS_QR_ALLOW_EMPTY_PASSWORDS=false"
 set "PYTHONDONTWRITEBYTECODE=1"
 
-if not exist "H:\HMS-QR-TEST-RUNTIME" mkdir "H:\HMS-QR-TEST-RUNTIME"
-if not exist "H:\HMS-QR-TEST-RUNTIME\storage" mkdir "H:\HMS-QR-TEST-RUNTIME\storage"
+if not exist "D:\HMS-QR-TEST-RUNTIME" mkdir "D:\HMS-QR-TEST-RUNTIME"
+if not exist "D:\HMS-QR-TEST-RUNTIME\storage" mkdir "D:\HMS-QR-TEST-RUNTIME\storage"
 
 netstat -ano | findstr /R /C:":8010 .*LISTENING" >nul
 if not errorlevel 1 (
-  echo HMS QR test server is already listening at http://127.0.0.1:8010
+  echo HMS QR test server đang lắng nghe tại http://127.0.0.1:8010
   goto tool
 )
 
@@ -25,21 +27,21 @@ REM fails outright. The DEV server applies the shipped engine migrations itself
 REM through Stage2Repository.create_schema(), so this step only has to make sure
 REM the database directory exists and the schema is current before the
 REM administrator is bootstrapped.
-echo Applying test database migrations...
+echo Đang áp dụng migration cho database test...
 py -3.14 -c "from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.stage2_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()"
 if errorlevel 1 (
-  echo Migration failed. The test server was not started.
+  echo Migration thất bại. Test server chưa được khởi động.
   pause
   exit /b 1
 )
 
 py -3.14 -c "from config.environments import load_config; from packages.application.server_auth import ServerAuthService; from packages.persistence.database import create_database_runtime; runtime=create_database_runtime(load_config()); ServerAuthService(runtime).bootstrap_admin(); runtime.dispose()"
 if errorlevel 1 (
-  echo Test administrator bootstrap failed. The test server was not started.
+  echo Tạo tài khoản quản trị test thất bại. Test server chưa được khởi động.
   pause
   exit /b 1
 )
 
-echo Opening HMS QR Server Tool...
+echo Đang mở HMS QR Server Tool...
 :tool
 py -3.14 -m apps.server.tool

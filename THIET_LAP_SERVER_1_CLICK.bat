@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 setlocal EnableExtensions
 net session >nul 2>nul
 if errorlevel 1 (
