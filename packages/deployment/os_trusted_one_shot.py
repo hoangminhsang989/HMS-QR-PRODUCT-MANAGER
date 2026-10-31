@@ -395,8 +395,22 @@ def build_powershell_command(authority: D2Authority, stage0_template: str | Path
 
 
 def _safe_member(name: str) -> PurePosixPath:
+    """Accept only plain relative POSIX members, judged with Windows semantics too.
+
+    A ZIP entry is attacker-controlled text, so the name has to be rejected
+    before it is ever joined onto a destination path.  ``PurePosixPath`` alone
+    is not enough here: it has no concept of a Windows drive, so a member named
+    ``C:/absolute.txt`` looks relative to it and only the later destination
+    check catches the escape - and that check depends on where the destination
+    happens to live, because joining a drive-qualified path onto another path
+    replaces it instead of appending.  ``:`` and ``\\`` are rejected outright:
+    neither is legal in a Windows filename, so no legitimate member needs them.
+    """
+
+    if not name or "\\" in name or ":" in name:
+        raise D2ContractError(f"unsafe ZIP member: {name!r}")
     value = PurePosixPath(name)
-    if not name or value.is_absolute() or "\\" in name or ".." in value.parts or value.parts[:1] == ("",):
+    if not value.parts or value.is_absolute() or ".." in value.parts or value.parts[:1] == ("",):
         raise D2ContractError(f"unsafe ZIP member: {name!r}")
     return value
 

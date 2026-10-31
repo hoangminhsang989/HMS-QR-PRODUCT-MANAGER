@@ -7,7 +7,7 @@ import json
 import os
 from dataclasses import fields
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
@@ -53,12 +53,36 @@ from packages.deployment.os_trusted_one_shot import (
 ROOT = Path(__file__).resolve().parents[2]
 STAGE0 = ROOT / "scripts" / "r011_d2_stage0.ps1"
 PAYLOAD = ROOT / "scripts" / "r011_d2_protected_payload.ps1"
-RUNTIME_ARCHIVE = Path(
-    os.environ.get(
-        "HMS_QR_D2_RUNTIME_ARCHIVE",
-        r"F:\HMS-QR-DEV-R1F-TEST\r011-b2b-private-python-runtime-20260823T000000Z-a7d4f6c2\python-3.14.6-embed-amd64.zip",
-    )
+
+# The R011 D2 private runtime is a pinned external artifact (size + SHA-256 are
+# frozen in the module under test).  It is not committed to this repository, so
+# its home has moved between machines: it lived on F:, and the current copy is
+# on E:.  The env override stays the authority; the fallback only has to find
+# the artifact on whichever root this machine actually has, instead of pointing
+# at a drive that no longer exists and failing 18 tests on a missing file.
+RUNTIME_ARCHIVE_RELATIVE = (
+    "HMS-QR-DEV-R1F-TEST",
+    "r011-b2b-private-python-runtime-20260823T000000Z-a7d4f6c2",
+    "python-3.14.6-embed-amd64.zip",
 )
+RUNTIME_ARCHIVE_SEARCH_ROOTS = ("F:", "E:", "D:")
+RUNTIME_ARCHIVE_LEGACY_DEFAULT = r"F:\HMS-QR-DEV-R1F-TEST\r011-b2b-private-python-runtime-20260823T000000Z-a7d4f6c2\python-3.14.6-embed-amd64.zip"
+
+
+def _resolve_runtime_archive() -> Path:
+    override = os.environ.get("HMS_QR_D2_RUNTIME_ARCHIVE", "").strip()
+    if override:
+        return Path(override)
+    for root in RUNTIME_ARCHIVE_SEARCH_ROOTS:
+        # Path("E:", "a") is drive-relative ("E:a"), not absolute - the separator
+        # has to be spelled out or the contract check rejects the path.
+        candidate = Path(f"{root}{os.sep}", *RUNTIME_ARCHIVE_RELATIVE)
+        if candidate.is_file():
+            return candidate
+    return Path(RUNTIME_ARCHIVE_LEGACY_DEFAULT)
+
+
+RUNTIME_ARCHIVE = _resolve_runtime_archive()
 
 
 @pytest.fixture()
@@ -742,6 +766,75 @@ def test_d2_18_unsafe_zip_traversal_and_links_are_rejected(tmp_path: Path) -> No
     assert run.returncode == 0 and run.stdout.strip() == "SAFE_ZIP_REJECT"
 
 
+@pytest.mark.parametrize(
+    "name",
+    (
+        "../escape.txt",
+        "/absolute.txt",
+        "C:/absolute.txt",
+        "C:absolute.txt",
+        "c:/mixed.txt",
+        r"..\escape.txt",
+        "dir/../../escape.txt",
+        ".",
+        "",
+        "nul:",
+    ),
+)
+def test_unsafe_member_names_are_rejected_by_name_not_by_destination(name: str, tmp_path: Path) -> None:
+    """The name check has to carry the gate, whatever drive the destination is on.
+
+    ``test_d2_18`` used to pass only because joining a drive-qualified member
+    onto a destination on a different drive replaced the base and the later
+    escape check caught it.  On a destination on the same drive, Python's
+    pathlib appends instead and drops the drive, so nothing raised and the
+    member landed inside the destination - the whole gate then depended on
+    where the test root happened to live.  A name is attacker-controlled text,
+    so it is rejected before any path is built.
+    """
+
+    archive = _zip(tmp_path / f"member-{abs(hash(name))}.zip", {name: b"payload"})
+    with pytest.raises(D2ContractError, match="unsafe ZIP member"):
+        safe_extract_zip(archive, tmp_path / "destination")
+
+
+def test_plain_relative_members_are_still_accepted(tmp_path: Path) -> None:
+    """The tightened name check must not start rejecting legitimate bundles."""
+
+    archive = _zip(
+        tmp_path / "plain.zip",
+        {
+            "app/packages/deployment/provisioning.py": b"print('ok')\n",
+            "app/python314._pth": b".\npython314.zip\napp\n",
+        },
+    )
+    destination = tmp_path / "plain-out"
+    assert safe_extract_zip(archive, destination) == (
+        "app/packages/deployment/provisioning.py",
+        "app/python314._pth",
+    )
+    assert (destination / "app" / "packages" / "deployment" / "provisioning.py").is_file()
+
+
+def test_member_name_invariant_rejects_windows_separators(tmp_path: Path) -> None:
+    """The name check rejects ``\\`` even though ``zipfile`` cannot carry one today.
+
+    ``zipfile`` rewrites ``\\`` to ``/`` when a ``ZipInfo`` is built, which
+    happens on write *and* on read, so no archive this process opens can present
+    a backslash to ``safe_extract_zip``.  That is a property of the reader, not
+    of the contract, so the invariant is asserted here on the helper directly:
+    if a different ZIP implementation is ever used - the stage0 reader uses
+    .NET ``System.IO.Compression``, which does not normalise - the check has to
+    already be there rather than being added after the fact.
+    """
+
+    for name in ("dir\\escape.txt", "..\\escape.txt", "C:absolute.txt", "nul:"):
+        with pytest.raises(D2ContractError, match="unsafe ZIP member"):
+            d2._safe_member(name)
+    for name in ("app/packages/deployment/provisioning.py", "app/python314._pth", "app"):
+        assert d2._safe_member(name) == PurePosixPath(name)
+
+
 def test_d2_19_private_runtime_ctypes_black_box(tmp_path: Path) -> None:
     python, runtime = _private_runtime(tmp_path)
     run = subprocess.run([str(python), "-B", "-c", "import _ctypes;print('CTYPES_OK')"], cwd=runtime, capture_output=True, text=True, timeout=30)
@@ -756,29 +849,36 @@ def test_d2_20_private_provisioner_dependency_import_black_box(tmp_path: Path) -
     assert "--target-root" in run.stdout and "--apply" in run.stdout
 
 
-def _hostile_private_run(tmp_path: Path) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+def _hostile_private_run(tmp_path: Path) -> tuple[subprocess.CompletedProcess[str], Path, Path, Path]:
     python, runtime = _private_runtime(tmp_path)
     hostile = tmp_path / "hostile"
     (hostile / "packages" / "deployment").mkdir(parents=True)
     (hostile / "packages" / "deployment" / "provisioning.py").write_text("raise RuntimeError('injected')", encoding="utf-8")
     env = {"PATH": str(hostile), "PYTHONPATH": str(hostile), "PYTHONHOME": str(hostile), "PYTHONDONTWRITEBYTECODE": "1"}
     run = subprocess.run([str(python), "-B", "-c", "import json,sys,_ctypes,packages.deployment.provisioning as p;print(json.dumps({'executable':sys.executable,'module':p.__file__,'path':sys.path}))"], cwd=runtime, env=env, capture_output=True, text=True, timeout=30)
-    return run, python, runtime
+    return run, python, runtime, hostile
 
 
 def test_d2_21_hostile_pythonpath_cannot_inject_application_code(tmp_path: Path) -> None:
-    run, _, runtime = _hostile_private_run(tmp_path)
+    run, _, runtime, hostile = _hostile_private_run(tmp_path)
     assert run.returncode == 0, run.stderr
     result = json.loads(run.stdout)
     assert str(runtime / "app").casefold() in result["module"].casefold()
     allowed = {str(runtime.resolve()).casefold(), str((runtime / "python314.zip").resolve()).casefold(), str((runtime / "app").resolve()).casefold()}
-    assert {str(Path(item).resolve()).casefold() for item in result["path"]} <= allowed
-    assert all("site-packages" not in item.casefold() and "hms-pcc" not in item.casefold() for item in result["path"])
+    resolved = {str(Path(item).resolve()).casefold() for item in result["path"]}
+    assert resolved <= allowed
+    # The contract is "nothing outside the private runtime is importable".  An
+    # earlier version also asserted that no entry contained this machine's
+    # username, which is a fact about the host rather than about the runtime:
+    # it failed for any test root that happens to live under the current user's
+    # profile, while the set check above already rejects an injected entry.
+    assert all("site-packages" not in item.casefold() for item in result["path"])
+    assert str(hostile.resolve()).casefold() not in resolved
     assert "import site" not in (runtime / "python314._pth").read_text(encoding="utf-8").casefold()
 
 
 def test_d2_22_host_python_unavailable_private_runtime_still_works(tmp_path: Path) -> None:
-    run, python, _ = _hostile_private_run(tmp_path)
+    run, python, _, _ = _hostile_private_run(tmp_path)
     assert run.returncode == 0, run.stderr
     assert Path(json.loads(run.stdout)["executable"]).resolve() == python.resolve()
 
