@@ -26,16 +26,16 @@ def run_check(*, discover=discover_server_url, ready=server_is_ready, client_fac
 
 def main() -> None:
     print("HMS QR Machine 2 LAN diagnostic")
-    print("Khong nhap URL: kiem tra UDP discovery truc tiep tu May 2.")
-    username = input("Ten dang nhap: ").strip()
-    password = getpass.getpass("Mat khau: ")
+    print("Không nhập URL: kiểm tra UDP discovery trực tiếp từ Máy 2.")
+    username = input("Tên đăng nhập: ").strip()
+    password = getpass.getpass("Mật khẩu: ")
     if not username or not password:
-        raise SystemExit("Can ten dang nhap va mat khau.")
+        raise SystemExit("Cần tên đăng nhập và mật khẩu.")
     try:
         server_url, role = run_check(username=username, password=password)
     except RuntimeError as exc:
-        raise SystemExit(f"KHONG DAT: {exc}") from exc
-    print(f"DAT: UDP discovery, database readiness, login va Stage 2 read qua {server_url} ({role}).")
+        raise SystemExit(f"KHÔNG ĐẠT: {exc}") from exc
+    print(f"ĐẠT: UDP discovery, database readiness, login và Stage 2 read qua {server_url} ({role}).")
 
 
 if __name__ == "__main__":

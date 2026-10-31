@@ -39,7 +39,7 @@ def main(argv: list[str]) -> int:
     log_path = Path(argv[1])
     url = wait_for_tunnel_url(log_path)
     if not url:
-        print("Khong tim thay URL tunnel trong " + str(log_path), file=sys.stderr)
+        print("Không tìm thấy URL tunnel trong " + str(log_path), file=sys.stderr)
         return 1
     if len(argv) > 2:
         Path(argv[2]).write_text(url + "\n", encoding="utf-8")

@@ -1424,7 +1424,7 @@ class ServerToolWindow(QMainWindow):
             return
         message = (
             "Tool sẽ đổi adapter đang có default gateway sang profile Private và bật/cập nhật Firewall "
-            f"TCP {LAN_PORT}, UDP 8011. Khong thay doi IP, DNS, database hoac du lieu Server. Tiep tuc?"
+            f"TCP {LAN_PORT}, UDP 8011. Không thay đổi IP, DNS, database hoặc dữ liệu Server. Tiếp tục?"
         )
         if QMessageBox.question(self, "Tự sửa kết nối LAN", message) != QMessageBox.StandardButton.Yes:
             return

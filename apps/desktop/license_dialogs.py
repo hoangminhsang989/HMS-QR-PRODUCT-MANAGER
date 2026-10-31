@@ -28,7 +28,7 @@ _ONLINE_OUTCOME_MESSAGES = {
     "invalid_key": "Mã kích hoạt không đúng. Kiểm tra lại ký tự đã nhập.",
     "devices_exceeded": "Mã kích hoạt đã dùng hết số máy cho phép.",
     "key_revoked": "Mã kích hoạt đã bị thu hồi.",
-    "product_mismatch": "Ma kich ho?t thu?c ph?n m?m khac, khong dung du?c cho ph?n m?m nay.",
+    "product_mismatch": "Mã kích hoạt thuộc phần mềm khác, không dùng được cho phần mềm này.",
     "key_expired": "Mã kích hoạt đã hết hạn.",
     "network_error": "Không kết nối được Máy chủ bản quyền. Kiểm tra mạng rồi thử lại.",
 }

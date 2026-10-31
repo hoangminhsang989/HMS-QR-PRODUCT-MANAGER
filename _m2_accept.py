@@ -13,6 +13,6 @@ for line in Path(r"C:\exchange\m1-creds.txt").read_text(encoding="utf-8").splitl
 
 try:
     server_url, role = run_check(username=creds["username"], password=creds["password"])
-    print(f"DAT: {server_url} role={role}")
+    print(f"ĐẤT: {server_url} role={role}")
 except RuntimeError as exc:
-    print(f"KHONG DAT: {exc}")
+    print(f"KHÔNG ĐẤT: {exc}")
