@@ -75,7 +75,12 @@ def build_release(source_root: str | Path, output_root: str | Path, *, release_i
     if not release_id or any(c in release_id for c in "\\/:"):
         raise ArtifactBuildError("invalid release id")
     entries_by_path = _tree_entries(source, head)
-    selected = list(files) if files is not None else [p for p in entries_by_path if p.startswith(("apps/", "packages/", "config/", "migrations/")) or p in {"pyproject.toml", "scripts/r011_collect_inventory_readonly.ps1"}]
+    # `web/` is part of the product, not decoration: `apps/mobile/web.py` reads
+    # `web/index.html`, `web/lan.html` and `web/vps.html` off SOURCE_ROOT at
+    # request time, so an artifact without them ships a server whose entire
+    # mobile tier answers 503. The three builds were untracked for a while and
+    # then absent from this selection - two different mechanisms, one symptom.
+    selected = list(files) if files is not None else [p for p in entries_by_path if p.startswith(("apps/", "packages/", "config/", "migrations/", "web/")) or p in {"pyproject.toml", "scripts/r011_collect_inventory_readonly.ps1"}]
     selected = sorted(set(selected))
     dest = output / release_id
     if dest.exists():

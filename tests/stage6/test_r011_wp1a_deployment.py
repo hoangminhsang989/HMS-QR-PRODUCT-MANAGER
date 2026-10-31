@@ -89,6 +89,81 @@ def test_certified_build_rejects_dirty_source_and_repo_output(tmp_path):
     subprocess.run(["git", "restore", "pyproject.toml"], cwd=source, check=True)
     with pytest.raises(ArtifactBuildError): build_release(source, source / "output", release_id="inside", files=["pyproject.toml"])
 
+def test_release_ships_every_path_the_application_reads_from_the_repo(tmp_path):
+    """The default selection must cover what the shipped code reads off disk.
+
+    `build_release` assembles its payload from the Git tree, so anything the
+    selection leaves out is absent from the artifact no matter how clean the
+    tree is. It used to cover `apps/`, `packages/`, `config/` and `migrations/`
+    but not `web/`, while `apps/mobile/web.py` reads `web/index.html`,
+    `web/lan.html` and `web/vps.html` off SOURCE_ROOT at request time - so a
+    certified release deployed a server whose entire mobile tier answered 503.
+    Nothing caught it, because no test built a real release and then asked the
+    application what it needed.
+
+    The requirement is therefore derived from the code rather than listed by
+    hand: every literal joined onto SOURCE_ROOT under `apps/` must be inside the
+    default selection. A new runtime dependency on a file outside it fails here
+    instead of on a factory machine.
+    """
+
+    import re
+
+    from packages.deployment.artifact import _tree_entries
+
+    read_at_runtime = set()
+    pattern = re.compile(r'SOURCE_ROOT\s*/\s*"([^"]+)"(?:\s*/\s*"([^"]+)")*')
+    for path in sorted((ROOT / "apps").rglob("*.py")):
+        for match in pattern.finditer(path.read_text(encoding="utf-8")):
+            components = [c for c in match.groups() if c]
+            if components:
+                read_at_runtime.add("/".join(components))
+    assert read_at_runtime, "no SOURCE_ROOT reads found under apps/ - the scan is broken"
+
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+    entries = _tree_entries(ROOT, head)
+    selected = {
+        p for p in entries
+        if p.startswith(("apps/", "packages/", "config/", "migrations/", "web/"))
+        or p in {"pyproject.toml", "scripts/r011_collect_inventory_readonly.ps1"}
+    }
+
+    missing = sorted(
+        p for p in read_at_runtime
+        if p not in selected and not any(s.startswith(p + "/") for s in selected)
+    )
+    assert not missing, (
+        "the default release selection omits paths the application reads from "
+        "the repository at runtime, so a deployed release cannot serve them: "
+        + ", ".join(missing)
+    )
+
+def test_release_artifact_actually_contains_the_mobile_builds(tmp_path):
+    """End to end: build a real artifact from this repository and look inside."""
+
+    if subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout.strip():
+        pytest.skip("the worktree is dirty, so a certified build is not possible")
+    dest = build_release(
+        ROOT,
+        tmp_path / "releases",
+        release_id="payload-probe",
+        build_timestamp="2026-01-01T00:00:00+00:00",
+    )
+    manifest = verify_release(dest)
+    shipped = {entry["path"] for entry in manifest["files"]}
+    for required in (
+        "web/index.html",
+        "web/lan.html",
+        "web/vps.html",
+        "apps/mobile/web.py",
+        "apps/static/jsqr.min.js",
+    ):
+        assert required in shipped, f"the release artifact does not contain {required}"
+    assert manifest["git_head"] == subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
 def test_config_rejects_placeholder_and_plaintext():
     cfg = _valid_config()
     cfg["tls"] = {"mode": "PLAINTEXT", "certificate_ref": "ref:tls/cert"}
