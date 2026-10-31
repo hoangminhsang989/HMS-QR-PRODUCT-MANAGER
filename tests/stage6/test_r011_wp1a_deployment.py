@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 import subprocess
 from copy import deepcopy
 from dataclasses import replace
@@ -211,6 +213,97 @@ def test_a_fresh_clone_is_clean_and_can_build_a_certified_release(tmp_path):
     shipped = {entry["path"] for entry in manifest["files"]}
     for required in ("web/index.html", "web/lan.html", "web/vps.html"):
         assert required in shipped, f"a release built from a clone lacks {required}"
+
+def test_the_release_payload_actually_serves_the_mobile_pages(tmp_path):
+    """The user-visible symptom, asserted from the release and not the tree.
+
+    `bad30da` shipped a release whose manifest did not list `web/`, and every
+    mobile request against it answered 503. Nothing caught it, because the guard
+    that serves `/tracking/mobile` (`test_mobile_page_loads_without_a_session`)
+    imports the app from the working tree - where `web/` was present all along.
+    A guard that reads the tree cannot see a release that is missing the tree.
+
+    So this builds a real artifact and then starts the real server out of the
+    payload alone, with `SOURCE_ROOT` pointing at the payload, and asks it for
+    the three mobile builds. The server runs as a subprocess because
+    `apps/mobile/web.py` binds `MOBILE_PAGE_PATH` from `SOURCE_ROOT` at import
+    time, which cannot be redirected in-process without also redirecting the
+    tree the guard itself lives in.
+    """
+    import sys
+
+    if subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout.strip():
+        pytest.skip("the worktree is dirty, so a certified build is not possible")
+
+    dest = build_release(
+        ROOT,
+        tmp_path / "releases",
+        release_id="serve-probe",
+        build_timestamp="2026-01-01T00:00:00+00:00",
+    )
+    verify_release(dest)
+    payload = dest / "payload"
+
+    # The runtime database has to sit outside the test root, outside the payload
+    # and outside the user profile, so it goes beside the test root on its own
+    # drive rather than inside it.
+    from config.paths import require_test_root
+
+    runtime = Path(require_test_root()).anchor / "HMS-QR-SERVE-PROBE-RUNTIME"
+    shutil.rmtree(runtime, ignore_errors=True)
+    runtime.mkdir(parents=True, exist_ok=True)
+
+    script = (
+        "from fastapi.testclient import TestClient\n"
+        "import apps.server.app as srv\n"
+        "from config.paths import SOURCE_ROOT\n"
+        "import pathlib\n"
+        "print('SOURCE_ROOT', SOURCE_ROOT)\n"
+        "c = TestClient(srv.app)\n"
+        "for route, name in (('/tracking/mobile','index.html'),"
+        "('/tracking/mobile/lan','lan.html'),"
+        "('/tracking/mobile/vps','vps.html')):\n"
+        "    r = c.get(route)\n"
+        "    disk = (SOURCE_ROOT / 'web' / name).read_bytes()\n"
+        "    print('ROUTE', route, r.status_code, len(r.content), r.content == disk)\n"
+        "    assert r.status_code == 200, (route, r.status_code)\n"
+        "    assert r.content == disk, route\n"
+        "print('SERVE_OK')\n"
+    )
+
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(payload)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    environment["PYTHONUTF8"] = "1"
+    environment["HMS_QR_ENV"] = "dev"
+    environment["HMS_QR_TEST_ROOT"] = str(require_test_root())
+    environment["HMS_QR_DATABASE_URL"] = "sqlite:///" + (runtime / "probe.sqlite").as_posix()
+    environment["HMS_QR_STORAGE_ROOT"] = str(runtime / "storage")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-X", "utf8", "-c", script],
+            cwd=str(payload),
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    finally:
+        shutil.rmtree(runtime, ignore_errors=True)
+
+    assert result.returncode == 0, (
+        f"the release payload did not serve the mobile builds:\n{result.stdout}\n{result.stderr[-2000:]}"
+    )
+    assert "SERVE_OK" in result.stdout
+    for route, name in (
+        ("/tracking/mobile", "index.html"),
+        ("/tracking/mobile/lan", "lan.html"),
+        ("/tracking/mobile/vps", "vps.html"),
+    ):
+        expected = (payload / "web" / name).stat().st_size
+        marker = f"ROUTE {route} 200 {expected} True"
+        assert marker in result.stdout, f"{route} did not serve its build:\n{result.stdout}"
 
     # The images must survive the checkout untouched, bytes and all.
     for image in (
