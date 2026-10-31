@@ -7,10 +7,30 @@
 # no .gitattributes, so a fresh clone silently received CRLF copies of files the
 # repository stores as LF, and every guard that compares bytes or checksums a
 # shipped asset failed on a clone that had changed nothing.
-web/** text eol=lf
+web/**/*.html text eol=lf
+web/**/*.js text eol=lf
+web/**/*.json text eol=lf
+web/**/*.md text eol=lf
 
 # apps/static/jsqr.min.js is the same scanner web/static/jsqr.min.js ships, the
 # two are compared byte-for-byte, and the bundled copy is checksummed against a
 # fixed digest. Pinning web/ alone made the two copies disagree instead of
 # agreeing on the wrong bytes.
-apps/static/** text eol=lf
+apps/static/**/*.js text eol=lf
+apps/static/**/*.json text eol=lf
+apps/static/**/*.md text eol=lf
+
+# Images are binary and must never be converted. This is not theoretical: the
+# rules above were first written as "web/** text eol=lf", which also marked the
+# six PNGs as text, and Git then rewrote the single CRLF byte pair that occurs
+# in each one's compressed data. Every fresh clone reported those six files as
+# permanently modified, so build_release - which refuses to build from a dirty
+# tree - could not produce a certified release from a clone at all, and a commit
+# made inside such a clone would have baked the rewritten bytes in for good.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.bmp binary
+*.webp binary
