@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, r"C:\HMS-QR-TEST")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from apps.desktop.lan_diagnostic import run_check
 

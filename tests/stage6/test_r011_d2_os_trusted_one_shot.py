@@ -56,16 +56,17 @@ PAYLOAD = ROOT / "scripts" / "r011_d2_protected_payload.ps1"
 
 # The R011 D2 private runtime is a pinned external artifact (size + SHA-256 are
 # frozen in the module under test).  It is not committed to this repository, so
-# its home has moved between machines: it lived on F:, and the current copy is
-# on E:.  The env override stays the authority; the fallback only has to find
-# the artifact on whichever root this machine actually has, instead of pointing
-# at a drive that no longer exists and failing 18 tests on a missing file.
+# its home has moved more than once: it lived on F:, then E:, and it now lives
+# on D: beside the repository, which is where the whole project was moved to.
+# The env override stays the authority; the fallback only has to find the
+# artifact on whichever root this machine actually has, instead of pointing at a
+# drive that no longer exists and failing 18 tests on a missing file.
 RUNTIME_ARCHIVE_RELATIVE = (
     "HMS-QR-DEV-R1F-TEST",
     "r011-b2b-private-python-runtime-20260823T000000Z-a7d4f6c2",
     "python-3.14.6-embed-amd64.zip",
 )
-RUNTIME_ARCHIVE_SEARCH_ROOTS = ("F:", "E:", "D:")
+RUNTIME_ARCHIVE_SEARCH_ROOTS = ("D:", "E:", "F:")
 RUNTIME_ARCHIVE_LEGACY_DEFAULT = r"F:\HMS-QR-DEV-R1F-TEST\r011-b2b-private-python-runtime-20260823T000000Z-a7d4f6c2\python-3.14.6-embed-amd64.zip"
 
 
