@@ -178,6 +178,49 @@ def test_the_pages_inline_script_actually_parses():
     )
 
 
+MOBILE_WEB_BUILDS = ("index.html", "lan.html", "vps.html")
+
+
+@pytest.mark.parametrize("name", MOBILE_WEB_BUILDS)
+def test_every_mobile_builds_inline_script_parses(name: str):
+    """Each derived build carries its own script, so each needs its own parse.
+
+    ``index.html`` alone was guarded. ``lan.html`` is a genuinely different
+    program - it drops the connection screen and never reads the stored origin -
+    so a syntax error there takes the LAN page down exactly the way the
+    production page was taken down, and no guard would notice. ``vps.html``
+    happens to share ``index.html``'s script today, which is precisely why it is
+    listed here: a future divergence would otherwise be unguarded.
+    """
+    import re
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+
+    html = (Path("web") / name).read_text(encoding="utf-8")
+    match = re.search(r"<script>(.*?)</script>", html, re.S)
+    assert match, f"{name} has no inline script"
+    script = match.group(1)
+    assert script.strip(), f"{name} has an empty inline script"
+
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as handle:
+        handle.write(script)
+        path = handle.name
+    try:
+        result = subprocess.run(["node", "--check", path],
+                                capture_output=True, text=True)
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+    assert result.returncode == 0, (
+        f"{name}'s inline script does not parse, so none of its functions "
+        f"exist at runtime:\n{result.stderr[:600]}"
+    )
+
+
 def test_the_catalog_reports_qr_status_so_the_page_knows_when_to_issue():
     """The picker must not hand out a code that answers 404.
 
@@ -937,8 +980,8 @@ def test_a_malformed_qr_is_not_reported_as_a_missing_one():
     payload is the likeliest failure - and it is not the same problem as a code
     that resolves to nothing. The server answers "invalid QR payload" and
     "QR payload must contain exactly the canonical four fields" as 422s, and
-    "QR not found or revoked" as a 404. All three were reported as "Khong tim
-    thay du lieu cho ma QR nay", which sends the operator to check the label
+    "QR not found or revoked" as a 404. All three were reported as "Không tìm
+    thấy dữ liệu cho mã QR này", which sends the operator to check the label
     when what is wrong is what they typed.
     """
     page = MOBILE_PAGE.read_text(encoding="utf-8")
@@ -1812,7 +1855,7 @@ def test_the_stepper_covers_every_status_the_server_can_write():
     # event types are not statuses and must not drive the stepper
     for event_type in ("SHORTAGE_REPORTED", "QC_NG_RETURNED_TO_MACHINING"):
         assert f"status === '{event_type}'" not in stepper, (
-            f"{event_type} la WorkflowEventType, khong phai TrackingStatus"
+            f"{event_type} là WorkflowEventType, không phải TrackingStatus"
         )
 
 

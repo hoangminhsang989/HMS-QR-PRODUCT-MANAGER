@@ -39,7 +39,7 @@ from packages.domain.workflow import WorkflowEventType
 from packages.persistence.tracking_repository import TrackingRepository
 from packages.persistence.workflow_repository import WorkflowRepository
 from packages.application.workflow_services import DeliveryService,GeneralReportService,PackingService,QcService,TrackingHistoryService
-from apps.mobile.web import mobile_page
+from apps.mobile.web import lan_page, mobile_page, vps_page
 from apps.server.files import build_files_api, require_production_storage_ready
 from apps.server.admin import admin_page, build_admin_api
 from packages.application.server_discovery import DiscoveryResponder
@@ -334,7 +334,7 @@ def build_tracking_api(service:TrackingService|None=None,*,app_config:AppConfig|
             return
         # The page itself must stay reachable: it carries the login form, so
         # gating it behind authentication would leave no way to sign in.
-        if request.url.path.rstrip("/").endswith("/mobile"):
+        if request.url.path.rstrip("/").endswith("/mobile") or request.url.path.rstrip("/").endswith("/mobile/lan") or request.url.path.rstrip("/").endswith("/mobile/vps"):
             return
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(401, detail={"code": "AUTHENTICATION_REQUIRED", "message": "Cần đăng nhập."})
@@ -357,6 +357,10 @@ def build_tracking_api(service:TrackingService|None=None,*,app_config:AppConfig|
     async def tracking_missing(_,exc):return _error(404,"TRACKING_NOT_FOUND",str(exc))
     @api.get("/mobile",response_class=HTMLResponse)
     def mobile():return mobile_page()
+    @api.get("/mobile/lan",response_class=HTMLResponse)
+    def mobile_lan():return lan_page()
+    @api.get("/mobile/vps",response_class=HTMLResponse)
+    def mobile_vps():return vps_page()
     @api.post("/api/v1/tracking-items")
     def create_tracking(payload:TrackingCreate,x_actor:Annotated[str|None,Header()]=None):return dump(service.create_item(actor=x_actor or "development-user",**payload.model_dump()))
     @api.get("/api/v1/tracking-items")

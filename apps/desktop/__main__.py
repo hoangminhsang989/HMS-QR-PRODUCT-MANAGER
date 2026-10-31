@@ -90,6 +90,13 @@ class ServerSelectionDialog(QDialog):
 
 
 def desktop_server_url(*, configured_url: str = "", resolver=resolve_server_url, dialog_factory=ServerSelectionDialog) -> str:
+    # A relay link is a connection path the operator already holds, not an
+    # address to discover. Returning it directly means a factory with no public
+    # IP is reachable through the relay hostname without LAN discovery first;
+    # LAN discovery stays the default when no URL is configured.
+    explicit = configured_url.strip()
+    if explicit.startswith("https://"):
+        return normalize_server_url(explicit)
     try:
         return normalize_server_url(resolver(configured_url=configured_url))
     except RuntimeError:

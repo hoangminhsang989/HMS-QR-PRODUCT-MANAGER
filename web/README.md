@@ -103,74 +103,38 @@ trỏ origin tunnel, đăng nhập, chọn chi tiết, cấp phát QR, quét l�
 Không cần gì đặc biệt — mở `web/index.html` bằng Live Server, hoặc để chính máy
 chủ HMS QR serve tại `http://<ip>:8010/tracking/mobile`.
 
-## Tem cu khong khop
-
-Server tinh `qr_identity_consistent` cho moi lan quet: payload QR con khớp với
-item no tra ve khong. Tem in trước khi thông tin chi tiết bị sửa van resolve
-duợc, vi scan tra item bằng `tracking_code`. Khi không khớp, page hiện canh bao
-trong the san pham; pick chi tiet khac xoa no, vi payload của pick do server tao.
-
-## Trang thai "dang gia cong" chi con mot cach viet
-
-Truoc day mot chi tiet co the mang trang thai `IN_PROCESS` hoac
-`IN_PRODUCTION` tuy noi ghi vao: import Excel xuat ghi `IN_PRODUCTION`, con
-duong tinh trang tu dong ghi `IN_PROCESS`. Vi the moi cho doc deu phai cong
-ca hai lai - portal cong, bao cao Excel cong, va trang web phan nhanh tren
-ca hai. Gio chi con `IN_PROCESS` duoc ghi. `IN_PRODUCTION` van nam trong
-`TrackingStatus` vi dong da luu truoc day van con mang chu do, va
-`BEING_MACHINED` la cho duy nhat biet hai cach viet la mot trang thai.
-
-## Ai la nguoi thuc hien
-
-Moi ghi nhan trong luong tracking deu ghi operator duoc chon trong danh
-sach, khong phai tai khoan dang nhap — tren may dung chung, mot lan dang
-nhap nhieu tho tu chon ten minh. Header `X-Actor` uu tien operator do; chi
-khi chua chon ai no moi fallback ve tai khoan dang nhap.
-
-## Khi co loi
-
-Picker va cap phat QR deu noi ro buoc nao that bai, khong do loi cho buoc
-khac. Catalog khong tai duoc va cap phat QR khong duoc la hai thong bao
-rieng; neu chung im lang, lan quet tiep theo se bao "khong tim thay ma QR"
-du that bai o buoc ghi.
-
-Hai nut NGUOI DUNG va CONG DOAN truoc day cung im lang: bam vao khong mo
-duoc danh sach thi khong co picker cung khong co thong bao. Bay chung noi
-ro nguyen nhan, va picker van bi an khi khong tai duoc du lieu.
-
-O nhap ma QR co ghi "Dán mã QR hoặc nhập tay", nen go tay la duong thuong
-dung nhat. Truoc day mot ma nhap sai va mot ma khong ton tai deu bao "khong
-tim thay du lieu cho ma QR nay" - chi trong truong hợp thu hai moi dung.
-Bay trang doc thong bao cua may chu, nen ma nhap sai se noi dung ma do sai
-gi.
-
-Ca hai o so luong (su kien va bao cao gia cong) deu duoc dien san tu chi
-tiet, nhung van xoa trang duoc, va deu gui len dang chuoi. Mot o trong bi
-server tu choi bang 422 khong noi ro truong nao. Bay hai cho deu kiem tra
-truoc khi gui, va deu tu bao "Vui long nhap so luong lon hon 0" thay vi de
-operator nhan mot thong bao chung.
-
-Viet lai o chung: mot ham doc thong bao loi cua server, mot ham doc o so
-luong. Truoc day moi cho tu viet lai mot ban, do cung la ly do loi xuat hien
-hai lan. Bay ghi them mot cho ghi moi la khong the quen duoc nua.
-
-Nut "xem them lan" truoc day tang so lan hien thi TRUOC khi gui len server va
-khong xem ket qua. Neu server tu choi (mo rong phai tang dan), trang van hien
-them ba nut ma server khong co, va operator khong biet gi. Bay gio chi tang
-khi server dong y, va thong bao loi lay nguyen loi do cua server.
-
-May chu tra loi loi trong hai dang: `_error()` boc thanh
-`{error:{message}}`, con `HTTPException` va kiem tra du lieu cua FastAPI tra
-ve `{detail:...}`. Trang doc ca hai, nen mot truong bi tu choi se hien dung
-nguyen nhan tu may chu thay vi bi thay bang "Khong the ghi su kien".
-
-Lop domain truoc day viet loi bang tieng Anh, nen operator go so luong 100
-vao chi tiet co 10 thi thay "report quantity exceeds tracking quantity" -
-dung, nhung khong doc duoc. Bay 23 thong bao ma operator cham toi da duoc
-viet lai bang tieng Viet: domain, tracking/workflow repository va payload.
-Mot bai giu kiem tra quy uoc nay, nen them mot thong bao tieng Anh vao
-nhung file do la test do.
-
-Thong bao tieng Anh con lai la chan doan noi bo: loi cai dat giao dich trong
-test dong thoi, va `report not found` chi endpoint sua ban ghi goi - khong
-man hinh nao hien chung.
+## Tem cửa không khớp
+Server tính `qr_identity_consistent` cho mỗi lần quét: payload QR còn khớp với
+item nó trả về không. Tem in trước khi thông tin chi tiết bị sửa vẫn resolve
+được, vì scan trả item bằng `tracking_code`. Khi không khớp, page hiện cảnh báo
+trong thẻ sản phẩm; pick chi tiết khác xóa nó, vì payload của pick do server tạo.
+## Trạng thái "đang gia công" chỉ còn một cách viết
+Trước đây một chi tiết có thể mang trạng thái `IN_PROCESS` hoặc
+`IN_PRODUCTION` tùy nơi ghi vào: import Excel xuất ghi `IN_PRODUCTION`, còn
+đường tính trạng thái tự động ghi `IN_PROCESS`. Vì thế mọi chỗ đọc đều phải cộng
+cả hai lại — portal cộng, báo cáo Excel cộng, và trang web phân nhánh trên cả
+hai. Giờ chỉ còn `IN_PROCESS` được ghi. `IN_PRODUCTION` vẫn nằm trong
+`TrackingStatus` vì dòng đã lưu trước đây vẫn còn mang chữ đó, và
+`BEING_MACHINED` là chỗ duy nhất biết hai cách viết là một trạng thái.
+## Ai là người thực hiện
+Mỗi ghi nhận trong luồng tracking đều ghi operator được chọn trong danh
+sách, không phải tài khoản đăng nhập — trên máy dùng chung, một lần đăng
+nhập nhiều thợ tự chọn tên mình. Header `X-Actor` ưu tiên operator đó; chỉ
+khi chưa chọn ai nó mới fallback về tài khoản đăng nhập.
+## Khi có lỗi
+Picker và cấp phát QR đều nói rõ bước nào thất bại, không đổ lỗi cho bước
+khác. Catalog không tải được và cấp phát QR không được là hai thông báo
+riêng; nếu chúng im lặng, lần quét tiếp theo sẽ báo "không tìm thấy mã QR"
+dù thất bại ở bước ghi.
+Hai nút NGƯỜI DÙNG và CÔNG ĐOẠN trước đây cũng im lặng: bấm vào không mở
+được danh sách thì không có picker cũng không có thông báo. Bây giờ chúng nói
+rõ nguyên nhân, và picker vẫn bị ẩn khi không tải được dữ liệu.
+Ô nhập mã QR có ghi "Dán mã QR hoặc nhập tay", nên gõ tay là đường thường
+dùng nhất. Trước đây một mã nhập sai và một mã không tồn tại đều báo "không
+tìm thấy dữ liệu cho mã QR này" — chỉ trong trường hợp thứ hai mới đúng.
+Bây giờ trang đọc thông báo của máy chủ, nên mã nhập sai sẽ nói đúng mã đó sai
+gì.
+Cả hai ô số lượng (sự kiện và báo cáo gia công) đều được điền sẵn từ chi
+tiết, nhưng vẫn xoá trắng được, và đều gửi lên dạng chuỗi. Một ô trống bị
+server từ chối bằng 422 không nói rõ trường nào. Bây giờ hai chỗ đều kiểm tra
+trước khi gửi, và đều tự báo "Vui lòng nhập số lượng lớn hơn 0" thay vì để

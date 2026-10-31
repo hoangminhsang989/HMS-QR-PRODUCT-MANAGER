@@ -1,0 +1,16 @@
+# web/ is served from disk byte-for-byte, and the LAN and VPS builds are
+# compared byte-for-byte against web/index.html by scripts/build_mobile_web.py.
+# A checkout must therefore hand back exactly the bytes that were committed.
+#
+# Git for Windows installs with core.autocrlf=true at the system level, which
+# rewrites every LF in the repository as CRLF on disk. This repository carried
+# no .gitattributes, so a fresh clone silently received CRLF copies of files the
+# repository stores as LF, and every guard that compares bytes or checksums a
+# shipped asset failed on a clone that had changed nothing.
+web/** text eol=lf
+
+# apps/static/jsqr.min.js is the same scanner web/static/jsqr.min.js ships, the
+# two are compared byte-for-byte, and the bundled copy is checksummed against a
+# fixed digest. Pinning web/ alone made the two copies disagree instead of
+# agreeing on the wrong bytes.
+apps/static/** text eol=lf

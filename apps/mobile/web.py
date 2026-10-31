@@ -36,3 +36,52 @@ def mobile_page() -> HTMLResponse:
             status_code=503,
         )
     return HTMLResponse(page)
+
+LAN_PAGE_PATH = SOURCE_ROOT / "web" / "lan.html"
+
+
+def lan_page() -> HTMLResponse:
+    """Return the LAN build of the mobile web app, read fresh from disk.
+
+    The LAN build is served by the HMS QR server itself, so it is always
+    same-origin and carries no way to type a server address. It is a separate
+    file rather than a flag on ``index.html`` so the two builds cannot drift
+    into each other: a phone on the factory Wi-Fi must never be offered a
+    connection screen that only makes sense outside the LAN.
+    """
+    try:
+        page = LAN_PAGE_PATH.read_bytes()
+    except OSError:
+        return HTMLResponse(
+            "<!doctype html><html lang='vi'><meta charset='utf-8'>"
+            "<title>HMS QR</title><body style='font-family:sans-serif;padding:24px'>"
+            "<h1>Không tìm thấy giao diện mobile</h1>"
+            "<p>Thiếu tệp <code>web/lan.html</code>. Khôi phục tệp này rồi thử lại.</p>"
+            "</body></html>",
+            status_code=503,
+        )
+    return HTMLResponse(page)
+
+
+VPS_PAGE_PATH = SOURCE_ROOT / "web" / "vps.html"
+
+
+def vps_page() -> HTMLResponse:
+    """Return the VPS build of the mobile web app, read fresh from disk.
+
+    The VPS build keeps the connection screen: a phone outside the factory LAN
+    has to be told where the server lives, and the relay link it was given is
+    exactly that address. Everything else is identical to the LAN build.
+    """
+    try:
+        page = VPS_PAGE_PATH.read_bytes()
+    except OSError:
+        return HTMLResponse(
+            "<!doctype html><html lang='vi'><meta charset='utf-8'>"
+            "<title>HMS QR</title><body style='font-family:sans-serif;padding:24px'>"
+            "<h1>Không tìm thấy giao diện mobile</h1>"
+            "<p>Thiếu tệp <code>web/vps.html</code>. Khôi phục tệp này rồi thử lại.</p>"
+            "</body></html>",
+            status_code=503,
+        )
+    return HTMLResponse(page)
