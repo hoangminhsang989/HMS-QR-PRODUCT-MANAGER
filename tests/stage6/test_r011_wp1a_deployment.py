@@ -163,6 +163,71 @@ def test_release_artifact_actually_contains_the_mobile_builds(tmp_path):
         ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout.strip()
 
+def test_a_fresh_clone_is_clean_and_can_build_a_certified_release(tmp_path):
+    """The only proof that matters: clone HEAD and build from the clone.
+
+    Every other guard here reads the working tree, which is exactly the blind
+    spot that let two different defects ship the same 503 symptom - the mobile
+    builds existed only in the working tree, and then existed in the tree but
+    not in the release selection.
+
+    A clone is also the only place the checkout rules are exercised. Git for
+    Windows sets core.autocrlf=true at the system level, so a clone is the one
+    situation where the bytes a checkout produces may differ from the bytes the
+    repository stores. .gitattributes pins the text files to LF for that reason,
+    and the images are marked binary because each PNG carries a single CRLF
+    byte pair in its compressed data - marking those as text made Git rewrite
+    that pair, which left every clone reporting six permanently modified files
+    and made build_release refuse to build from a clone at all.
+
+    So this asserts both halves: the checkout is byte-identical to the tree, and
+    a certified release can be produced from it.
+    """
+
+    clone = tmp_path / "clone"
+    run = subprocess.run(
+        ["git", "clone", "--quiet", "--depth", "1", str(ROOT), str(clone)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert run.returncode == 0, f"clone failed: {run.stderr}"
+
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=clone, capture_output=True, text=True
+    ).stdout.strip()
+    assert not dirty, (
+        "a fresh clone is not byte-identical to the committed tree, so no "
+        f"certified build is possible from it:\n{dirty}"
+    )
+
+    dest = build_release(
+        clone,
+        tmp_path / "releases",
+        release_id="from-clone",
+        build_timestamp="2026-01-01T00:00:00+00:00",
+    )
+    manifest = verify_release(dest)
+    shipped = {entry["path"] for entry in manifest["files"]}
+    for required in ("web/index.html", "web/lan.html", "web/vps.html"):
+        assert required in shipped, f"a release built from a clone lacks {required}"
+
+    # The images must survive the checkout untouched, bytes and all.
+    for image in (
+        "web/static/icon-192.png",
+        "web/static/icon-512.png",
+        "web/static/favicon.png",
+        "apps/static/icon-192.png",
+        "apps/static/icon-512.png",
+        "apps/static/favicon.png",
+    ):
+        blob = subprocess.run(
+            ["git", "cat-file", "blob", f"HEAD:{image}"], cwd=clone, capture_output=True
+        ).stdout
+        assert (clone / image).read_bytes() == blob, (
+            f"{image} was rewritten by the checkout - it is being treated as text"
+        )
+
 
 def test_config_rejects_placeholder_and_plaintext():
     cfg = _valid_config()
