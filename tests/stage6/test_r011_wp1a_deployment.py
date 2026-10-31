@@ -214,6 +214,21 @@ def test_a_fresh_clone_is_clean_and_can_build_a_certified_release(tmp_path):
     for required in ("web/index.html", "web/lan.html", "web/vps.html"):
         assert required in shipped, f"a release built from a clone lacks {required}"
 
+    # The images must survive the checkout untouched, bytes and all.
+    for image in (
+        "web/static/icon-192.png",
+        "web/static/icon-512.png",
+        "web/static/favicon.png",
+        "apps/static/icon-192.png",
+        "apps/static/icon-512.png",
+        "apps/static/favicon.png",
+    ):
+        blob = subprocess.run(
+            ["git", "cat-file", "blob", f"HEAD:{image}"], cwd=clone, capture_output=True
+        ).stdout
+        assert (clone / image).read_bytes() == blob, (
+            f"{image} was rewritten by the checkout - it is being treated as text"
+        )
 def test_the_release_payload_actually_serves_the_mobile_pages(tmp_path):
     """The user-visible symptom, asserted from the release and not the tree.
 
@@ -305,21 +320,6 @@ def test_the_release_payload_actually_serves_the_mobile_pages(tmp_path):
         marker = f"ROUTE {route} 200 {expected} True"
         assert marker in result.stdout, f"{route} did not serve its build:\n{result.stdout}"
 
-    # The images must survive the checkout untouched, bytes and all.
-    for image in (
-        "web/static/icon-192.png",
-        "web/static/icon-512.png",
-        "web/static/favicon.png",
-        "apps/static/icon-192.png",
-        "apps/static/icon-512.png",
-        "apps/static/favicon.png",
-    ):
-        blob = subprocess.run(
-            ["git", "cat-file", "blob", f"HEAD:{image}"], cwd=clone, capture_output=True
-        ).stdout
-        assert (clone / image).read_bytes() == blob, (
-            f"{image} was rewritten by the checkout - it is being treated as text"
-        )
 
 
 def test_config_rejects_placeholder_and_plaintext():
