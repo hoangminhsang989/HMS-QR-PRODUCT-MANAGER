@@ -19,6 +19,7 @@ the file ended in ``\\n``. The generated file is LF throughout, which is what
 
 from __future__ import annotations
 
+from itertools import chain
 from pathlib import Path
 import subprocess
 import sys
@@ -186,14 +187,67 @@ def test_gitattributes_pins_the_web_tree_to_lf():
 
     ``core.autocrlf=true`` is a system-level Git for Windows default, so the
     checkout cannot be trusted to preserve LF on its own.
-    """
 
+    The assertion is behavioural - it asks Git what attributes each shipped file
+    actually resolves to - because parsing the rule text is what let the defect
+    through in the first place. The rules were first written as ``web/** text
+    eol=lf``, which reads as "pin the text files to LF" but also marked the six
+    PNGs under those trees as text. Each of those images carries exactly one
+    CRLF byte pair in its compressed data, so Git's clean filter rewrote it and
+    every fresh clone reported the six files as permanently modified - which
+    made build_release refuse to build from a clone at all.
+
+    """
     attributes = SOURCE_ROOT / ".gitattributes"
     assert attributes.is_file(), "no .gitattributes; web/ endings follow the host"
-    rules = [
-        line.strip()
-        for line in attributes.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.strip().startswith("#")
+
+    def resolved(rel_path):
+        """What Git says this one file's attributes resolve to.
+
+        ``check-attr`` prints ``<path>: <attr>: <value>``, so the attribute name
+        is the middle field - keying on the path instead silently returned the
+        value of whichever line happened to come last, which is how this guard
+        first passed while asserting the wrong thing.
+
+        """
+        out = subprocess.run(
+            ["git", "check-attr", "text", "eol", "--", rel_path],
+            cwd=SOURCE_ROOT,
+            capture_output=True,
+            text=True,
+        ).stdout
+        resolved_now = {}
+        for line in out.strip().splitlines():
+            parts = line.split(": ")
+            if len(parts) == 3:
+                resolved_now[parts[1]] = parts[2]
+        return resolved_now
+
+    trees = (SOURCE_ROOT / "web", SOURCE_ROOT / "apps" / "static")
+    images = [
+        path
+        for path in chain.from_iterable(tree.rglob("*") for tree in trees)
+        if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".bmp", ".webp"}
     ]
-    assert "web/** text eol=lf" in rules, f"web/ is not pinned to LF: {rules}"
+    assert images, "expected the shipped images to exist; the web tree is empty"
+
+    for image in images:
+        attrs = resolved(str(image.relative_to(SOURCE_ROOT)).replace("\\", "/"))
+        assert attrs.get("text") in {"unset", "unspecified"}, (
+            f"{image.name} resolves as text={attrs.get('text')!r}, so Git may rewrite "
+            "the CRLF byte pair inside its binary data"
+        )
+
+    text_files = [
+        path
+        for path in chain.from_iterable(tree.rglob("*") for tree in trees)
+        if path.is_file() and path.suffix.lower() in {".html", ".js", ".json", ".md"}
+    ]
+    assert text_files, "expected the shipped text assets to exist; the web tree is empty"
+
+    for path in text_files:
+        rel = str(path.relative_to(SOURCE_ROOT)).replace("\\", "/")
+        attrs = resolved(rel)
+        assert attrs.get("text") == "set", f"{rel} is not marked text: {attrs}"
+        assert attrs.get("eol") == "lf", f"{rel} is not pinned to LF: {attrs}"
 
