@@ -39,12 +39,12 @@ TRUSTED_STAGE0_PATH = _REPOSITORY_ROOT / "scripts" / "r011_d2_stage0.ps1"
 TRUSTED_PAYLOAD_PATH = _REPOSITORY_ROOT / "scripts" / "r011_d2_protected_payload.ps1"
 TRUSTED_STAGE0_SHA256 = "766cd212793056aab413d1f425a1adb696d39001e5ef0863685c37ee82b98c27"
 TRUSTED_PAYLOAD_SHA256 = "9a499a48573f57b8cca0a63cb5b3043c7d940c42c160debfae87251db61a7e53"
-TRUSTED_BUNDLE_SHA256 = "f27f18b2c234535ab432ab880d3deba0db6f70fc308ba51615f9d856e4410646"
+TRUSTED_BUNDLE_SHA256 = "621f63f130857db70b848d2bb1635c13b19c2da188c481d7d93533f094570a3f"
 TRUSTED_BUNDLE_FILES: Final[Mapping[str, str]] = MappingProxyType(
     {
         "config/paths.py": "bd684afb40cb3601a89250c9f771c4169b3ffe3a6fa07e7d0d4225564a8aee7b",
         "packages/deployment/__init__.py": "2ab2ffdb4ef62448e4a2a57b0a00cd87921c8168bc5a77aba6c86b9911ac05e5",
-        "packages/deployment/artifact.py": "2e72ef1b8ca06b22319bfb334e7491e4737dcd2b08d9b7755841b45ea6dd3ef1",
+        "packages/deployment/artifact.py": "d8a6cabb7836aab311030237b6dd85dd2606828f218529942f0233254f0f8bcf",
         "packages/deployment/configuration.py": "b2db2db58081c18286a641b17a7a82fd5410317c84f70d722276b40b4509a3ee",
         "packages/deployment/evidence.py": "a4b3c8389a47fbac38ff92b4974c366b974b684a2b90ede62af92eff6c9f6de2",
         "packages/deployment/inventory.py": "8feb2fa272580ece1385194db74fe9e30cd260d45da155a21cc52b523545d89e",
@@ -57,7 +57,7 @@ TRUSTED_BUNDLE_FILES: Final[Mapping[str, str]] = MappingProxyType(
         "packages/deployment/secret_store.py": "b2b4b63cbfe4e49a327b6ba21623007fa241e83dba7aaa7cf15543a5c24ee087",
     }
 )
-TRUST_MANIFEST_SHA256 = "187f4cd41f5073d0865d013a84faf46862edde957547e27f6f9009abab923a00"
+TRUST_MANIFEST_SHA256 = "a96a8be0ba3a684ad7e35a53b33c20979432cdcdfb0a8668ef458a9a754c81ac"
 PROVISIONER_ARGUMENTS = (
     "-B", "-m", "packages.deployment.provisioning", "--target-root", "{target_root}",
     "--service-account", "{service_account}", "--roles", *REQUIRED_ROLES, "--apply",
