@@ -1,7 +1,15 @@
 # Thiết kế: Bản quyền ở Server Tool + 2 đường kết nối cho Desktop/Mobile + Web tách riêng
 
 Ngày: 2026-10-28
-Repo: `E:\QR` (HMS-QR) và `D:\HE-THONG-KEY-BAN-QUYEN` (máy chủ bản quyền)
+Repo: `D:\PHAN MEM QUAN LY QR` (HMS-QR) và `D:\HE-THONG-KEY-BAN-QUYEN` (máy chủ bản quyền)
+
+> Ghi chú về đường dẫn (2026-10-31): repo HMS-QR khi thiết kế này được viết nằm ở
+> `E:\QR`. Ổ `E:` đó không còn tồn tại trên máy này — repo đã được chuyển sang
+> `D:\PHAN MEM QUAN LY QR`. Mọi chỗ bên dưới vẫn giữ nguyên đường dẫn cũ trong
+> bảng hiện trạng, vì đó là những gì đã được kiểm tra thật vào ngày 2026-10-28;
+> chỉ có dòng tiêu đề và các hướng dẫn thao tác là trỏ đến vị trí hiện tại.
+> Repo máy chủ bản quyền vẫn ở `D:\HE-THONG-KEY-BAN-QUYEN`, không đổi.
+
 Sơ đồ duyệt: `.archify/02-DE-XUAT/DE-XUAT-ban-quyen-server-tool.html`
 
 ## 1. Intent và lý do
