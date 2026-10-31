@@ -25,3 +25,8 @@ Desktop.ini
 
 # Local agent working state (task boards, logs, node_modules)
 .opencode/
+
+# Diagram/analysis output written by the archify tool. Two ~840 KB HTML
+# documents plus their JSON state; regenerable, and they describe this
+# repository rather than belonging to it.
+.archify/
