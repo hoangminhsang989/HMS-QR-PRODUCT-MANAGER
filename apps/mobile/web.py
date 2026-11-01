@@ -1,8 +1,27 @@
 """Serve the mobile web app.
 
-The page itself lives in ``web/index.html`` so the LAN server and the Vercel
-deployment serve byte-identical HTML. ``web/index.html`` is the single source of
-truth; this module only reads and returns it.
+There are three builds, all derived from ``web/index.html`` by
+``scripts/build_mobile_web.py`` and all read from disk as bytes at request
+time:
+
+- ``index.html`` — the program. Served at ``/tracking/mobile``.
+- ``vps.html`` — byte-identical to the source. Served at
+  ``/tracking/mobile/vps``, outside the LAN, so it keeps the connection screen
+  where a phone types the server address.
+- ``lan.html`` — the same program minus the connection screen, with
+  ``resolveServerOrigin()`` pinned to ``location.origin``. Served at
+  ``/tracking/mobile/lan``, where the server is always same-origin.
+
+They are separate files rather than a flag on one page so the two builds cannot
+drift into each other: a phone on the factory Wi-Fi must never be offered a
+connection screen that only makes sense outside the LAN.
+``tests/stage6/test_mobile_web_builds.py`` regenerates both derived files and
+fails unless the result is byte-identical to what is committed.
+
+Bytes are served exactly as they sit on disk. Reading through ``read_text``
+would apply universal-newline translation and hand the phone LF while Vercel
+serves the CRLF file, so the two deployments would differ for no reason a
+browser can see.
 """
 from __future__ import annotations
 

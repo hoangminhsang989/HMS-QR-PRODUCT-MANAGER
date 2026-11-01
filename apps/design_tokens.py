@@ -1,4 +1,16 @@
-"""Canonical HMS QR Stage 5 design tokens shared by desktop and web UI."""
+"""HMS QR Stage 5 design tokens for the **desktop** (PySide6) surface.
+
+These are the desktop tokens only. The web surfaces do not read this file:
+``web/index.html`` declares its own ``:root`` block, which is the source of
+truth for the mobile web and, since the portal was brought onto the same light
+direction, for the portal too. The two palettes differ on purpose - see the
+"Two surfaces, two token sets" section of DESIGN.md - so an agent editing one
+surface must not "fix" it toward the other.
+
+``PY_SIDE_THEME`` renders these names into a Qt stylesheet;
+``STATUS_COLORS`` maps workflow states onto them. Every desktop window applies
+``PY_SIDE_THEME``; status text is always rendered alongside its colour.
+"""
 
 TOKENS = {
     "background": "#f3f1ec",
@@ -39,5 +51,3 @@ QTableView, QTableWidget {{ background: {TOKENS['surface']}; alternate-backgroun
 QHeaderView::section {{ background: {TOKENS['surface_raised']}; color: {TOKENS['text_secondary']}; padding: 7px; border: 0; }}
 QTabBar::tab {{ background: {TOKENS['surface']}; color: {TOKENS['text_secondary']}; padding: 8px 14px; }} QTabBar::tab:selected {{ background: {TOKENS['accent']}; color: #ffffff; }}
 """
-
-WEB_CSS_VARS = ":root{" + ";".join(f"--{k.replace('_','-')}:{v}" for k, v in TOKENS.items()) + "}"

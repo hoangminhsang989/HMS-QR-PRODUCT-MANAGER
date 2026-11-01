@@ -17,7 +17,6 @@ from packages.domain.tracking import BEING_MACHINED
 
 from apps.server.tls import lan_url_scheme
 
-from apps.design_tokens import WEB_CSS_VARS
 from config.paths import PathConfigurationError, require_test_root
 from packages.persistence.database import engine_path
 from packages.qr.payload import QrPayload
