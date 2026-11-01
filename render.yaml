@@ -5,18 +5,32 @@ services:
     buildCommand: pip install -r requirements.txt
     # Alembic is gone from the runtime; the engine migrations are what
     # require_database_schema_current verifies against.
-    startCommand: py -3.14 -c "from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.stage2_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()" && uvicorn apps.server.app:app --host 0.0.0.0 --port $PORT
+    #
+    # PROD needs a standalone absolute SQLite URL: sqlite:////data/hms_qr.sqlite
+    # Render's filesystem is ephemeral, so point it at a mounted disk if the data
+    # has to survive a redeploy.
+    #
+    # The old instruction here said to set postgresql+psycopg://<...>. That path
+    # is dead: packages/sqlengine is SQLite-only with no PostgreSQL code path,
+    # and psycopg is deliberately absent from requirements.txt. Following it got
+    # past validation and then failed inside the engine.
+    startCommand: python -c "from config.environments import load_config; from packages.persistence.database import create_database_runtime; from packages.persistence.stage2_repository import Stage2Repository; runtime=create_database_runtime(load_config()); Stage2Repository(runtime).create_schema(); runtime.dispose()" && uvicorn apps.server.app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: HMS_QR_ENV
         value: prod
-      # PROD requires the tracked psycopg driver; Render's database URL uses the
-      # plain postgresql:// scheme, so set this in the dashboard as
-      # postgresql+psycopg://<user>:<password>@<host>:5432/<database>
-      # (or derive it from the managed database connection string).
+      # Standalone absolute SQLite, e.g. sqlite:////data/hms_qr.sqlite
+      #
+      # The instruction that used to sit here said to set
+      # postgresql+psycopg://<user>:<password>@<host>:5432/<database>. That path
+      # is dead: packages/sqlengine is SQLite-only with no PostgreSQL code path,
+      # and psycopg is deliberately absent from requirements.txt. Following it
+      # got past validation and then failed inside the engine.
       - key: HMS_QR_DATABASE_URL
         sync: false
       - key: PYTHONDONTWRITEBYTECODE
         value: "1"
-databases:
-  - name: hms-qr-db
-    plan: basic-256mb
+# No managed PostgreSQL database is declared. The engine cutover (ADR-015)
+# replaced it with packages/sqlengine, which is SQLite-only, so a Render
+# Postgres instance would be provisioned and then never used. Render's
+# filesystem is ephemeral: attach a disk and point HMS_QR_DATABASE_URL at it if
+# the data has to survive a redeploy.

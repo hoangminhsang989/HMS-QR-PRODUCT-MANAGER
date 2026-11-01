@@ -212,9 +212,14 @@ def test_production_persistent_roots_are_explicit_and_reject_source_test_profile
 def test_prod_config_and_imports_do_not_resolve_or_inherit_test_root(monkeypatch):
     test_root = require_test_root()
     monkeypatch.setenv("HMS_QR_ENV", "prod")
+    # A standalone absolute SQLite URL, which is what PROD actually accepts.
+    # This used to be a postgresql+psycopg URL, which only ever served as
+    # "not SQLite" scaffolding: the driver is deliberately absent from
+    # requirements.txt and packages/sqlengine has no PostgreSQL path, so that
+    # URL could never have started a real PROD runtime.
     monkeypatch.setenv(
         "HMS_QR_DATABASE_URL",
-        "postgresql+psycopg://runtime-user:fixture-password@db.invalid/hms_qr",
+        "sqlite:///C:/hms-qr-production/hms_qr.sqlite",
     )
     monkeypatch.setenv("HMS_QR_STORAGE_ROOT", "C:/hms-qr-production-storage")
     monkeypatch.delenv(GENERATED_ASSET_ROOT_ENV, raising=False)

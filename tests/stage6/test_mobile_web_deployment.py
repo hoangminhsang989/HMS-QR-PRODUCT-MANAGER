@@ -1585,6 +1585,36 @@ def _squash(text: str) -> str:
     return re.sub(r"[\s\"']+", "", text)
 
 
+# Files that only ever run on Linux: the Dockerfile's base is python:3.14-slim
+# and render.yaml's env is python. Neither has the Windows Python launcher.
+LINUX_ONLY_RUNTIME = ("Dockerfile", "render.yaml")
+
+
+def test_no_linux_runtime_invokes_the_windows_python_launcher():
+    """``py`` does not exist outside Windows, so these two cannot use it.
+
+    The Dockerfile's CMD and render.yaml's startCommand both began ``py -3.14``.
+    On Windows that is the Python launcher and it works, which is why nobody
+    noticed - but ``python:3.14-slim`` is Debian and Render's ``env: python`` is
+    Linux, so both fail at the first command with ``py: not found``. The
+    container never starts and the deploy never completes, while every guard in
+    the suite reads these files as text and stays green.
+
+    The alembic removal was done carefully across all five callers; the
+    portability half of the same edit was not, because nothing checked it.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    for name in LINUX_ONLY_RUNTIME:
+        text = (repo_root / name).read_text(encoding="utf-8")
+        squashed = _squash(text)
+        for launcher in ("py-3.14", "py.exe", "py-3"):
+            assert launcher not in squashed, (
+                f"{name} invokes the Windows Python launcher, which does not "
+                f"exist on the Linux image this file runs on. Use 'python'."
+            )
+        assert "python" in squashed, f"{name} never invokes python at all"
+
+
 def test_no_runtime_path_invokes_alembic():
     """Alembic is gone from the runtime, so any caller of it now fails outright.
 

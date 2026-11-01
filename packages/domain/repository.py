@@ -1,4 +1,10 @@
-"""Repository contract shared by SQLite now and PostgreSQL adapters later."""
+"""Repository contract for the product aggregate.
+
+This is a storage-agnostic interface. It used to describe itself as "shared by
+SQLite now and PostgreSQL adapters later"; ADR-015 removed PostgreSQL from the
+runtime entirely, so there is no later adapter to write. Implementations live in
+``packages/persistence`` and run on ``packages/sqlengine``.
+"""
 
 from __future__ import annotations
 

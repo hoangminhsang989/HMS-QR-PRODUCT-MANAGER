@@ -63,15 +63,17 @@ def validate_database_url(environment: Environment, value: str) -> str:
                 f"{environment.value.upper()} standalone SQLite requires an absolute file path."
             )
         return raw
-    if parsed.get_backend_name() != "postgresql" or parsed.drivername != "postgresql+psycopg":
-        raise DatabaseConfigurationError(
-            f"{environment.value.upper()} requires the tracked PostgreSQL psycopg driver."
-        )
-    if not parsed.host or not parsed.database or not parsed.username or parsed.password in (None, ""):
-        raise DatabaseConfigurationError(
-            f"{environment.value.upper()} PostgreSQL URL is incomplete."
-        )
-    return raw
+    # PostgreSQL is gone. The engine cutover (ADR-015) replaced it with
+    # packages/sqlengine, which is SQLite-only: it has no PostgreSQL code path,
+    # and psycopg is deliberately absent from requirements.txt
+    # (test_r010r2_database_runtime.py forbids it by name). This branch used to
+    # demand "the tracked PostgreSQL psycopg driver" - a driver nothing installs
+    # and nothing imports - so an operator who configured it passed validation
+    # and then failed inside the engine. Rejecting it here names the real cause.
+    raise DatabaseConfigurationError(
+        f"{environment.value.upper()} requires a standalone absolute SQLite URL; "
+        "PostgreSQL is not supported by the embedded engine."
+    )
 
 
 @dataclass(frozen=True, slots=True)
