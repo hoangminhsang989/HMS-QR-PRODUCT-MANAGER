@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
+
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 MOBILE_PAGE = SOURCE_ROOT / "web" / "index.html"
 JSQR_SHA256 = "32214c74ee92d37de6d88276987690d996ce757668e82ca1709dba5e0be9fcce"
@@ -42,9 +44,22 @@ def test_mobile_page_has_no_hardcoded_api_origin():
     assert "fetch('/files" not in page
 
 
-def test_service_worker_caches_only_local_assets():
-    worker = SOURCE_ROOT / "web" / "sw.js"
-    assert worker.is_file(), "web/sw.js must exist for the Vercel deployment"
+WORKERS = (
+    SOURCE_ROOT / "web" / "sw.js",
+    SOURCE_ROOT / "apps" / "static" / "sw.js",
+)
+
+
+@pytest.mark.parametrize("worker", WORKERS, ids=lambda path: path.as_posix())
+def test_service_worker_caches_only_local_assets(worker):
+    """Both deployments' workers, not only the Vercel one.
+
+    ``apps/server/app.py`` serves ``apps/static/sw.js`` at ``/sw.js``, so that
+    is the worker a phone on the factory Wi-Fi actually gets - the one that
+    needs offline support most. It kept ``cache.addAll`` long after
+    ``web/sw.js`` was fixed, because this guard read only the Vercel file.
+    """
+    assert worker.is_file(), f"{worker.name} must exist for its deployment"
     text = worker.read_text(encoding="utf-8")
     assert "/static/jsqr.min.js" in text
     assert "https://" not in text
