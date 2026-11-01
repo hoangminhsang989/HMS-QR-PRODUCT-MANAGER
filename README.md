@@ -22,14 +22,14 @@ uvicorn apps.server.app:app --reload
 ## Central Server Deployment
 
 For LAN deployment, follow
-[`docs/POSTGRESQL_LAN_DEPLOYMENT.md`](docs/POSTGRESQL_LAN_DEPLOYMENT.md)
-(superseded on the database layer by ADR-015: the server now embeds its own SQL
-engine and installs no external database).
-Desktop clients never receive a database URL or storage path. Start
-`CHAY_DESKTOP.bat` on Machine 2: Desktop first uses a verified saved endpoint,
-then Private-LAN discovery, and provides Server selection plus native login if
-the launcher does not supply `HMS_QR_SERVER_URL`, `HMS_QR_USERNAME`, and
-`HMS_QR_PASSWORD`.
+[`docs/R011_MACHINE_A_DEPLOYMENT_OPERATOR_RUNBOOK.md`](docs/R011_MACHINE_A_DEPLOYMENT_OPERATOR_RUNBOOK.md).
+The database layer is embedded: ADR-015 replaced PostgreSQL with
+`packages/sqlengine`, so there is no external database to install and
+`HMS_QR_DATABASE_URL` is a standalone absolute SQLite path. Desktop clients
+never receive a database URL or storage path. Start `CHAY_DESKTOP.bat` on
+Machine 2: Desktop first uses a verified saved endpoint, then Private-LAN
+discovery, and provides Server selection plus native login if the launcher does
+not supply `HMS_QR_SERVER_URL`, `HMS_QR_USERNAME`, and `HMS_QR_PASSWORD`.
 
 Stage 2 adds the Customer → PO → PO Line → Delivery Schedule / Production Run
 vertical slice with the normalized persistence architecture, generic order
