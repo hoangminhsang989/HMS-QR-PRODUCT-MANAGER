@@ -9,4 +9,6 @@ The launcher installs Python 3.14 and HMS QR packages only from the bundled file
 The release must contain these unmodified artifacts:
 
 - `installer/python/python-3.14.6-amd64.exe`, SHA-256 `14b3e9a710a3fcf0bd9b55ab6b60412bd91227563f813fc49040cabc0209e0bd`
-- all wheels in `installer/wheels`
+- the wheels in `installer/wheels`, each matching the SHA-256 recorded in `installer/wheels/CHECKSUMS.sha256`
+
+The wheels are gitignored, so a fresh clone carries none of them; `CHECKSUMS.sha256` is tracked and is the record of which wheels a release must contain. See `installer/wheels/README.md` for what the setup actually installs and why the set is a snapshot rather than the output of a `pip download` command.
