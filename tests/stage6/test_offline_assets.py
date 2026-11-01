@@ -27,6 +27,40 @@ def test_vercel_copy_of_jsqr_matches_the_server_copy():
     ).read_bytes()
 
 
+# Every asset that lives in both trees, because Vercel serves web/ at the root
+# while the LAN server mounts apps/static/. The scanner was the only one ever
+# compared; the three images were simply trusted, so a refreshed icon could
+# reach one deployment and not the other with nothing noticing.
+MIRRORED_ASSETS = (
+    "jsqr.min.js",
+    "icon-192.png",
+    "icon-512.png",
+    "favicon.png",
+)
+
+
+@pytest.mark.parametrize("name", MIRRORED_ASSETS)
+def test_every_mirrored_asset_is_identical_in_both_trees(name: str):
+    """One asset, two copies: Vercel's and the LAN server's must be the same bytes.
+
+    These are the only files the split root duplicates, and they are duplicated
+    for a reason - Vercel serves ``web/`` at the domain root, the LAN server
+    mounts ``apps/static/`` under ``/static``. Nothing keeps the two copies in
+    step except this test. A stale icon is cosmetic, which is exactly why it
+    survives: nobody notices an old favicon, so the drift is found months later
+    when someone asks why the two deployments do not match.
+    """
+
+    vercel = SOURCE_ROOT / "web" / "static" / name
+    lan = SOURCE_ROOT / "apps" / "static" / name
+    assert vercel.is_file(), f"web/static/{name} is missing"
+    assert lan.is_file(), f"apps/static/{name} is missing"
+    assert vercel.read_bytes() == lan.read_bytes(), (
+        f"{name} differs between web/static/ (Vercel) and apps/static/ (LAN). "
+        "Copy one over the other so both deployments ship the same bytes."
+    )
+
+
 def test_mobile_page_loads_jsqr_from_local_static():
     page = MOBILE_PAGE.read_text(encoding="utf-8")
     assert "/static/jsqr.min.js" in page

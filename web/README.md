@@ -1,16 +1,29 @@
 # Web app mobile — HMS QR
 
 Giao diện mobile (PWA) của HMS QR. Một thư mục tĩnh thuần, **không build step**:
-Vercel phục vụ đúng như máy chủ LAN phục vụ, cùng một tệp `index.html`.
+Vercel phục vụ đúng như máy chủ LAN phục vụ, từ cùng một trang nguồn.
 
 ```
 web/
-  index.html        toàn bộ app: HTML + CSS + JS inline
+  index.html        toàn bộ app: HTML + CSS + JS inline — TRANG NGUỒN
+  lan.html          bản LAN: index trừ màn hình nhập địa chỉ máy chủ
+  vps.html          bản VPS: byte-identical với index.html
   manifest.json     PWA manifest (start_url "/" — Vercel phục vụ web/ ở gốc domain)
   sw.js             service worker, chỉ cache tài nguyên cục bộ
   vercel.json       cache header + security header cho Vercel
   static/           jsqr.min.js (quét QR), icon, favicon
 ```
+
+Hai bản `lan.html` và `vps.html` **không sửa bằng tay**. Chúng do
+`scripts/build_mobile_web.py` sinh ra từ `index.html`:
+
+```
+python -m scripts.build_mobile_web          # sinh lại cả hai
+python -m scripts.build_mobile_web --check  # chỉ kiểm tra, không ghi
+```
+
+`tests/stage6/test_mobile_web_builds.py` sinh lại vào thư mục tạm và đòi
+byte-identical, nên khác biệt sẽ thành test failure chứ không ship đi.
 
 ## Vì sao lại tách ra đây
 
@@ -18,8 +31,21 @@ Trước đây trang mobile nằm trong `apps/mobile/web.py` dưới dạng mộ
 với `const api = '/tracking'` viết cứng — nghĩa là nó chỉ chạy được same-origin,
 tức là chỉ khi điện thoại mở trực tiếp từ máy chủ xưởng.
 
-Giờ `web/index.html` là **nguồn duy nhất**. `apps/mobile/web.py` chỉ đọc và trả
-về tệp đó, nên bản chạy trên LAN và bản chạy trên Vercel là byte-identical.
+Giờ `web/index.html` là **trang nguồn**. `apps/mobile/web.py` chỉ đọc và trả về
+byte của từng tệp khi có request, không dịch newline.
+
+## Ba route, ba bản build
+
+| Route | Tệp | Địa chỉ máy chủ |
+|---|---|---|
+| `/tracking/mobile` | `index.html` | trang nguồn |
+| `/tracking/mobile/vps` | `vps.html` | nhập tay — điện thoại ngoài LAN |
+| `/tracking/mobile/lan` | `lan.html` | cố định `location.origin` |
+
+Chúng là ba tệp riêng chứ không phải một trang kèm cờ hiệu, để hai bản không thể
+trôi lẫn vào nhau: điện thoại trong xưởng **không bao giờ được hiện** màn hình
+nhập địa chỉ máy chủ — màn hình đó chỉ có nghĩa ngoài LAN. Chính vì vậy
+`lan.html` cố tình **không** byte-identical với `index.html`.
 
 ## Địa chỉ máy chủ resolve lúc chạy
 
