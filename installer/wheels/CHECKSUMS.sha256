@@ -1,0 +1,56 @@
+# SHA-256 of every wheel in this directory.
+#
+# Verify with:  certutil -hashfile <wheel> SHA256        (Windows, one file)
+#               sha256sum -c CHECKSUMS.sha256           (bash, all files)
+#               py -3.14 -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" <wheel>
+#
+# 45 wheels, 326892033 bytes (311.7 MB).
+#
+# The wheels themselves stay gitignored (*.whl); this file is tracked so the
+# expected digests survive a fresh clone.
+
+77eb101048d95f982c0353e9233404889dcd7a6fc244c107836c0e2fc9cf7d9d  alembic-1.20.0-py3-none-any.whl
+117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101  annotated_doc-0.0.5-py3-none-any.whl
+f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0  annotated_types-0.8.0-py3-none-any.whl
+6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101  anyio-4.15.1-py3-none-any.whl
+e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1  certifi-2026.10.23-py3-none-any.whl
+3222ba5d678f80a030e6afbcc33dc1ae5cb45facabb61cee2c7016b8432fde48  cffi-2.1.1-cp314-cp314-win_amd64.whl
+255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360  click-8.5.0-py3-none-any.whl
+4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6  colorama-0.4.6-py2.py3-none-any.whl
+7afa5a6602a9f29af1f3a2965f831bae7c9d5d597b7cbb716d41ab3b7d89879c  cryptography-50.0.2-cp311-abi3-win_amd64.whl
+7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa  et_xmlfile-2.0.0-py3-none-any.whl
+bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3  fastapi-0.141.1-py3-none-any.whl
+f8f0bd690e1a41294ac87905e8121c81a3761ec2583c768f13467428606c8c7a  greenlet-3.5.6-cp314-cp314-win_amd64.whl
+63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86  h11-0.16.0-py3-none-any.whl
+2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55  httpcore-1.0.9-py3-none-any.whl
+19d1ee275bb59ba2643ba9a3a1e51cc0c788caf2b8df506368e03f56fdd08527  httptools-0.8.0-cp314-cp314-win_amd64.whl
+d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad  httpx-0.28.1-py3-none-any.whl
+ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c  idna-3.20-py3-none-any.whl
+a359d9a94a541213958742b2698d0a7757bb83551767bc468a74b9905aba9617  mako-1.4.1-py3-none-any.whl
+bdc919ead48f234740ad807933cdf545180bfbe9342c2bb451556db2ed958581  markupsafe-3.0.3-cp314-cp314-win_amd64.whl
+2c25dfa72943e4336ddb6b0ee4277b47a0c85bede0807530ec68103bf58e2c10  numpy-2.5.3-cp314-cp314-win_amd64.whl
+f90ba04b8f73bc5c3814037699739f0156f597338a98f05956c684e7c3ca10d2  opencv_python-5.0.0.93-cp37-abi3-win_amd64.whl
+5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2  openpyxl-3.1.5-py2.py3-none-any.whl
+fdafc9cce40277e0f7a0feabce0ee50dd2fa1800f3b38015e51296b5e814048d  pillow-12.3.0-cp314-cp314-win_amd64.whl
+a1db9f7148b06a28606767efaca51fa6f9398c5c0a3810519be69d7000bdb631  psycopg-3.3.6-py3-none-any.whl
+1fbd30e537dab22cafdf080608f10148fe2a5f3a61294ddb5113caac8a623840  psycopg_binary-3.3.6-cp314-cp314-win_amd64.whl
+51d5a8ba2be0bbe440b99d2112604c95bbbc3c2748a64260186c541e1729cd80  pycparser-3.11-py3-none-any.whl
+346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73  pydantic-2.13.5-py3-none-any.whl
+fa10ef4112775900e7a0661068635eb67b2ab824fbde764de6e0e21982a93db0  pydantic_core-2.46.5-cp314-cp314-win_amd64.whl
+3201d67e3c10be2eaedd3910ff0f02351eca7e88c95a291cde5e7f2f55ef207f  pyside6-6.11.2-cp310-abi3-win_amd64.whl
+f449ea4431da20e7b86752cca8d166f93434516fe417f981c27e5f8e1b554407  pyside6_addons-6.11.2-cp310-abi3-win_amd64.whl
+c8a29def77032773a30879f7f24415b5395ad08592d147c170824ef4c735dfc1  pyside6_essentials-6.11.2-cp310-abi3-win_amd64.whl
+904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9  python_dotenv-1.2.3-py3-none-any.whl
+ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23  python_multipart-0.0.32-py3-none-any.whl
+4a2e8cebe2ff6ab7d1050ecd59c25d4c8bd7e6f400f5f82b96557ac0abafd0ac  pyyaml-6.0.3-cp314-cp314-win_amd64.whl
+16e64e0716c14960108e85d853062c9e8bba5ca8252c0b4d0231b9df4060ff4f  qrcode-8.2-py3-none-any.whl
+6ab0eba1c904455df621f9a6df3ca2bb896bab8670572d2bc4e37804ae91f19a  shiboken6-6.11.2-cp310-abi3-win_amd64.whl
+f4e8f955d13af83fb4e35c3472e5377ee22d3445eada1e5e48199588edb69835  sqlalchemy-2.0.54-cp314-cp314-win_amd64.whl
+a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c  starlette-1.6.0-py3-none-any.whl
+481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8  typing_extensions-4.16.0-py3-none-any.whl
+65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147  typing_inspection-0.4.4-py3-none-any.whl
+c2169a8b0a7a5e9674da5a135ccdfb2b3e671b333ed9fed17b41f73c34476e81  tzdata-2026.4-py2.py3-none-any.whl
+e8dca71ec86dce5f04e333f0d56cdedf942446e6643b9cea1af0d6d3a02cb03e  uvicorn-0.53.0-py3-none-any.whl
+71283b39fd17e5408eb123bd37aeecfd9d54c81fc184421943208aadb879d103  watchfiles-1.2.0-cp314-cp314-win_amd64.whl
+2a4dc6ef83f4559e0d05f313a375cb38f63c986096a9da99fe94fdd779d313e5  websockets-17.1-cp314-cp314-win_amd64.whl
+ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9  xlrd-2.0.2-py2.py3-none-any.whl
