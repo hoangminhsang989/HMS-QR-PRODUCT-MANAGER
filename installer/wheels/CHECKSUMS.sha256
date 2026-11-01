@@ -1,8 +1,7 @@
 # SHA-256 of every wheel in this directory.
 #
-# Verify with:  py -3.14 -m pip install hashin --upgrade  (not required)
-#   or simply:   certutil -hashfile <wheel> SHA256
-#   or in bash: sha256sum -c CHECKSUMS.sha256
+# Verify with:  certutil -hashfile <wheel> SHA256   (Windows, one file)
+#               sha256sum -c CHECKSUMS.sha256      (bash, all files)
 #
 # 37 wheels, 319712615 bytes (304.9 MB).
 #

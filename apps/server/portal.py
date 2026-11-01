@@ -452,7 +452,7 @@ _SS_JS = r"""
       const td = document.querySelector(`.ss-cell[data-r="${r}"][data-c="${c}"]`);
       if (!td) return;
       td.innerHTML = `<input id="ss-cell-input" type="text" autocomplete="off"
-        style="width:100%;height:100%;background:var(--card);color:var(--text);border:none;outline:none;padding:2px 4px;font-size:13px;font-family:inherit;">`;
+        style="width:100%;height:100%;background:var(--card-bg);color:var(--text);border:none;outline:none;padding:2px 4px;font-size:13px;font-family:inherit;">`;
       const inp = td.querySelector('#ss-cell-input');
       inp.value = initChar || (cell?.raw || '');
       inp.focus();
@@ -972,7 +972,7 @@ _SS_JS = r"""
           </div>
         </div>
       `;
-      menu.style.cssText=`position:fixed;top:${e.clientY}px;left:${e.clientX}px;z-index:9999;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:4px 0;min-width:200px;box-shadow:0 8px 32px rgba(0,0,0,0.4);`;
+      menu.style.cssText=`position:fixed;top:${e.clientY}px;left:${e.clientX}px;z-index:9999;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:4px 0;min-width:200px;box-shadow:0 8px 32px rgba(15,23,42,0.16);`;
       setTimeout(()=>document.addEventListener('click',ssCloseMenu,{once:true}),0);
     }
     function ssCloseMenu() {
@@ -1441,7 +1441,7 @@ _SS_JS = r"""
         status.innerHTML=`<span style="color:var(--success);font-weight:700;">✅ Nhận diện ${data.total_items} chi tiết (Tổng SL: ${data.total_quantity}, KH: ${(data.companies||[]).join(', ')||'—'})</span>`;
         wrap.style.display='block';
         document.getElementById('ss-preview-tbody').innerHTML = ssLastPreviewItems.map(it=>`
-          <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+          <tr style="border-bottom:1px solid rgba(15,23,42,0.05);">
             <td style="padding:7px 10px;">${it.row_index}</td>
             <td style="padding:7px 10px;"><b>${it.company||''}</b></td>
             <td style="padding:7px 10px;">${it.part_name||''}</td>
@@ -1501,22 +1501,22 @@ _SS_CSS = r"""
     .ss-col-resize { position:absolute; right:0; top:0; width:5px; height:100%; cursor:col-resize; background:transparent; z-index:15; }
     .ss-col-resize:hover { background:var(--accent); opacity:0.5; }
     .ss-row-header { width:36px; min-width:36px; background:var(--card-raised); border:1px solid var(--border); color:var(--text-muted); font-size:11px; text-align:center; padding:3px 2px; position:sticky; left:0; z-index:5; cursor:default; }
-    .ss-cell { border:1px solid var(--border); padding:3px 5px; font-size:13px; color:var(--text); cursor:cell; position:relative; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; background:var(--card); min-height:26px; height:26px; }
-    .ss-cell:hover { background:rgba(255,255,255,0.04); }
-    .ss-cell.ss-selected { background:rgba(59,130,246,0.18) !important; }
-    .ss-cell.ss-active { background:rgba(59,130,246,0.28) !important; }
-    .ss-cell.ss-sel-top    { border-top:2px solid #3b82f6 !important; }
-    .ss-cell.ss-sel-bottom { border-bottom:2px solid #3b82f6 !important; }
-    .ss-cell.ss-sel-left   { border-left:2px solid #3b82f6 !important; }
-    .ss-cell.ss-sel-right  { border-right:2px solid #3b82f6 !important; }
+    .ss-cell { border:1px solid var(--border); padding:3px 5px; font-size:13px; color:var(--text); cursor:cell; position:relative; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; background:var(--card-bg); min-height:26px; height:26px; }
+    .ss-cell:hover { background:rgba(15,23,42,0.03); }
+    .ss-cell.ss-selected { background:rgba(15,118,110,0.14) !important; }
+    .ss-cell.ss-active { background:rgba(15,118,110,0.22) !important; }
+    .ss-cell.ss-sel-top    { border-top:2px solid #0f766e !important; }
+    .ss-cell.ss-sel-bottom { border-bottom:2px solid #0f766e !important; }
+    .ss-cell.ss-sel-left   { border-left:2px solid #0f766e !important; }
+    .ss-cell.ss-sel-right  { border-right:2px solid #0f766e !important; }
     .ss-cell-text { pointer-events:none; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ss-fill-handle { position:absolute; right:-3px; bottom:-3px; width:7px; height:7px; background:#3b82f6; border:1.5px solid var(--bg); cursor:crosshair; z-index:20; }
+    .ss-fill-handle { position:absolute; right:-3px; bottom:-3px; width:7px; height:7px; background:#0f766e; border:1.5px solid var(--bg); cursor:crosshair; z-index:20; }
     #ss-context-menu { font-size:13px; }
     .ss-menu-item { padding:7px 18px; cursor:pointer; white-space:nowrap; color:var(--text); }
-    .ss-menu-item:hover { background:rgba(255,255,255,0.08); }
+    .ss-menu-item:hover { background:rgba(15,23,42,0.05); }
     .ss-menu-sep { height:1px; background:var(--border); margin:3px 0; }
     .ss-menu-submenu { position:relative; }
-    .ss-submenu { display:none; position:absolute; left:100%; top:0; background:var(--card); border:1px solid var(--border); border-radius:8px; min-width:180px; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+    .ss-submenu { display:none; position:absolute; left:100%; top:0; background:var(--card-bg); border:1px solid var(--border); border-radius:8px; min-width:180px; box-shadow:0 8px 24px rgba(15, 23, 42, 0.16); }
     .ss-menu-submenu:hover > .ss-submenu { display:block; }
     #ss-table { border-collapse:collapse; table-layout:fixed; }
     #ss-table th, #ss-table td { box-sizing:border-box; }
@@ -1529,9 +1529,9 @@ _SS_CSS = r"""
     .ss-ribbon-sep { width:1px; background:var(--border); margin:4px 6px; align-self:stretch; }
     .ss-rb { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; padding:3px 5px; min-width:36px; height:44px; background:transparent; border:1px solid transparent; border-radius:5px; color:var(--text-muted); font-size:10px; cursor:pointer; white-space:nowrap; transition:all 0.12s; line-height:1.2; }
     .ss-rb svg { width:18px; height:18px; flex-shrink:0; }
-    .ss-rb:hover { background:rgba(255,255,255,0.08); border-color:var(--border); color:var(--text); }
-    .ss-rb:active { background:rgba(59,130,246,0.2); }
-    .ss-rb.ss-rb-active { background:rgba(59,130,246,0.2); border-color:#3b82f6; color:var(--accent); }
+    .ss-rb:hover { background:rgba(15,23,42,0.05); border-color:var(--border); color:var(--text); }
+    .ss-rb:active { background:rgba(15,118,110,0.16); }
+    .ss-rb.ss-rb-active { background:rgba(15,118,110,0.16); border-color:#0f766e; color:var(--accent); }
     .ss-rb-tall { height:52px; font-size:11px; }
     .ss-rb-tall svg { width:22px; height:22px; }
     .ss-rb-icon { min-width:30px; width:30px; padding:3px; font-size:0; }
@@ -1552,12 +1552,12 @@ def render_portal_html() -> str:
     for e in events:
         ts = str(e.get("server_timestamp", ""))[:19].replace("T", " ")
         actor = e.get("actor", "")
-        part = f"{e.get('part_name', '')} <small style='color:#8b9eb3;'>({e.get('tracking_code', '')})</small>"
+        part = f"{e.get('part_name', '')} <small style='color:#55637a;'>({e.get('tracking_code', '')})</small>"
         action = f"<span style='color:var(--accent);font-weight:700;'>{e.get('action', '')}</span> ({e.get('detail', '')})"
         qty = str(e.get("quantity", ""))
         notes = e.get("notes", "") or "—"
-        rows.append(f"<tr style='border-bottom: 1px solid rgba(255,255,255,0.05);'><td style='padding: 10px 14px;'>{ts}</td><td style='padding: 10px 14px;'><b>{actor}</b></td><td style='padding: 10px 14px;'>{part}</td><td style='padding: 10px 14px;'>{action}</td><td style='padding: 10px 14px;'><b>{qty}</b></td><td style='padding: 10px 14px;color:#8b9eb3;'>{notes}</td></tr>")
-    table_rows = "".join(rows) if rows else "<tr><td colspan='6' style='text-align:center;color:#8b9eb3;padding:16px;'>Chưa có báo cáo nào được gửi.</td></tr>"
+        rows.append(f"<tr style='border-bottom: 1px solid rgba(15,23,42,0.05);'><td style='padding: 10px 14px;'>{ts}</td><td style='padding: 10px 14px;'><b>{actor}</b></td><td style='padding: 10px 14px;'>{part}</td><td style='padding: 10px 14px;'>{action}</td><td style='padding: 10px 14px;'><b>{qty}</b></td><td style='padding: 10px 14px;color:#55637a;'>{notes}</td></tr>")
+    table_rows = "".join(rows) if rows else "<tr><td colspan='6' style='text-align:center;color:#55637a;padding:16px;'>Chưa có báo cáo nào được gửi.</td></tr>"
 
     public_url = get_public_tunnel_url()
     public_mobile_url = f"{public_url}/tracking/mobile" if public_url else "/tracking/mobile"
@@ -1583,20 +1583,28 @@ def render_portal_html() -> str:
   <title>HMS QR Product Manager — Trung Tâm Điều Hành Sản Xuất</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <meta name="theme-color" content="#0d1520">
+  <meta name="theme-color" content="#f1f5f9">
   <style>
     :root {{
-      --bg: #0d1520;
-      --card-bg: #141f2d;
-      --card-raised: #1c2b3d;
-      --border: #283e54;
-      --accent: #00d2b4;
-      --accent-dim: rgba(0, 210, 180, 0.12);
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --text: #f0f6fc;
-      --text-muted: #8b9eb3;
+      --bg: #f1f5f9;
+      --card-bg: #ffffff;
+      --card-raised: #f8fafc;
+      --border: #dbe4ee;
+      --accent: #0f766e;
+      --accent-dim: rgba(15, 118, 110, 0.12);
+      --success: #047857;
+      --warning: #b45309;
+      --danger: #b91c1c;
+      --text: #0f172a;
+      --text-muted: #55637a;
+      --accent-strong: #0b5f59;
+      --accent-soft: #e6f4f1;
+      --success-soft: #ecfdf5;
+      --warning-soft: #fffbeb;
+      --danger-soft: #fef2f2;
+      --info: #1d4ed8;
+      --info-soft: #eff6ff;
+      --border-strong: #c3d2e3;
       --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     }}
     * {{ box-sizing: border-box; }}
@@ -1612,7 +1620,7 @@ def render_portal_html() -> str:
       position: sticky;
       top: 0;
       z-index: 100;
-      background: rgba(20, 31, 45, 0.94);
+      background: rgba(255, 255, 255, 0.92);
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--border);
@@ -1631,13 +1639,13 @@ def render_portal_html() -> str:
     .brand-logo {{
       width: 36px;
       height: 36px;
-      background: linear-gradient(135deg, #00d2b4 0%, #008775 100%);
+      background: linear-gradient(135deg, #0f766e 0%, #0b5f59 100%);
       border-radius: 9px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 900;
-      color: #0d1520;
+      color: #ffffff;
       font-size: 19px;
     }}
     .brand h1 {{
@@ -1670,9 +1678,9 @@ def render_portal_html() -> str:
       border: 1px solid transparent;
     }}
     .btn-primary {{
-      background: linear-gradient(135deg, #00d2b4 0%, #00a48c 100%);
-      color: #0d1520;
-      box-shadow: 0 4px 14px rgba(0, 210, 180, 0.25);
+      background: linear-gradient(135deg, #0f766e 0%, #0b5f59 100%);
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(15, 118, 110, 0.22);
     }}
     .btn-primary:hover {{
       opacity: 0.92;
@@ -1693,7 +1701,7 @@ def render_portal_html() -> str:
       font-size: 13px;
     }}
     .btn-success {{
-      background: #10b981;
+      background: #047857;
       color: #fff;
     }}
     .btn:active {{ transform: scale(0.97); }}
@@ -1741,7 +1749,7 @@ def render_portal_html() -> str:
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 16px 20px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
     }}
     .stat-num {{
       font-size: 28px;
@@ -1762,7 +1770,7 @@ def render_portal_html() -> str:
       border-radius: 14px;
       padding: 20px;
       margin-bottom: 24px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      box-shadow: 0 4px 20px rgba(15, 23, 42, 0.07);
     }}
     .card-header {{
       display: flex;
@@ -1867,12 +1875,13 @@ def render_portal_html() -> str:
       position: fixed;
       bottom: 24px;
       right: 24px;
-      background: var(--success);
-      color: #fff;
+      background: var(--success-soft);
+      color: var(--success);
+      border: 1px solid var(--success);
       font-weight: 700;
       padding: 12px 20px;
       border-radius: 10px;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+      box-shadow: 0 6px 20px rgba(15, 23, 42, 0.16);
       display: none;
       z-index: 1000;
     }}
@@ -1924,7 +1933,7 @@ def render_portal_html() -> str:
       </div>
     </div>
     <div class="header-links">
-      <a href="#" onclick="downloadExcelReport(event)" class="btn btn-outline" id="excel-export-btn" style="background:#064e3b;border-color:#059669;color:#6ee7b7;">📥 Xuất Báo Cáo Excel</a>
+      <a href="#" onclick="downloadExcelReport(event)" class="btn btn-outline" id="excel-export-btn" style="background:#ecfdf5;border-color:#047857;color:#047857;">📥 Xuất Báo Cáo Excel</a>
       <a href="{public_mobile_url}" target="_blank" class="btn btn-primary">📱 Mở Mobile Scanner</a>
       <a href="/docs" target="_blank" class="btn btn-outline">📑 API Swagger</a>
       <a href="/health/readiness/database" target="_blank" class="btn btn-outline">🩺 DB Health</a>
@@ -1976,27 +1985,27 @@ def render_portal_html() -> str:
           </div>
         </div>
         <div style="height: 12px; width:100%; background: var(--card-raised); border-radius: 6px; overflow:hidden; display:flex; margin-bottom:12px;">
-          <div style="width:{pct_deliv}%; background:#8b5cf6;" title="Đã giao hàng: {stats['deliv']}"></div>
-          <div style="width:{pct_pack}%; background:#3b82f6;" title="Đã đóng gói: {stats['packed']}"></div>
-          <div style="width:{pct_qc}%; background:#10b981;" title="QC đạt: {stats['qc']}"></div>
-          <div style="width:{pct_prod}%; background:#00d2b4;" title="Đang gia công: {stats['in_prod']}"></div>
+          <div style="width:{pct_deliv}%; background:#6d28d9;" title="Đã giao hàng: {stats['deliv']}"></div>
+          <div style="width:{pct_pack}%; background:#0f766e;" title="Đã đóng gói: {stats['packed']}"></div>
+          <div style="width:{pct_qc}%; background:#047857;" title="QC đạt: {stats['qc']}"></div>
+          <div style="width:{pct_prod}%; background:#0f766e;" title="Đang gia công: {stats['in_prod']}"></div>
         </div>
         <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:12px; font-weight:700;">
           <div style="display:flex; align-items:center; gap:6px;">
-            <span style="width:10px; height:10px; background:#00d2b4; border-radius:2px;"></span>
-            <span>Đang gia công: <b style="color:#00d2b4;">{stats['in_prod']}</b> ({pct_prod}%)</span>
+            <span style="width:10px; height:10px; background:#0f766e; border-radius:2px;"></span>
+            <span>Đang gia công: <b style="color:#0f766e;">{stats['in_prod']}</b> ({pct_prod}%)</span>
           </div>
           <div style="display:flex; align-items:center; gap:6px;">
-            <span style="width:10px; height:10px; background:#10b981; border-radius:2px;"></span>
-            <span>QC đạt: <b style="color:#10b981;">{stats['qc']}</b> ({pct_qc}%)</span>
+            <span style="width:10px; height:10px; background:#047857; border-radius:2px;"></span>
+            <span>QC đạt: <b style="color:#047857;">{stats['qc']}</b> ({pct_qc}%)</span>
           </div>
           <div style="display:flex; align-items:center; gap:6px;">
-            <span style="width:10px; height:10px; background:#3b82f6; border-radius:2px;"></span>
-            <span>Đã đóng gói: <b style="color:#3b82f6;">{stats['packed']}</b> ({pct_pack}%)</span>
+            <span style="width:10px; height:10px; background:#0f766e; border-radius:2px;"></span>
+            <span>Đã đóng gói: <b style="color:#0f766e;">{stats['packed']}</b> ({pct_pack}%)</span>
           </div>
           <div style="display:flex; align-items:center; gap:6px;">
-            <span style="width:10px; height:10px; background:#8b5cf6; border-radius:2px;"></span>
-            <span>Đã xuất xưởng: <b style="color:#8b5cf6;">{stats['deliv']}</b> ({pct_deliv}%)</span>
+            <span style="width:10px; height:10px; background:#6d28d9; border-radius:2px;"></span>
+            <span>Đã xuất xưởng: <b style="color:#6d28d9;">{stats['deliv']}</b> ({pct_deliv}%)</span>
           </div>
         </div>
       </div>
@@ -2063,7 +2072,7 @@ def render_portal_html() -> str:
     <div id="tab-excel" class="tab-pane">
 
       <!-- SPREADSHEET EDITOR CARD -->
-      <div class="card" style="border-color:var(--accent);background:linear-gradient(135deg,rgba(0,210,180,0.05) 0%,rgba(20,31,45,1) 100%);margin-bottom:20px;padding:0;">
+      <div class="card" style="border-color:var(--accent);background:linear-gradient(135deg,rgba(15,118,110,0.06) 0%,#ffffff 100%);margin-bottom:20px;padding:0;">
 
         <!-- TITLE ROW -->
         <div style="padding:12px 16px 8px;border-bottom:1px solid var(--border);">
@@ -2110,12 +2119,12 @@ def render_portal_html() -> str:
               </button>
               <div class="ss-rb-col">
                 <button class="ss-rb ss-rb-color" title="Màu chữ" onclick="document.getElementById('ss-pick-fg').click()">
-                  <svg viewBox="0 0 20 20"><text x="3" y="14" font-size="12" font-weight="700" fill="currentColor">A</text><rect x="3" y="15" width="10" height="2.5" id="ss-fgbar" fill="#e74c3c"/></svg>
-                  <input type="color" id="ss-pick-fg" value="#e74c3c" style="display:none" oninput="document.getElementById('ss-fgbar').setAttribute('fill',this.value);ssSetColor(this.value)">
+                  <svg viewBox="0 0 20 20"><text x="3" y="14" font-size="12" font-weight="700" fill="currentColor">A</text><rect x="3" y="15" width="10" height="2.5" id="ss-fgbar" fill="#b91c1c"/></svg>
+                  <input type="color" id="ss-pick-fg" value="#b91c1c" style="display:none" oninput="document.getElementById('ss-fgbar').setAttribute('fill',this.value);ssSetColor(this.value)">
                 </button>
                 <button class="ss-rb ss-rb-color" title="Màu nền ô" onclick="document.getElementById('ss-pick-bg').click()">
-                  <svg viewBox="0 0 20 20"><path d="M4 14 L10 4 L16 14 Z" fill="currentColor" opacity="0.7"/><rect x="3" y="15" width="14" height="2.5" id="ss-bgbar" fill="#f39c12"/></svg>
-                  <input type="color" id="ss-pick-bg" value="#f39c12" style="display:none" oninput="document.getElementById('ss-bgbar').setAttribute('fill',this.value);ssSetBg(this.value)">
+                  <svg viewBox="0 0 20 20"><path d="M4 14 L10 4 L16 14 Z" fill="currentColor" opacity="0.7"/><rect x="3" y="15" width="14" height="2.5" id="ss-bgbar" fill="#b45309"/></svg>
+                  <input type="color" id="ss-pick-bg" value="#b45309" style="display:none" oninput="document.getElementById('ss-bgbar').setAttribute('fill',this.value);ssSetBg(this.value)">
                 </button>
               </div>
               <button class="ss-rb ss-rb-icon" onclick="ssClearFormat()" title="Xóa định dạng">
@@ -2276,7 +2285,7 @@ def render_portal_html() -> str:
 
         <!-- FORMULA BAR -->
         <div style="display:flex;align-items:center;gap:8px;margin:0;background:var(--card-raised);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:5px 10px;">
-          <div id="ss-cell-addr" style="font-family:monospace;font-size:13px;color:var(--accent);min-width:50px;font-weight:700;text-align:center;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;">A1</div>
+          <div id="ss-cell-addr" style="font-family:monospace;font-size:13px;color:var(--accent);min-width:50px;font-weight:700;text-align:center;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;padding:2px 6px;">A1</div>
           <div style="color:var(--border);font-size:18px;line-height:1;">│</div>
           <span style="font-size:13px;color:var(--accent);font-style:italic;font-weight:700;margin-right:2px;">fx</span>
           <input id="ss-formula-bar" type="text" placeholder="Nhập giá trị hoặc công thức: =SUM(C2:C10)"
@@ -2370,16 +2379,16 @@ def render_portal_html() -> str:
 
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
           <!-- CLOUDFLARE HTTPS -->
-          <div style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(20, 31, 45, 0.6) 100%); border: 1px solid #059669; border-radius: 14px; padding: 20px;">
+          <div style="background: linear-gradient(135deg, rgba(4, 120, 87, 0.12) 0%, rgba(255, 255, 255, 0.6) 100%); border: 1px solid #047857; border-radius: 14px; padding: 20px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-              <h3 style="margin:0; font-size:16px; color:#34d399;">🌐 Cloudflare Public HTTPS</h3>
-              <span style="background:#059669; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">TOÀN CẦU + CAMERA</span>
+              <h3 style="margin:0; font-size:16px; color:#047857;">🌐 Cloudflare Public HTTPS</h3>
+              <span style="background:#047857; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">TOÀN CẦU + CAMERA</span>
             </div>
             <div style="display:flex; gap:16px; align-items:center; margin-bottom:14px;">
-              {'<div style="background:#fff; padding:8px; border-radius:10px; flex-shrink:0;"><img src="' + public_qr + '" alt="Public HTTPS QR" style="width:120px; height:120px; display:block;"></div>' if public_qr else '<div style="width:136px; height:136px; border-radius:10px; background:rgba(0,0,0,0.3); border:2px dashed #059669; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:11px; color:#34d399; text-align:center; padding:8px;">Chưa có<br>tunnel<br>Cloudflare</div>'}
+              {'<div style="background:#fff; padding:8px; border-radius:10px; flex-shrink:0;"><img src="' + public_qr + '" alt="Public HTTPS QR" style="width:120px; height:120px; display:block;"></div>' if public_qr else '<div style="width:136px; height:136px; border-radius:10px; background:rgba(15,23,42,0.05); border:2px dashed #047857; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:11px; color:#047857; text-align:center; padding:8px;">Chưa có<br>tunnel<br>Cloudflare</div>'}
               <div>
                 <p style="font-size:13px; color:var(--text-muted); margin:0 0 8px;">Quét bằng camera iPhone/Android bất kỳ. Hoạt động trên mọi mạng 4G/5G/Wi-Fi từ xa và <b>mở khóa quyền camera quét mã</b>.</p>
-                <div id="public-url-display" style="font-family:monospace; font-size:13px; color:#34d399; word-break:break-all; background:rgba(0,0,0,0.3); padding:6px 10px; border-radius:6px; margin-bottom:8px;">
+                <div id="public-url-display" style="font-family:monospace; font-size:13px; color:#047857; word-break:break-all; background:rgba(15,23,42,0.05); padding:6px 10px; border-radius:6px; margin-bottom:8px;">
                   {public_mobile_url if public_url else '⚠️ Chưa có tunnel — Chạy CHAY_WEB.bat để kích hoạt Cloudflare'}
                 </div>
               </div>
@@ -2403,7 +2412,7 @@ def render_portal_html() -> str:
               </div>
               <div>
                 <p style="font-size:13px; color:var(--text-muted); margin:0 0 8px;">Dành cho các thiết bị cùng kết nối mạng Wi-Fi tại xưởng.</p>
-                <div style="font-family:monospace; font-size:13px; color:var(--accent); word-break:break-all; background:rgba(0,0,0,0.3); padding:6px 10px; border-radius:6px; margin-bottom:8px;">
+                <div style="font-family:monospace; font-size:13px; color:var(--accent); word-break:break-all; background:rgba(15,23,42,0.05); padding:6px 10px; border-radius:6px; margin-bottom:8px;">
                   {wifi_mobile_url}
                 </div>
               </div>
@@ -2485,7 +2494,7 @@ def render_portal_html() -> str:
         const data = await res.json();
         if (!data.events) return;
         const rows = data.events.map(e => `
-          <tr style='border-bottom: 1px solid rgba(255,255,255,0.05);'>
+          <tr style='border-bottom: 1px solid rgba(15,23,42,0.05);'>
             <td style='padding: 10px 14px;'>${{(e.server_timestamp || '').slice(0,19).replace('T', ' ')}}</td>
             <td style='padding: 10px 14px;'><b>${{e.actor || ''}}</b></td>
             <td style='padding: 10px 14px;'>${{e.part_name || ''}} <small style='color:var(--text-muted);'>(${{e.tracking_code || ''}})</small></td>
@@ -2503,7 +2512,7 @@ def render_portal_html() -> str:
       const bar = document.getElementById('tunnel-status-bar');
       if (!bar) return;
       bar.style.display = 'block';
-      bar.style.background = 'rgba(0,210,180,0.08)';
+      bar.style.background = 'rgba(15,118,110,0.08)';
       bar.style.border = '1px solid var(--border)';
       bar.style.color = 'var(--text-muted)';
       bar.textContent = '🔄 Đang kiểm tra trạng thái Cloudflare tunnel...';
@@ -2512,18 +2521,18 @@ def render_portal_html() -> str:
         if (!res.ok) throw new Error('no endpoint');
         const data = await res.json();
         if (data.tunnel_url) {{
-          bar.style.background = 'rgba(16,185,129,0.1)';
-          bar.style.border = '1px solid #059669';
-          bar.style.color = '#34d399';
-          bar.innerHTML = `✅ <b>Tunnel đang hoạt động:</b> <a href="${{data.mobile_url}}" target="_blank" style="color:#34d399;">${{data.mobile_url}}</a> — Hãy tải lại trang (F5) để cập nhật QR.`;
+          bar.style.background = 'rgba(4,120,87,0.1)';
+          bar.style.border = '1px solid #047857';
+          bar.style.color = '#047857';
+          bar.innerHTML = `✅ <b>Tunnel đang hoạt động:</b> <a href="${{data.mobile_url}}" target="_blank" style="color:#047857;">${{data.mobile_url}}</a> — Hãy tải lại trang (F5) để cập nhật QR.`;
         }} else {{
-          bar.style.background = 'rgba(239,68,68,0.1)';
+          bar.style.background = 'rgba(185,28,28,0.1)';
           bar.style.border = '1px solid var(--danger)';
           bar.style.color = 'var(--danger)';
           bar.textContent = '⚠️ Chưa có Cloudflare tunnel đang chạy. Hãy chạy CHAY_WEB.bat rồi bấm nút này lại.';
         }}
       }} catch(e) {{
-        bar.style.background = 'rgba(239,68,68,0.1)';
+        bar.style.background = 'rgba(185,28,28,0.1)';
         bar.style.border = '1px solid var(--danger)';
         bar.style.color = 'var(--danger)';
         bar.textContent = '⚠️ Không thể kiểm tra tunnel. Dùng link Wi-Fi LAN bên cạnh để kết nối nội bộ.';
@@ -2778,7 +2787,7 @@ QCM\\tBẠC TRƯỢT TỰ BÔI TRƠN\\t40\\tPCS\\tĐồng Thau\\t—\\tID20xOD32
         status.innerHTML = `<span style="color:var(--success);font-weight:700;">✅ Nhận diện thành công ${{data.total_items}} chi tiết từ Excel (Tổng SL: ${{data.total_quantity}}, Khách hàng: ${{data.companies.join(', ') || 'SHL'}})</span>`;
         wrap.style.display = 'block';
         tbody.innerHTML = lastPastedItems.map(it => `
-          <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <tr style="border-bottom: 1px solid rgba(15,23,42,0.05);">
             <td style="padding: 8px 10px;">${{it.row_index}}</td>
             <td style="padding: 8px 10px;"><b>${{it.company}}</b></td>
             <td style="padding: 8px 10px;">${{it.part_name}}</td>
@@ -2887,7 +2896,7 @@ QCM\\tBẠC TRƯỢT TỰ BÔI TRƠN\\t40\\tPCS\\tĐồng Thau\\t—\\tID20xOD32
         status.innerHTML = `<span style="color:var(--success);font-weight:700;">Tìm thấy ${{data.total_items}} chi tiết hợp lệ (Tổng SL: ${{data.total_quantity}}, Khách hàng: ${{data.companies.join(', ')}})</span>`;
         wrap.style.display = 'block';
         tbody.innerHTML = (data.items || []).map(it => `
-          <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <tr style="border-bottom: 1px solid rgba(15,23,42,0.05);">
             <td style="padding: 8px 10px;">${{it.row_index}}</td>
             <td style="padding: 8px 10px;"><b>${{it.company}}</b></td>
             <td style="padding: 8px 10px;">${{it.part_name}}</td>
