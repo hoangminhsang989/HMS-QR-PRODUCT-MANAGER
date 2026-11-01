@@ -4,7 +4,7 @@ from typing import Final
 
 SYMBOLIC_ROOTS: Final = (
     "APP_INSTALL_ROOT", "APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT",
-    "SECRET_STORE", "POSTGRESQL_DATA_ROOT", "DEPLOYMENT_STAGING_ROOT", "ROLLBACK_RELEASE_ROOT",
+    "SECRET_STORE", "DEPLOYMENT_STAGING_ROOT", "ROLLBACK_RELEASE_ROOT",
 )
 
 @dataclass(frozen=True)
@@ -24,7 +24,6 @@ ROOT_SPECS = {
     "APP_LOG_ROOT": RootSpec("APP_LOG_ROOT", "rotated service logs", True, "service", "read/write", "logs", "bounded retention", "preserve evidence"),
     "LOCAL_INGEST_ROOT": RootSpec("LOCAL_INGEST_ROOT", "durable local-first files", True, "service", "read/write", "ingest", "never on release removal", "preserve"),
     "SECRET_STORE": RootSpec("SECRET_STORE", "service-private secret references", True, "service identity", "read/write by authorized rotation", "secrets", "never automatically", "preserve"),
-    "POSTGRESQL_DATA_ROOT": RootSpec("POSTGRESQL_DATA_ROOT", "PostgreSQL persistent data", True, "postgresql", "database-owned", "database", "never by app removal", "operator recovery"),
     "DEPLOYMENT_STAGING_ROOT": RootSpec("DEPLOYMENT_STAGING_ROOT", "hash-verified temporary staging", False, "operator", "read/write", "staging", "purge after acceptance", "discard"),
     "ROLLBACK_RELEASE_ROOT": RootSpec("ROLLBACK_RELEASE_ROOT", "retained known-good release", True, "operator/service", "read", "release", "retain previous", "activate previous"),
 }

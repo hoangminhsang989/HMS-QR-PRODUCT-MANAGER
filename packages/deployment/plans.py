@@ -1,4 +1,4 @@
-"""Versioned deployment, service, database, firewall, and TLS plan schemas."""
+"""Versioned deployment, service, network, firewall, and TLS plan schemas."""
 from __future__ import annotations
 from dataclasses import dataclass, asdict
 import hashlib, json
@@ -34,22 +34,6 @@ class ServiceConfig:
     restart_policy: ServiceRestartPolicy = ServiceRestartPolicy()
 
 @dataclass(frozen=True)
-class PostgreSQLPlan:
-    decision: str
-    major: int = 17
-    service_identity_ref: str = "ref:postgresql-service"
-    data_root: str = "POSTGRESQL_DATA_ROOT"
-    bind_policy: str = "LOOPBACK_ONLY"
-    port: int = 0
-    pg_hba_policy: str = "LOCAL_APPLICATION_ONLY"
-    database: str = "<resolved-database>"
-    application_role: str = "<resolved-application-role>"
-    secret_ref: str = "ref:service/database"
-    engine_migration_head: str = "7"
-    backup_required: bool = True
-    readiness_commands: tuple[str, ...] = ("database-connectivity-probe", "engine-migration-current")
-
-@dataclass(frozen=True)
 class FirewallPlan:
     pre_state_hash: str
     rule_id: str
@@ -74,7 +58,6 @@ class NetworkPlan:
     allowed_lan_scope: str
     firewall: FirewallPlan
     tls: TLSPlan
-    postgresql_local_only: bool = True
 
 @dataclass(frozen=True)
 class DeploymentPlan:
@@ -86,7 +69,6 @@ class DeploymentPlan:
     service_wrapper: str
     service_identity_ref: str
     service_name: str
-    postgresql: PostgreSQLPlan
     network: NetworkPlan
     secret_store_ref: str
     backup_prerequisite: bool
@@ -101,15 +83,8 @@ def validate_plan(plan: DeploymentPlan, inventory: dict[str, Any], manifest: dic
     if plan.schema != PLAN_SCHEMA: raise ValueError("unsupported deployment plan schema")
     if plan.inventory_sha256 != inventory_identity(inventory): raise ValueError("deployment plan inventory binding mismatch")
     if plan.release_id != manifest.get("release_id") or plan.release_git_head != manifest.get("git_head"): raise ValueError("deployment plan release binding mismatch")
-    if plan.postgresql.major != 17 or not plan.postgresql.bind_policy.startswith("LOOPBACK"): raise ValueError("PostgreSQL production policy mismatch")
-    if not plan.network.postgresql_local_only or plan.network.port <= 0: raise ValueError("network decision unresolved")
+    if not plan.network.port or plan.network.port <= 0: raise ValueError("network decision unresolved")
     if not plan.secret_store_ref.startswith("ref:") or not plan.service_identity_ref.startswith("ref:"): raise ValueError("secret/service reference unresolved")
-
-def postgresql_existing_decision(state: str, *, discovered_major: int | None = None, compatible_major: int = 17, unambiguous: bool = True) -> str:
-    if state == "ABSENT": return "INSTALL"
-    if state == "COMPATIBLE_CANDIDATE" and discovered_major == compatible_major and unambiguous: return "ADOPT"
-    if state == "INCOMPATIBLE" and discovered_major is not None: return "SIDE_BY_SIDE"
-    return "BLOCK"
 
 def service_config_template() -> dict[str, Any]:
     cfg = ServiceConfig(); d = asdict(cfg); d["restart_policy"] = asdict(cfg.restart_policy); return d

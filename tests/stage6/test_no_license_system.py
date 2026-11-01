@@ -150,17 +150,21 @@ class TestSchema:
     def test_the_deployment_default_head_matches_the_real_head(self):
         """A default that drifts from reality rejects every release, silently.
 
-        Migration 0008 was added for license/payments without updating either
-        default, so the real head became 8 while both stayed at "7" - every
-        release built with the defaults failed its own readiness check and no
+        Migration 0008 was added for license/payments without updating the
+        default, so the real head became 8 while it stayed at "7" - every
+        release built with the default failed its own readiness check and no
         test compared the two. Removing 0008 makes them agree again.
+
+        This used to compare a second default in ``plans.py``, carried by
+        ``PostgreSQLPlan.engine_migration_head``. That class is gone with the
+        rest of the PostgreSQL deployment plan (ADR-015), so there is now one
+        default to keep honest rather than two - which is the same failure mode
+        with half the surface.
         """
 
-        import dataclasses
         import inspect
 
         from packages.deployment.artifact import build_release
-        from packages.deployment.plans import PostgreSQLPlan
         from packages.sqlengine.migrations import load_migration_modules
 
         migrations = load_migration_modules(SOURCE_ROOT / "migrations" / "engine")
@@ -169,17 +173,9 @@ class TestSchema:
         artifact_default = inspect.signature(build_release).parameters[
             "expected_engine_migration_head"
         ].default
-        plan_default = next(
-            field.default
-            for field in dataclasses.fields(PostgreSQLPlan)
-            if field.name == "engine_migration_head"
-        )
 
         assert artifact_default == real_head, (
             f"artifact.py defaults to head {artifact_default}, real head is {real_head}"
-        )
-        assert plan_default == real_head, (
-            f"plans.py defaults to head {plan_default}, real head is {real_head}"
         )
 
 

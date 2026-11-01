@@ -13,7 +13,7 @@ from packages.deployment.evidence import make_evidence, redact
 from packages.deployment.inventory import InventoryValidationError, ReadOnlyInventoryCollector, validate_inventory
 from packages.deployment.layout import ROOT_SPECS, validate_layout
 from packages.deployment.lifecycle import LocalDeploymentBackend, install_release, rollback_release, uninstall, update_release
-from packages.deployment.plans import DeploymentPlan, FirewallPlan, NetworkPlan, PostgreSQLPlan, ServiceRestartPolicy, TLSPlan, inventory_identity, postgresql_existing_decision
+from packages.deployment.plans import DeploymentPlan, FirewallPlan, NetworkPlan, ServiceRestartPolicy, TLSPlan, inventory_identity
 from packages.deployment.preflight import PreflightResult, dry_run, run_preflight
 from packages.deployment.mutation import Mutation, MutationManifest
 
@@ -37,12 +37,11 @@ def _valid_plan(inventory, manifest):
     firewall = FirewallPlan("synthetic-prestate-hash", "hms-rule", "accepted-lan-scope")
     tls = TLSPlan("REVERSE_PROXY", "approved-source", "ref:tls/cert", "ref:service-identity", "api-listener", "operator-rotation")
     network = NetworkPlan("selected-interface", "inventory-selected-interface", 8080, "accepted-lan-scope", firewall, tls)
-    pg = PostgreSQLPlan("INSTALL")
     roots = {name: f"resolved/{name.lower()}" for name in ROOT_SPECS}
-    return DeploymentPlan(inventory_identity(inventory), manifest["release_id"], manifest["git_head"], roots, "project-owned-runtime", "approved-wrapper", "ref:service-identity", "hms-qr-service", pg, network, "ref:service-private", True, ("activate-previous-release",), ({"id": "m1"},), "ADMIN_REQUIRED_LATER", "NOT_EXPECTED", 1000)
+    return DeploymentPlan(inventory_identity(inventory), manifest["release_id"], manifest["git_head"], roots, "project-owned-runtime", "approved-wrapper", "ref:service-identity", "hms-qr-service", network, "ref:service-private", True, ("activate-previous-release",), ({"id": "m1"},), "ADMIN_REQUIRED_LATER", "NOT_EXPECTED", 1000)
 
 def test_layout_and_restart_are_bounded():
-    validate_layout(); assert len(ROOT_SPECS) == 8
+    validate_layout(); assert len(ROOT_SPECS) == 7
     assert ServiceRestartPolicy().max_rapid_failures > 0
 
 def test_artifact_build_verify_and_tamper(tmp_path):
@@ -355,13 +354,6 @@ def test_inventory_synthetic_fixture_matrix_is_schema_safe():
         doc[case["section"]] = {k: v for k, v in case.items() if k not in {"name", "section"}}
         assert validate_inventory(doc)
 
-def test_existing_postgres_decisions():
-    assert postgresql_existing_decision("ABSENT") == "INSTALL"
-    assert postgresql_existing_decision("COMPATIBLE_CANDIDATE", discovered_major=17) == "ADOPT"
-    assert postgresql_existing_decision("COMPATIBLE_CANDIDATE", discovered_major=16) == "BLOCK"
-    assert postgresql_existing_decision("INCOMPATIBLE", discovered_major=16) == "SIDE_BY_SIDE"
-    assert postgresql_existing_decision("AMBIGUOUS") == "BLOCK"
-
 def test_inventory_cross_field_contradiction_rejected():
     doc = ReadOnlyInventoryCollector().collect(); doc["listeners"] = {"state": "NOT_PRESENT", "items": ["synthetic"]}
     with pytest.raises(InventoryValidationError): validate_inventory(doc)
@@ -381,7 +373,7 @@ def test_preflight_negative_matrix_fails_closed(tmp_path):
     inv = deepcopy(base); inv["listeners"]["items"] = [{"port": 8080}]; cases.append((inv, None))
     inv = deepcopy(base); inv["volumes"]["items"][0]["filesystem"] = ""; cases.append((inv, None))
     inv = deepcopy(base); inv["services"]["items"] = [{"name": "hms-qr-service"}]; cases.append((inv, None))
-    cases += [(base, replace(base_plan, postgresql=replace(base_plan.postgresql, decision="BLOCK"))), (base, replace(base_plan, python_runtime="<unresolved>")), (base, replace(base_plan, secret_store_ref="unresolved")), (base, replace(base_plan, backup_prerequisite=False)), (base, replace(base_plan, network=replace(base_plan.network, tls=replace(base_plan.network.tls, certificate_ref="unresolved")))), (base, replace(base_plan, rollback_actions=()))]
+    cases += [(base, replace(base_plan, python_runtime="<unresolved>")), (base, replace(base_plan, secret_store_ref="unresolved")), (base, replace(base_plan, backup_prerequisite=False)), (base, replace(base_plan, network=replace(base_plan.network, tls=replace(base_plan.network.tls, certificate_ref="unresolved")))), (base, replace(base_plan, rollback_actions=()))]
     for inventory, explicit_plan in cases:
         plan = explicit_plan or replace(base_plan, inventory_sha256=inventory_identity(inventory))
         result = run_preflight(str(artifact), _valid_config(), inventory, plan)
@@ -408,11 +400,11 @@ def test_install_update_activation_and_rollback_transactions(tmp_path):
 
 def test_uninstall_preserves_persistent_data(tmp_path):
     b = LocalDeploymentBackend(tmp_path)
-    for name in ("APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT", "SECRET_STORE", "POSTGRESQL_DATA_ROOT"):
+    for name in ("APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT", "SECRET_STORE"):
         b.path(name).joinpath("marker").write_text(name)
     b.path("APP_INSTALL_ROOT").joinpath("release").mkdir()
     uninstall(b)
-    assert all((b.path(n) / "marker").exists() for n in ("APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT", "SECRET_STORE", "POSTGRESQL_DATA_ROOT"))
+    assert all((b.path(n) / "marker").exists() for n in ("APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT", "SECRET_STORE"))
 
 def test_evidence_redacts_markers():
     doc = make_evidence(authority="test", wp="WP1A", timestamp="now", baseline={}, target_machine_inventory_hash="synthetic-hash", release_identity={}, pre_state={}, planned_mutations=[], executed_mutations=[], post_state={}, verification={}, rollback_events=[], service_state={}, database_state={}, network_state={}, secret_scan_result="PASS", verdict="DRY_RUN", secret_value="UNIQUE-MARKER", note="postgresql://user:pass@host/db")

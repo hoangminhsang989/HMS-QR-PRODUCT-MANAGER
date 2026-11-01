@@ -42,12 +42,11 @@ def run_preflight(artifact: str, config: dict[str, Any], inventory: dict[str, An
         if any(int(v.get("port", -1)) == plan.network.port for v in listeners): raise ValueError("API port occupied")
         services = _items(inventory.get("services"))
         if any(str(v.get("name", "")).casefold() == plan.service_name.casefold() for v in services): raise ValueError("service name collision")
-        if plan.postgresql.decision not in {"INSTALL", "ADOPT", "SIDE_BY_SIDE"}: raise ValueError("PostgreSQL decision unavailable")
         if not plan.python_runtime or plan.python_runtime.startswith("<"): raise ValueError("runtime unresolved")
         if not plan.network.tls.termination or not plan.network.tls.certificate_ref.startswith("ref:"): raise ValueError("TLS decision missing")
         if not plan.network.firewall.pre_state_hash or not plan.network.firewall.rule_id: raise ValueError("firewall plan incomplete")
         if not plan.backup_prerequisite or not plan.rollback_actions: raise ValueError("rollback prerequisite missing")
-        if set(plan.resolved_roots) != {"APP_INSTALL_ROOT", "APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT", "SECRET_STORE", "POSTGRESQL_DATA_ROOT", "DEPLOYMENT_STAGING_ROOT", "ROLLBACK_RELEASE_ROOT"}: raise ValueError("resolved roots incomplete")
+        if set(plan.resolved_roots) != {"APP_INSTALL_ROOT", "APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT", "SECRET_STORE", "DEPLOYMENT_STAGING_ROOT", "ROLLBACK_RELEASE_ROOT"}: raise ValueError("resolved roots incomplete")
     check("machine_policy", policy_checks)
     checks["mutation"] = "ZERO"
     return PreflightResult(not errors, checks, errors, 0)

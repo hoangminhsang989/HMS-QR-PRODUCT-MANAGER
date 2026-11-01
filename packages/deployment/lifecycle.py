@@ -7,7 +7,7 @@ from config.paths import require_test_root
 from .artifact import verify_release
 from .preflight import PreflightResult
 
-PERSISTENT_ROOTS = ("APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT", "SECRET_STORE", "POSTGRESQL_DATA_ROOT")
+PERSISTENT_ROOTS = ("APP_DATA_ROOT", "APP_LOG_ROOT", "LOCAL_INGEST_ROOT", "SECRET_STORE")
 
 @dataclass
 class LocalDeploymentBackend:
