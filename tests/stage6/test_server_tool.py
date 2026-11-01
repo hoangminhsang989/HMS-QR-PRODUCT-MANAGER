@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -221,6 +222,26 @@ def test_the_real_release_wheel_set_covers_everything_it_installs():
         pytest.skip("the offline wheels are gitignored, so a clone carries none of them")
 
     assert production_setup_requirements(source) == []
+
+
+SETUP_LAUNCHER = SOURCE_ROOT / "THIET_LAP_SERVER_1_CLICK.bat"
+
+
+def test_the_runtime_guard_checks_everything_the_launcher_installs():
+    """A guard that checks less than the install command installs lets a release through.
+
+    ``production_setup_requirements`` names the distributions a release must
+    cover. If the one-click launcher gains a package the guard does not know
+    about, the Tool's step-1 preflight passes on a release whose wheel set is
+    missing it - the operator is told the release is complete, and only pip
+    failing later says otherwise.
+    """
+    launcher = SETUP_LAUNCHER.read_text(encoding="utf-8")
+    match = re.search(r'-r\s+"[^"]*requirements\.txt"\s+(.+)$', launcher, re.MULTILINE)
+    assert match, "could not find the offline pip install line in THIET_LAP_SERVER_1_CLICK.bat"
+    installed = {name.lower() for name in match.group(1).split()}
+
+    assert {name.lower() for name in server_tool.OFFLINE_INSTALL_ARGUMENTS} == installed
 
 
 def test_production_database_url_defaults_to_standalone_sqlite(tmp_path):
