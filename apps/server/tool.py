@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import ipaddress
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -233,9 +234,52 @@ def production_setup_requirements(source_root: Path | None = None) -> list[str]:
     missing: list[str] = []
     if not list((source / "installer" / "python").glob("*.exe")):
         missing.append("Python offline installer")
-    if not list((source / "installer" / "wheels").glob("*.whl")):
+    wheels = list((source / "installer" / "wheels").glob("*.whl"))
+    if not wheels:
         missing.append("Python offline wheels")
+        return missing
+    missing.extend(
+        f"Python offline wheel for {name}"
+        for name in _uncovered_offline_distributions(source, wheels)
+    )
     return missing
+
+
+# The offline install command installs requirements.txt plus these bare
+# arguments. A release wheel set has to cover all of them.
+OFFLINE_INSTALL_ARGUMENTS = ("PySide6",)
+
+
+def _distribution_name(wheel_name: str) -> str:
+    """The distribution a wheel filename declares, PEP 503-normalised."""
+    return re.sub(r"[-_.]+", "-", wheel_name.split("-", 1)[0]).lower()
+
+
+def _uncovered_offline_distributions(source: Path, wheels: list[Path]) -> list[str]:
+    """Distributions the offline install asks for that no wheel provides.
+
+    Asking only whether some ``*.whl`` exists let a release ship without
+    ``httpx`` - a requirements.txt entry that
+    ``packages/hms_license/client.py`` imports - and the offline install then
+    died on ``ERROR: No matching distribution found for httpx>=0.27.0``. The
+    operator had already been told the release was complete.
+    """
+    requirements = source / "requirements.txt"
+    if not requirements.is_file():
+        return []
+
+    wanted = []
+    for line in requirements.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = re.match(r"^([A-Za-z0-9._-]+)", stripped)
+        if match:
+            wanted.append(re.sub(r"[-_.]+", "-", match.group(1)).lower())
+    wanted.extend(name.lower() for name in OFFLINE_INSTALL_ARGUMENTS)
+
+    available = {_distribution_name(wheel.name) for wheel in wheels}
+    return [name for name in wanted if name not in available]
 
 
 def current_user_autostart_command(source_root: Path | None = None) -> list[str]:

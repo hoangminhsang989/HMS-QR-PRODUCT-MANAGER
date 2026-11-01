@@ -12,6 +12,9 @@ from apps.server.tool import AUTO_START_TASK_NAME, ENGINE_BACKUP_SUFFIX, MAX_ACT
 from packages.sqlengine import connect
 
 
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
+
+
 def test_direct_module_launch_requests_admin_and_does_not_start_window_when_not_elevated(monkeypatch):
     launch = Mock(return_value=True)
     monkeypatch.setattr(server_tool, "is_running_as_admin", lambda: False)
@@ -185,6 +188,41 @@ def test_production_setup_requires_bundled_python_and_wheels_only(tmp_path):
     assert missing == ["Python offline installer", "Python offline wheels"]
 
 
+def test_production_setup_names_the_distributions_the_wheels_do_not_cover(tmp_path):
+    """'At least one *.whl exists' is not a release check.
+
+    A set that ships without httpx passes that glob - httpx is a
+    requirements.txt entry that packages/hms_license/client.py imports - and the
+    offline install then dies on 'No matching distribution found for httpx'. The
+    operator has already been told the release is complete by then, so the gap
+    has to be named here instead.
+    """
+    source = tmp_path / "release"
+    (source / "installer" / "python").mkdir(parents=True)
+    wheels = source / "installer" / "wheels"
+    wheels.mkdir()
+    (source / "requirements.txt").write_text(
+        (SOURCE_ROOT / "requirements.txt").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    # Two wheels that satisfy nothing requirements.txt asks for.
+    for name in ("click-8.5.0-py3-none-any.whl", "pyside6-6.11.2-cp310-abi3-win_amd64.whl"):
+        (wheels / name).write_bytes(b"")
+
+    missing = production_setup_requirements(source)
+
+    assert "Python offline wheels" not in missing
+    assert any("httpx" in entry for entry in missing), missing
+    assert any("fastapi" in entry for entry in missing), missing
+
+
+def test_the_real_release_wheel_set_covers_everything_it_installs():
+    source = SOURCE_ROOT
+    if not list((source / "installer" / "wheels").glob("*.whl")):
+        pytest.skip("the offline wheels are gitignored, so a clone carries none of them")
+
+    assert production_setup_requirements(source) == []
+
+
 def test_production_database_url_defaults_to_standalone_sqlite(tmp_path):
     secrets = tmp_path / "server-tool-secrets.json"
     assert production_database_file(tmp_path) == tmp_path / "database" / "hms_qr.sqlite"
@@ -198,7 +236,6 @@ def test_autostart_command_does_not_contain_secrets(tmp_path):
     assert "password" not in " ".join(autostart).lower()
 def _seed_engine_database(database: Path) -> Path:
     """Create the engine directory that backs ``database`` and return it."""
-
     from packages.sqlengine import connect
 
     engine_dir = engine_dir_for(database)
