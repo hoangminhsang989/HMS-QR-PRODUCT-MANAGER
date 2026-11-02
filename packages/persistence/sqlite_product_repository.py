@@ -37,19 +37,35 @@ _TABLES = (
         product_code TEXT NOT NULL UNIQUE,
         company TEXT NOT NULL,
         part_name TEXT NOT NULL,
-        quantity TEXT NOT NULL,
+        quantity NUMERIC(18,4) NOT NULL,
         unit TEXT NOT NULL,
         material TEXT, requester TEXT, surface_treatment TEXT,
-        outsourced INTEGER NOT NULL,
-        size TEXT, notes TEXT, delivery_schedule TEXT,
+        outsourced BOOLEAN NOT NULL,
+        size TEXT, notes TEXT, delivery_schedule DATE,
         status TEXT NOT NULL,
-        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        created_by TEXT NOT NULL, updated_by TEXT NOT NULL
+        created_at DATETIME, updated_at DATETIME,
+        created_by TEXT, updated_by TEXT
     )
     """,
 )
 
 _INDEXES = ()
+
+
+def _as_date(value: object) -> date | None:
+    """A DATE column reads back as a ``date``; accept an ISO string too."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
+
+
+def _as_datetime(value: object) -> datetime:
+    """A DATETIME column reads back as a ``datetime``; accept an ISO string too."""
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
 
 
 class SQLiteProductRepository(ProductRepository):
@@ -179,10 +195,15 @@ class SQLiteProductRepository(ProductRepository):
 
     @staticmethod
     def _product(row: dict) -> Product:
+        # The engine returns a native type for a typed column, so a value this
+        # repository wrote as a string comes back as a Decimal, a bool or a
+        # date. Both shapes are accepted: the column types match the migrations
+        # (see tests/stage1/test_repository_schema_parity.py), which is what
+        # makes the native shape possible.
         return Product(UUID(row["internal_id"]), row["product_code"], row["company"], row["part_name"],
                        Decimal(row["quantity"]), row["unit"], row["material"], row["requester"],
                         row["surface_treatment"], bool(row["outsourced"]), row["size"], row["notes"],
-                        date.fromisoformat(row["delivery_schedule"]) if row["delivery_schedule"] else None,
-                        ProductStatus(row["status"]), datetime.fromisoformat(row["created_at"]),
-                        datetime.fromisoformat(row["updated_at"]), row["created_by"], row["updated_by"],
+                        _as_date(row["delivery_schedule"]),
+                        ProductStatus(row["status"]), _as_datetime(row["created_at"]),
+                        _as_datetime(row["updated_at"]), row["created_by"], row["updated_by"],
                         row["outsourced_company"])
