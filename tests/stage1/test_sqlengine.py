@@ -330,6 +330,52 @@ class TestTypes:
             insert(database, "not-a-number", "a")
         assert excinfo.value.constraint == "type"
 
+    def test_numeric_precision_overflow_is_a_type_error(self, database):
+        """A value too wide for NUMERIC(18,4) must fail like every other bad value.
+
+        Two defects met here. ``NumericType._coerce`` wrapped its ``Decimal``
+        construction in try/except but left ``number.quantize(quantum)``
+        outside it, so a precision overflow raised ``decimal.InvalidOperation``
+        instead of ``ValueError``; ``Table.coerce_row`` catches only
+        ``ValueError``, so the raw decimal exception escaped the engine - it is
+        neither a ``ValueError`` nor an ``EngineError``, and nothing holding the
+        engine's error contract could catch it.
+
+        NUMERIC(18,4) means 18 digits in total, scale 4, so 14 integer digits is
+        the widest allowed and 15 is not. Both sides are checked so a fix that
+        merely catches the exception without honouring the declared width cannot
+        pass.
+        """
+
+        with pytest.raises(IntegrityError) as excinfo:
+            insert(database, 1, "too-wide", "1" * 15)
+        assert excinfo.value.constraint == "type"
+
+        insert(database, 2, "widest-allowed", "1" * 14)
+        assert database.query("SELECT price FROM items WHERE id = 2")[0]["price"] == Decimal(
+            "1" * 14 + ".0000"
+        )
+
+    def test_numeric_declared_precision_is_enforced(self, database):
+        """NUMERIC(18,4) rejects 24 integer digits, which it used to accept.
+
+        The declared precision was never checked at all: a value was stored as
+        long as ``quantize`` succeeded under the ambient decimal context (28
+        digits), so a 24-digit integer landed in a column the schema declared as
+        18 digits wide. ``test_sqlengine_schema_parity.py`` pins the type name
+        ``NUMERIC(18,4)``, so that declaration is part of the frozen contract.
+        """
+
+        for digits in (15, 19, 24):
+            with pytest.raises(IntegrityError) as excinfo:
+                insert(database, digits, f"digits-{digits}", "1" * digits)
+            assert excinfo.value.constraint == "type"
+
+        insert(database, 99, "fits", "1234.5678")
+        assert database.query("SELECT price FROM items WHERE id = 99")[0]["price"] == Decimal(
+            "1234.5678"
+        )
+
 
 class TestTransactions:
     def test_commit_persists(self, tmp_path: Path):

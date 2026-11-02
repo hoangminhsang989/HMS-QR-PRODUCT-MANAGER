@@ -109,7 +109,26 @@ class NumericType(ColumnType):
         if not number.is_finite():
             raise ValueError(f"Column '{column}' expects a finite number")
         quantum = Decimal(1).scaleb(-self.scale)
-        return number.quantize(quantum)
+        try:
+            result = number.quantize(quantum)
+        except ArithmeticError:
+            # quantize raises decimal.InvalidOperation when the result needs
+            # more digits than the ambient context allows. Table.coerce_row
+            # catches only ValueError to turn a bad value into
+            # IntegrityError(constraint="type"), so a raw decimal exception
+            # would escape the engine's error contract entirely - it is neither
+            # a ValueError nor an EngineError, and nothing holding that contract
+            # could catch it.
+            result = None
+        if result is None or result.adjusted() + 1 + self.scale > self.precision:
+            # The declared precision was never checked: NUMERIC(18,4) accepted
+            # 24 integer digits, bounded only by the ambient decimal context
+            # (28), so the schema said one thing and the engine did another.
+            raise ValueError(
+                f"Column '{column}' expects a number with at most {self.precision} "
+                f"digits and {self.scale} decimal places"
+            )
+        return result
 
     def serialize(self, value):
         return None if value is None else format(value, "f")
