@@ -71,6 +71,32 @@ class TestParser:
         with pytest.raises(SyntaxError_):
             database.query("SELECT * FROM items WHERE name = 'abc")
 
+    def test_malformed_number_literal_is_a_syntax_error(self, database):
+        """A number the tokenizer accepted but Decimal rejects must not escape.
+
+        ``tokenize`` consumes any run of digits plus ``.eE+-`` as one number
+        token, so ``1.2.3``, ``1e`` and ``1..2`` each become a single number.
+        ``_number`` hands that text straight to ``Decimal``, which raises
+        ``decimal.InvalidOperation`` - not a ``ValueError``, not an
+        ``EngineError`` - so a caller holding the engine's error contract cannot
+        catch it.
+
+        Every other malformed token raises ``SyntaxError_`` with a position: an
+        unterminated string, an unterminated quoted identifier, a stray ``!``.
+        This is the one path that does not. The positions that fail are the ones
+        where the literal is actually converted - a WHERE predicate and a VALUES
+        list - because a malformed number in a SELECT column list is rejected by
+        an earlier check for an unrelated reason.
+        """
+
+        for sql in (
+            "SELECT * FROM items WHERE id = 1.2.3",
+            "INSERT INTO items (id, name) VALUES (1e, 'x')",
+            "SELECT * FROM items WHERE id = 1..2",
+        ):
+            with pytest.raises(SyntaxError_):
+                database.query(sql)
+
 
 class TestPredicates:
     def test_comparison_operators(self, database):

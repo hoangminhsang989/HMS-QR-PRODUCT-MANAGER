@@ -683,9 +683,17 @@ class Parser:
 
 
 def _number(text: str):
-    if any(char in text for char in ".eE"):
-        return Decimal(text)
-    return int(text)
+    try:
+        if any(char in text for char in ".eE"):
+            return Decimal(text)
+        return int(text)
+    except (ArithmeticError, ValueError):
+        # tokenize() accepts any run of digits plus ".eE+-" as one number, so
+        # "1.2.3", "1e" and "1..2" each arrive here as a single token. Decimal
+        # rejects them with decimal.InvalidOperation, which is neither a
+        # ValueError nor an EngineError, so it would escape the parser instead
+        # of surfacing as the SyntaxError_ every other malformed token raises.
+        raise SyntaxError_(f"Malformed number literal {text!r}") from None
 
 
 def parse(sql: str):
