@@ -122,8 +122,9 @@ Sau khi có artifact, inventory, kế hoạch và quyền riêng cho từng work
 - Cấu hình service wrapper với runtime, identity, config và log path đã được
   inventory/review phê duyệt. Restart phải có backoff hữu hạn và trạng thái lỗi
   cần operator xử lý.
-- PostgreSQL phải là major 17, local-only, role ứng dụng least-privilege và
-  Alembic là authority. Không tự động downgrade database khi rollback ứng dụng.
+- Database là SQLite do engine nhúng (`packages/sqlengine`) tạo và migrate
+  in-process; không có database server riêng, không có Alembic. Không tự động
+  downgrade database khi rollback ứng dụng.
 - TLS/firewall chỉ được thực hiện trong work package được ủy quyền; private key
   chỉ được tham chiếu qua secret store.
 - Health/readiness phải chứng minh process, database và local storage; archive có
@@ -142,7 +143,7 @@ Update là stage → verify → preflight → activate → readiness → retain 
 Rollback chỉ đổi application release khi schema tương thích; phục hồi database
 là hành động operator riêng có backup/evidence. Gỡ bỏ mặc định chỉ xóa release
 immutable và giữ `APP_DATA_ROOT`, `APP_LOG_ROOT`, `LOCAL_INGEST_ROOT`,
-`SECRET_STORE`, `POSTGRESQL_DATA_ROOT`.
+`SECRET_STORE`.
 
 ## Evidence và secret
 
