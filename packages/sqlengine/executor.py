@@ -213,7 +213,7 @@ class Executor:
             candidate.update(assignments)
             candidate = table.coerce_row(candidate, applying_defaults=False)
             table.check_unique(
-                candidate, ignore_key=table.key_of(row), existing=rows
+                candidate, ignore_key=table.key_of(row), existing=rows, skip_row=row
             )
             table.check_foreign_keys(candidate, self.schema)
             row.clear()

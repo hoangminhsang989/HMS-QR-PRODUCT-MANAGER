@@ -315,6 +315,42 @@ class TestUpdateDelete:
         db.execute("UPDATE codes SET code = ? WHERE id = ?", ["A", 1])
         assert db.query("SELECT code FROM codes") == [{"code": "A"}]
 
+    def test_update_on_a_table_without_a_primary_key_is_not_a_self_conflict(self, tmp_path: Path):
+        """A table whose only uniqueness is a UNIQUE column must accept an UPDATE.
+
+        ``check_unique`` computes ``skip`` as
+        ``ignore_key if (ignore_key is not None and self.primary_key) else None``,
+        so the row being updated is excluded only when the table has a primary
+        key. Without one, ``skip`` stays ``None`` and the conflict scan includes
+        the row itself, so an UPDATE that leaves the unique column at its current
+        value - or changes only some other column - violates a constraint it
+        already satisfies.
+
+        ``test_update_same_value_is_not_a_conflict`` above covers the same
+        behaviour against a table with ``id INTEGER PRIMARY KEY``. That is why
+        this survived: every table in migrations/engine has a primary key, so the
+        path is unreachable in production today. It is reachable through the
+        public SQL interface for any table created without one, which the parser
+        accepts without complaint.
+        """
+
+        db = connect(tmp_path / "nopk")
+        try:
+            db.execute("CREATE TABLE tags (label TEXT UNIQUE, note TEXT)")
+            db.execute("INSERT INTO tags (label, note) VALUES (?, ?)", ["alpha", "first"])
+
+            db.execute("UPDATE tags SET note = ? WHERE label = ?", ["second", "alpha"])
+            assert db.query("SELECT note FROM tags") == [{"note": "second"}]
+
+            db.execute("UPDATE tags SET label = ? WHERE label = ?", ["alpha", "alpha"])
+            assert db.query("SELECT label FROM tags") == [{"label": "alpha"}]
+
+            with pytest.raises(IntegrityError) as excinfo:
+                db.execute("INSERT INTO tags (label, note) VALUES (?, ?)", ["alpha", "x"])
+            assert excinfo.value.constraint == "unique"
+        finally:
+            db.close()
+
     def test_delete_where(self, database):
         insert(database, 1, "a")
         insert(database, 2, "b")

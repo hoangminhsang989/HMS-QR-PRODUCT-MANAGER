@@ -113,10 +113,25 @@ class Table:
             )
         return coerced
 
-    def check_unique(self, row: dict, *, ignore_key: tuple | None, existing: list[dict]) -> None:
-        """Raise when ``row`` breaks a single-column unique or primary key."""
+    def check_unique(self, row: dict, *, ignore_key: tuple | None, existing: list[dict], skip_row: dict | None = None) -> None:
+        """Raise when ``row`` breaks a single-column unique or primary key.
+
+        ``skip_row`` is the row an UPDATE is replacing, excluded by identity.
+        The key-based ``ignore_key`` cannot do this job on a table without a
+        primary key: ``key_of`` returns ``()`` for every row there, so matching
+        on it would either skip nothing or skip everything. Without the identity
+        check the row conflicts with itself, and an UPDATE that leaves a unique
+        column at its current value - or changes only another column - fails a
+        constraint it already satisfies.
+        """
 
         skip = ignore_key if (ignore_key is not None and self.primary_key) else None
+
+        def excluded(other: dict) -> bool:
+            if other is skip_row:
+                return True
+            return skip is not None and self.key_of(other) == skip
+
         for column in self.columns:
             if not (column.unique or column.primary_key):
                 continue
@@ -124,7 +139,7 @@ class Table:
             if value is None:
                 continue
             for other in existing:
-                if skip is not None and self.key_of(other) == skip:
+                if excluded(other):
                     continue
                 if other.get(column.name) == value:
                     label = "primary key" if column.primary_key else "unique"
@@ -137,7 +152,7 @@ class Table:
             marker = tuple(row.get(name) for name in self.primary_key)
             if not any(value is None for value in marker):
                 for other in existing:
-                    if skip is not None and self.key_of(other) == skip:
+                    if excluded(other):
                         continue
                     if tuple(other.get(name) for name in self.primary_key) == marker:
                         raise IntegrityError(
@@ -151,7 +166,7 @@ class Table:
             if any(value is None for value in values):
                 continue
             for other in existing:
-                if skip is not None and self.key_of(other) == skip:
+                if excluded(other):
                     continue
                 if tuple(other.get(name) for name in constraint) == values:
                     raise IntegrityError(
