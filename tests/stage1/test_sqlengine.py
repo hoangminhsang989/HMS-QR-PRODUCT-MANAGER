@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from packages.sqlengine import connect
-from packages.sqlengine.errors import IntegrityError, SyntaxError_
+from packages.sqlengine.errors import EngineError, IntegrityError, SyntaxError_
 from packages.sqlengine.migrations import applied_versions, run_migrations
 
 DDL = """
@@ -787,3 +787,85 @@ class TestMigrations:
             run_migrations(db, [(1, "broken", broken)], now=lambda: "now")
         assert not db.schema.has_table("half")
         assert applied_versions(db) == set()
+
+
+class TestErrorContract:
+    """errors.py promises every failure is secret-free and deterministic.
+
+    Two escapes were found and fixed against exactly this promise:
+
+    - ``NumericType._coerce`` left ``number.quantize()`` outside its try, so a
+      NUMERIC precision overflow raised ``decimal.InvalidOperation``.
+    - ``_number()`` handed tokenizer-accepted text straight to ``Decimal()``, so
+      ``1.2.3`` and ``1e`` raised the same exception from the parser.
+
+    Neither is a ``ValueError`` nor an ``EngineError``, so a caller mapping
+    failures onto stable API error codes could not catch either. This walks a
+    range of malformed and hostile inputs through the public interface and
+    asserts the promise holds, so a third escape fails here rather than in
+    production.
+    """
+
+    CASES = [
+        # malformed number literals
+        ("SELECT * FROM items WHERE id = 1.2.3", []),
+        ("INSERT INTO items (id, name) VALUES (1e, 'x')", []),
+        ("SELECT * FROM items WHERE id = 1..2", []),
+        # numeric precision and scale
+        ("INSERT INTO items (id, name, price) VALUES (1, 'a', ?)", ["1" * 15]),
+        ("INSERT INTO items (id, name, price) VALUES (1, 'a', ?)", ["1" * 24]),
+        ("INSERT INTO items (id, name, price) VALUES (1, 'a', ?)", [Decimal("1" * 30)]),
+        ("INSERT INTO items (id, name, price) VALUES (1, 'a', ?)", [Decimal("NaN")]),
+        ("INSERT INTO items (id, name, price) VALUES (1, 'a', ?)", [Decimal("Infinity")]),
+        # wrong types for columns
+        ("INSERT INTO items (id, name) VALUES (?, ?)", ["not-a-number", "x"]),
+        ("INSERT INTO items (id, name, active) VALUES (1, 'a', ?)", ["maybe"]),
+        ("INSERT INTO items (id, name, created) VALUES (1, 'a', ?)", ["not-a-date"]),
+        ("INSERT INTO items (id, name) VALUES (1, ?)", [["a", "list"]]),
+        ("INSERT INTO items (id, name) VALUES (1, ?)", [{"a": 1}]),
+        # constraints
+        ("INSERT INTO items (id, name) VALUES (1, 'a')", []),
+        ("INSERT INTO items (id) VALUES (2)", []),
+        # structure
+        ("SELECT FROM", []),
+        ("SELECT * FROM ghost", []),
+        ("SELECT * FROM items WHERE", []),
+        ("UPDATE items SET nope = ? WHERE id = ?", ["x", 1]),
+        ("DELETE FROM ghost", []),
+        ("DROP TABLE ghost", []),
+        ("INSERT INTO items (id) VALUES (?)", []),
+        ("SELECT * FROM items LIMIT ?", ["not-an-int"]),
+        ("SELECT * FROM items OFFSET ?", [None]),
+        # string handling
+        ("SELECT * FROM items WHERE name = 'unterminated", []),
+        ('SELECT * FROM items WHERE name = "unterminated', []),
+        ("SELECT ! FROM items", []),
+        # statements the engine does not implement
+        ("VACUUM", []),
+        ("GRANT ALL ON items TO someone", []),
+    ]
+
+    def test_every_failure_is_an_engine_error(self, tmp_path: Path):
+        escapes = []
+        for index, (sql, params) in enumerate(self.CASES):
+            path = tmp_path / f"db{index}"
+            db = connect(path)
+            try:
+                db.execute(DDL)
+                db.execute("INSERT INTO items (id, name) VALUES (?, ?)", [1, "a"])
+                if sql.strip().upper().startswith("SELECT"):
+                    db.query(sql, params)
+                else:
+                    db.execute(sql, params)
+            except EngineError:
+                pass
+            except Exception as exc:
+                escapes.append(f"{sql!r} raised {type(exc).__name__}: {exc}")
+            finally:
+                db.close()
+
+        assert not escapes, (
+            "these inputs escaped the engine's error contract, so a caller "
+            "mapping failures onto stable API error codes cannot catch them:\n  "
+            + "\n  ".join(escapes)
+        )
