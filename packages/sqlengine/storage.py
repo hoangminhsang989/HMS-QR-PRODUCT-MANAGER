@@ -112,6 +112,7 @@ class Storage:
             return
         executor = Executor(schema)
         applied = 0
+        good: list[str] = []
         try:
             lines = self.journal_path.read_text(encoding="utf-8").splitlines()
         except OSError as exc:
@@ -129,8 +130,37 @@ class Storage:
                 break
             for operation in operations:
                 self._apply_journal_operation(schema, executor, operation)
+            good.append(line)
             applied += 1
         self.journal_records = applied
+        if len(good) != len([line for line in lines if line.strip()]):
+            self._discard_torn_tail(good)
+
+    def _discard_torn_tail(self, good: list[str]) -> None:
+        """Remove the torn record and everything after it, permanently.
+
+        Stopping the replay is not enough. The tear stays on disk, and a crash
+        mid-append leaves it without a trailing newline, so the next append
+        concatenates its record onto the torn fragment instead of starting a
+        new line. That transaction is acknowledged - it commits, it is visible
+        in memory, it flushes and fsyncs - and then disappears on the following
+        reopen, because the line holding it no longer parses.
+
+        Rewriting the journal with only the records that verified is what makes
+        the docstring's promise true: a committed transaction is either fully
+        present or fully absent, rather than present until the process exits.
+        """
+
+        if self._journal_handle is not None:
+            self._journal_handle.close()
+            self._journal_handle = None
+        try:
+            self.journal_path.write_text(
+                "".join(line + "\n" for line in good), encoding="utf-8"
+            )
+        except OSError as exc:
+            raise StorageError(f"Journal could not be repaired: {exc}") from None
+        self._open_journal(truncate=False)
 
     def _apply_journal_operation(self, schema: Schema, executor, operation: dict) -> None:
         from . import parser as sql_parser

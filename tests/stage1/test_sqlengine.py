@@ -468,6 +468,48 @@ class TestDurability:
         reopened = connect(path)
         assert reopened.query("SELECT id FROM items") == [{"id": 1}]
 
+    def test_a_commit_after_a_torn_record_survives_the_next_reopen(self, tmp_path: Path):
+        """A commit acknowledged after a tear must not vanish on the next reopen.
+
+        The docstring promises a torn record is discarded "together with
+        everything after it, so a committed transaction is either fully present
+        or fully absent". ``_replay`` does stop at the bad record, so the load
+        that meets the tear honours that. It never removes the tear from disk,
+        though, and the tear here is written without a trailing newline - which
+        is exactly what a crash mid-append leaves - so the next ``append()``
+        concatenates its record onto the torn fragment instead of starting a new
+        line.
+
+        The result is one unparseable line where a committed transaction used to
+        be. ``test_torn_final_record_discarded`` stops before this point: it
+        reopens once and asserts the earlier row, so the loss is invisible.
+
+        Observed before the fix: the commit succeeded, the in-memory query saw
+        both rows, the journal line count did not increase, and the row was gone
+        after the next reopen.
+        """
+
+        path = tmp_path / "db"
+        db = connect(path)
+        db.execute(DDL)
+        insert(db, 1, "a")
+        db.close()
+
+        journal = path / "journal.log"
+        with journal.open("a", encoding="utf-8") as handle:
+            handle.write('{"payload":"[{\\"op\\":\\"insert\\"')
+
+        reopened = connect(path)
+        insert(reopened, 2, "b")
+        assert reopened.query("SELECT id FROM items ORDER BY id") == [{"id": 1}, {"id": 2}]
+        reopened.close()
+
+        final = connect(path)
+        try:
+            assert final.query("SELECT id FROM items ORDER BY id") == [{"id": 1}, {"id": 2}]
+        finally:
+            final.close()
+
     def test_compaction_then_reopen(self, tmp_path: Path):
         path = tmp_path / "db"
         db = connect(path)
