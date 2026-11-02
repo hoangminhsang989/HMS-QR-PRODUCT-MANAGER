@@ -1,5 +1,6 @@
 import json
 import os
+from uuid import uuid4
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -10,6 +11,12 @@ from apps.desktop.file_panels import AdminStoragePanel, ProductFilesPanel
 from apps.mobile.web import MOBILE_PAGE_PATH
 from apps.server.files import build_files_api
 from config.environments import Environment, load_config
+from packages.domain.store_forward import StorageConfiguration
+from packages.persistence.managed_file_repository import ManagedFileRepository
+from packages.persistence.store_forward_repository import StoreForwardRepository
+from packages.storage import FilesystemStorage, LocalDevStorage
+from packages.storage.store_forward import StoreForwardService
+from tests.stage6.conftest import _engine_database, _seed_product
 
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"r009-api-image"
@@ -101,6 +108,58 @@ def test_file_readiness_reports_ready_degraded_and_missing_configuration(store_f
     )).get("/health/readiness/files")
     assert missing.status_code == 503
     assert missing.json()["error"]["code"] == "FILE_TRANSFER_UNAVAILABLE"
+
+
+def test_file_readiness_answers_503_not_500_when_the_ingest_root_is_missing(tmp_path):
+    """A missing local ingest root must answer 503, not 500.
+
+    ``file_readiness`` wraps ``transfer_service.health()`` in
+
+        except (LookupError, StorageUnavailable):
+
+    ``StoreForwardService.health()`` calls ``capacity()``, which calls
+    ``self.capacity_probe(Path(root))``. The production probe is ``_disk_usage``,
+    which is ``shutil.disk_usage(path)`` - and that raises ``OSError``
+    (``FileNotFoundError``) when the path does not exist.
+
+    The two storages' own ``health()`` methods do not raise for a missing root:
+    ``FilesystemStorage.health()`` returns UNAVAILABLE. So the failure arrives
+    from the capacity probe, one call further in, and ``OSError`` is not in the
+    tuple - it escapes the endpoint as a 500 where the endpoint exists precisely
+    to answer 503 FILE_TRANSFER_UNAVAILABLE.
+
+    The misconfiguration is ordinary: an unplugged drive, a removed NAS mount,
+    or a typo in the configured root.
+
+    Note the fixture above stubs ``capacity_probe`` with a lambda that never
+    touches the filesystem, which is why no existing test could catch this. This
+    one uses the real probe.
+    """
+
+    database = _engine_database(tmp_path, "readiness-oserror")
+    _seed_product(database, "00000000-0000-0000-0000-000000000610", "SP-R009-002", "R009 Readiness")
+    missing_root = tmp_path / "local-ingest-that-is-not-there"
+    archive_root = tmp_path / "archive-target"
+    archive_root.mkdir()
+    local = LocalDevStorage(tmp_path / "local-ingest")
+    archive = FilesystemStorage(archive_root, create_root=False)
+    queue_repository = StoreForwardRepository(database)
+    queue_repository.create_configuration(StorageConfiguration(
+        configuration_id=uuid4(), local_ingest_root=str(missing_root),
+        archive_target_root=str(archive_root), grace_period_hours=24,
+        retry_schedule_seconds=(60, 300, 900, 1800, 3600),
+        warning_free_bytes=300, critical_free_bytes=200, upload_refusal_free_bytes=100,
+    ))
+    transfer = StoreForwardService(
+        queue_repository, ManagedFileRepository(database), local,
+        archive_factory=lambda _: archive,
+    )
+    client = TestClient(build_files_api(
+        object(), transfer, app_config=load_config(Environment.DEV)
+    ))
+    response = client.get("/health/readiness/files")
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "FILE_TRANSFER_UNAVAILABLE"
 
 
 def test_desktop_light_industrial_file_and_admin_panels_smoke(store_forward_env):

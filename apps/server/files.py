@@ -163,7 +163,14 @@ def build_files_api(
     def file_readiness():
         try:
             health = transfer_service.health()
-        except (LookupError, StorageUnavailable):
+        except (LookupError, OSError, StorageUnavailable):
+            # OSError is here for the capacity probe. The two storages' own
+            # health() return UNAVAILABLE for a missing root and do not raise,
+            # but StoreForwardService.health() also calls capacity(), whose
+            # production probe is shutil.disk_usage(path) - and that raises
+            # FileNotFoundError when the configured root is not there. Without
+            # this, an unplugged drive or a removed NAS mount answers 500 from
+            # the one endpoint whose job is to answer 503.
             return _json_error(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "FILE_TRANSFER_UNAVAILABLE",
