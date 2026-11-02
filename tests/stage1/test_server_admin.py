@@ -1,3 +1,7 @@
+import base64
+import hashlib
+import hmac
+from base64 import urlsafe_b64encode
 from fastapi.testclient import TestClient
 import pytest
 
@@ -109,6 +113,44 @@ def test_existing_bearer_token_uses_current_account_state(tmp_path, monkeypatch)
     auth.update_account(account["internal_id"], active=False)
     with pytest.raises(AuthenticationError, match="không còn hoạt động"):
         auth.authenticate(token)
+    runtime.dispose()
+
+
+def test_a_signed_token_whose_payload_is_not_an_object_is_refused(tmp_path, monkeypatch):
+    """A valid signature over a non-object payload must not raise TypeError.
+
+    ``authenticate`` verifies the HMAC before it parses the payload, which is
+    the right order - unverified payload data is never trusted. It then reads
+    ``payload["exp"]`` and ``payload["sub"]``.
+
+    The except clause catches ``(KeyError, ValueError, UnicodeError,
+    json.JSONDecodeError)``. ``json.JSONDecodeError`` and ``binascii.Error`` are
+    both ``ValueError`` subclasses, so a malformed token and an undecodable
+    signature are covered. A payload that parses to a list, an int, a string or
+    null is not: ``payload["exp"]`` raises ``TypeError``, which is not in that
+    tuple, and it escapes as an unhandled exception instead of the clean
+    ``AuthenticationError`` every other malformed token produces.
+
+    Reaching it requires the signing secret, so it is not attacker-reachable in
+    production. It is reachable from a rolling deploy where one side still signs
+    an older payload shape, or from a configuration mistake - and the result is
+    a crash rather than a 401.
+    """
+
+    monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
+    config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'shapes.sqlite').as_posix()}", "local")
+    runtime = create_database_runtime(config)
+    Stage2Repository(runtime).create_schema()
+    auth = ServerAuthService(runtime)
+    auth.create_account("shape-user", "secure-password-123", "EDITOR")
+
+    secret = "test-signing-secret"
+    for payload in (b"[1,2,3]", b"42", b'"hello"', b"null", b"1.5", b"true"):
+        encoded = urlsafe_b64encode(payload).decode().rstrip("=")
+        signature = hmac.new(secret.encode(), encoded.encode(), hashlib.sha256).digest()
+        token = f"{encoded}.{urlsafe_b64encode(signature).decode().rstrip('=')}"
+        with pytest.raises(AuthenticationError):
+            auth.authenticate(token)
     runtime.dispose()
 
 

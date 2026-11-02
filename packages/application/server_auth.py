@@ -149,7 +149,16 @@ class ServerAuthService:
             }
         except AuthenticationError:
             raise
-        except (KeyError, ValueError, UnicodeError, json.JSONDecodeError):
+        except (KeyError, TypeError, ValueError, UnicodeError, json.JSONDecodeError):
+            # TypeError is here for a payload that parses to something other
+            # than a JSON object: payload["exp"] on a list, an int or null
+            # raises TypeError, and json.JSONDecodeError and binascii.Error are
+            # both ValueError subclasses, so those paths were already covered.
+            # Reaching it needs the signing secret, so it is not
+            # attacker-reachable - but a rolling deploy where one side still
+            # signs an older payload shape lands here, and it should answer
+            # with the same clean AuthenticationError as any other malformed
+            # token rather than an unhandled exception.
             raise AuthenticationError("Phiên đăng nhập không hợp lệ.") from None
 
     def list_accounts(self) -> list[dict[str, object]]:
