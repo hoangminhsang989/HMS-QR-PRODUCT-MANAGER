@@ -100,10 +100,19 @@ class Executor:
             reverse = direction == "DESC"
             selected.sort(key=lambda row, name=column: _sort_key(row.get(name)), reverse=reverse)
         if statement.distinct:
+            # "*" is not a column name. Building the marker from the column list
+            # when that list is the * placeholder makes every marker (None,) -
+            # identical for every row - so DISTINCT collapses the whole result
+            # to one row. Fall back to the whole row in that case, keyed by name
+            # so a joined row with extra columns still compares correctly.
+            if statement.columns == ["*"]:
+                names = sorted(selected[0]) if selected else []
+            else:
+                names = statement.columns
             seen: list[tuple] = []
             unique_rows = []
             for row in selected:
-                marker = tuple(row.get(name) for name in statement.columns)
+                marker = tuple(row.get(name) for name in names)
                 if marker in seen:
                     continue
                 seen.append(marker)

@@ -214,6 +214,39 @@ class TestPredicates:
         rows = db.query("SELECT DISTINCT label FROM tags")
         assert sorted(row["label"] for row in rows) == ["x", "y"]
 
+    def test_distinct_star_keeps_every_distinct_row(self, database):
+        """``SELECT DISTINCT *`` must not collapse to one row.
+
+        The DISTINCT branch builds its marker from ``statement.columns``:
+
+            marker = tuple(row.get(name) for name in statement.columns)
+
+        For ``SELECT *`` the parser sets ``columns`` to ``["*"]``, and no row has
+        a column named ``*`` - so every marker is ``(None,)``, identical for
+        every row, and only the first survives. Six distinct rows come back as
+        one, with no error.
+
+        ``test_distinct`` above covers the same branch with an explicit column
+        list, which is why this survived: the marker is only wrong when the
+        column list is the ``*`` placeholder.
+        """
+
+        db = database
+        db.execute("CREATE TABLE tags (id INTEGER PRIMARY KEY, label TEXT)")
+        for identifier in range(1, 7):
+            db.execute("INSERT INTO tags (id, label) VALUES (?, ?)", [identifier, f"n{identifier}"])
+
+        assert len(db.query("SELECT * FROM tags")) == 6
+        assert len(db.query("SELECT DISTINCT * FROM tags")) == 6
+
+        # A row that differs in any column is a distinct whole row, so DISTINCT *
+        # keeps it even when another column repeats. (With a primary key no two
+        # rows can be wholly identical, so DISTINCT * is equivalent to the plain
+        # count here - which is exactly the point: it must not collapse them.)
+        db.execute("INSERT INTO tags (id, label) VALUES (?, ?)", [7, "n1"])
+        assert len(db.query("SELECT DISTINCT * FROM tags")) == 7
+        assert len(db.query("SELECT DISTINCT label FROM tags")) == 6
+
     def test_null_comparison_semantics(self, database):
         insert(database, 1, "a", None)
         assert database.query("SELECT * FROM items WHERE price = NULL") == []
