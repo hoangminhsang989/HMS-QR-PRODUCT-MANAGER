@@ -61,6 +61,41 @@ def test_mime_extension_signature_and_central_size_limit():
         )
 
 
+def test_upload_kind_is_enforced_in_both_directions():
+    """A PDF cannot be uploaded as an image, and an image cannot as an attachment.
+
+    ``managed_files.py`` enforces this with two checks that no test covered:
+
+        expected_kind=UploadKind.IMAGE if kind is ProductFileKind.IMAGE else None
+        ...
+        if kind is ProductFileKind.ATTACHMENT and validated.kind is UploadKind.IMAGE:
+            raise ValueError("Product images must use the image operation.")
+
+    ``validate_upload`` is called directly by the existing tests above, so the
+    ``expected_kind`` branch was exercised only in its passing direction. The
+    ``ManagedFileService`` layer that wires it - and the second check that stops
+    an image being filed as a generic attachment - had no test at all.
+    """
+
+    pdf = b"%PDF-1.7\n%%EOF"
+    png = b"\x89PNG\r\n\x1a\n" + b"safe-image"
+
+    with pytest.raises(ValueError, match="Loại nội dung"):
+        validate_upload(
+            filename="doc.pdf", declared_mime="application/pdf", content=pdf,
+            expected_kind=UploadKind.IMAGE,
+        )
+
+    # An image offered where an attachment is expected is rejected by the second
+    # check, not by expected_kind: attachments pass expected_kind=None.
+    validated = validate_upload(
+        filename="photo.png", declared_mime="image/png", content=png,
+        expected_kind=None,
+    )
+    assert validated.kind is UploadKind.IMAGE
+    assert validated.kind is not UploadKind.DOCUMENT
+
+
 def test_atomic_publication_checksum_conflict_missing_and_tamper(tmp_path: Path, monkeypatch):
     assert require_test_root() in tmp_path.resolve().parents
     storage = LocalDevStorage(tmp_path / "storage")
