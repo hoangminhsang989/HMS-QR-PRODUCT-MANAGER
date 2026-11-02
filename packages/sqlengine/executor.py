@@ -321,17 +321,23 @@ def _sort_key(value):
 def _compare(left, operator: str, right) -> bool:
     if left is None or right is None:
         return False
-    if isinstance(left, str) != isinstance(right, str):
-        left, right = str(left), str(right)
-    if isinstance(left, datetime) and isinstance(right, str):
-        right = DateTimeType_().coerce(right, column="compare")
-    if isinstance(left, date) and not isinstance(left, datetime) and isinstance(right, str):
-        right = date.fromisoformat(right)
+    # A numeric column compared against a string parameter is a numeric
+    # comparison, not a lexicographic one: "12.5" and "12.5000" are the same
+    # number. This has to run before the string normalisation below, which
+    # otherwise turns both sides into strings and makes this branch unreachable
+    # for exactly the case it was written for - "12.5000" > "9" is false
+    # lexicographically, so the rows silently vanish.
     if isinstance(left, Decimal) and not isinstance(right, Decimal):
         try:
             right = Decimal(str(right))
         except (ArithmeticError, ValueError):
             return False
+    if isinstance(left, datetime) and isinstance(right, str):
+        right = DateTimeType_().coerce(right, column="compare")
+    if isinstance(left, date) and not isinstance(left, datetime) and isinstance(right, str):
+        right = date.fromisoformat(right)
+    if isinstance(left, str) != isinstance(right, str):
+        left, right = str(left), str(right)
     if isinstance(left, bool) != isinstance(right, bool):
         left, right = bool(left), bool(right)
     try:

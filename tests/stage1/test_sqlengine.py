@@ -108,6 +108,45 @@ class TestPredicates:
         assert len(database.query("SELECT * FROM items WHERE id <= 2")) == 2
         assert len(database.query("SELECT * FROM items WHERE id > 4")) == 1
 
+    def test_numeric_column_compared_to_a_string_parameter_is_numeric(self, tmp_path: Path):
+        """A NUMERIC column compared to a string must compare as a number.
+
+        ``_compare`` starts with
+        ``if isinstance(left, str) != isinstance(right, str): left, right = str(left), str(right)``,
+        so a Decimal column against a string parameter becomes a **lexicographic**
+        comparison of the two strings. ``"12.5000" > "9"`` is false because '1'
+        sorts before '9', so ``WHERE price > '9'`` returns nothing for a row
+        holding 12.5.
+
+        It also makes the Decimal branch further down unreachable for string
+        parameters: that branch exists precisely to coerce a non-Decimal right
+        side into a Decimal, but by the time it runs the right side is already a
+        string. Code written to handle a case an earlier line prevents from
+        arriving.
+
+        The wrong answer is silent - no error, just missing rows.
+        """
+
+        db = connect(tmp_path / "cmp")
+        try:
+            db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, price NUMERIC(18,4))")
+            db.execute("INSERT INTO items (id, price) VALUES (?, ?)", [1, "12.5000"])
+            db.execute("INSERT INTO items (id, price) VALUES (?, ?)", [2, "20.0000"])
+
+            assert db.query("SELECT id FROM items WHERE price > ?", ["9"]) == [
+                {"id": 1},
+                {"id": 2},
+            ]
+            assert db.query("SELECT id FROM items WHERE price = ?", ["12.5"]) == [{"id": 1}]
+            assert db.query("SELECT id FROM items WHERE price < ?", ["20"]) == [{"id": 1}]
+            assert db.query("SELECT id FROM items WHERE price >= ?", ["20"]) == [{"id": 2}]
+
+            # A non-numeric parameter simply matches nothing, rather than
+            # raising: the coercion failure is swallowed by design.
+            assert db.query("SELECT id FROM items WHERE price = ?", ["not-a-number"]) == []
+        finally:
+            db.close()
+
     def test_like(self, database):
         insert(database, 1, "alpha")
         insert(database, 2, "beta")
