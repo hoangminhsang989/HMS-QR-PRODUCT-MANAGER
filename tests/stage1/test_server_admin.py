@@ -116,6 +116,56 @@ def test_existing_bearer_token_uses_current_account_state(tmp_path, monkeypatch)
     runtime.dispose()
 
 
+def test_login_credentials_are_rejected_by_the_typed_boundary_before_the_service(tmp_path, monkeypatch):
+    """Non-string credentials must be refused at the boundary, not reach login().
+
+    ``ServerAuthService.login()`` does ``username.strip().casefold()`` with no
+    type check, so calling it directly with a list, a dict or an int raises
+    AttributeError - and the endpoint only catches
+    ``(AuthenticationError, ValueError)``.
+
+    It is not reachable that way over HTTP, because the endpoint takes
+    ``payload: LoginRequest`` and ``LoginRequest`` declares
+    ``username: str = Field(min_length=3, max_length=64)``. Pydantic answers 422
+    before login() is ever called. Verified against the real endpoint: a list, a
+    dict, an int and null all answer 422, never 500.
+
+    That is defense in depth rather than a defect - the service has no type
+    guard of its own and leans entirely on the boundary. This test locks the
+    boundary, so loosening LoginRequest cannot quietly turn a 422 into a 500.
+    """
+
+    monkeypatch.setenv("HMS_QR_AUTH_SECRET", "test-signing-secret")
+    config = AppConfig(Environment.DEV, f"sqlite:///{(tmp_path / 'boundary.sqlite').as_posix()}", "local")
+    runtime = create_database_runtime(config)
+    Stage2Repository(runtime).create_schema()
+    client = TestClient(build_admin_api(config, runtime))
+
+    for username in (["a"], {"a": 1}, 12345, None):
+        response = client.post(
+            "/api/v1/auth/login", json={"username": username, "password": "secure-password-123"}
+        )
+        assert response.status_code == 422, (username, response.status_code)
+
+    for password in (["b"], {"a": 1}, 12345, None):
+        response = client.post(
+            "/api/v1/auth/login", json={"username": "boundary-admin", "password": password}
+        )
+        assert response.status_code == 422, (password, response.status_code)
+
+    # And the boundary still lets a correctly shaped request through to the
+    # service, so the assertions above are not passing for the wrong reason.
+    monkeypatch.setenv("HMS_QR_BOOTSTRAP_ADMIN_USERNAME", "boundary-admin")
+    monkeypatch.setenv("HMS_QR_BOOTSTRAP_ADMIN_PASSWORD", "secure-password-123")
+    fresh = TestClient(build_admin_api(config, runtime))
+    accepted = fresh.post(
+        "/api/v1/auth/login", json={"username": "boundary-admin", "password": "secure-password-123"}
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["role"] == "ADMIN"
+    runtime.dispose()
+
+
 def test_a_signed_token_whose_payload_is_not_an_object_is_refused(tmp_path, monkeypatch):
     """A valid signature over a non-object payload must not raise TypeError.
 
