@@ -19,7 +19,11 @@ from apps.server.tls import (
     production_tls_paths,
     tls_is_enabled,
 )
-from packages.application.server_discovery import DiscoveryResponder, lan_scheme
+from packages.application.server_discovery import (
+    DISCOVERY_REQUEST,
+    DiscoveryResponder,
+    lan_scheme,
+)
 
 
 def test_generated_certificate_covers_localhost_and_lan_addresses(tmp_path):
@@ -73,6 +77,71 @@ def test_discovery_responder_advertises_https_when_tls_enabled(tmp_path, monkeyp
     monkeypatch.delenv(TLS_CERTIFICATE_ENV)
     assert DiscoveryResponder().scheme == "http"
     assert DiscoveryResponder(scheme="https").scheme == "https"
+
+
+def test_discovery_responder_survives_a_broadcast_that_is_not_a_json_object():
+    """A malformed discovery broadcast must not kill the responder thread.
+
+    ``_serve`` parses the datagram and then reads ``request.get("type")``:
+
+        request = json.loads(payload.decode("utf-8"))
+        if request.get("type") != DISCOVERY_REQUEST or not isinstance(request.get("nonce"), str):
+            continue
+        ...
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+
+    When the JSON parses to a list, an int, a string, null or a bool,
+    ``request.get`` raises ``AttributeError``, which is not in that tuple, so it
+    escapes the loop and the responder thread dies. Verified directly: _serve
+    raises instead of continuing.
+
+    Discovery is unauthenticated UDP, so any host on the LAN can send this, and
+    the effect lasts until the server restarts: auto-discovery stops working.
+
+    The client side of the same protocol is not affected. It subscripts
+    ``result["server_url"]`` inside its try, which raises TypeError for a
+    non-object, and TypeError is in its tuple. The server had no equivalent
+    guard - the isinstance(request, dict) check below is it.
+    """
+
+    class OneShotSocket:
+        """Answers each payload once, then raises KeyboardInterrupt to prove
+        the loop is still alive rather than having died."""
+
+        def __init__(self, payloads):
+            self.payloads = list(payloads)
+            self.sent = []
+
+        def recvfrom(self, _size):
+            if self.payloads:
+                return self.payloads.pop(0), ("127.0.0.1", 5000)
+            raise KeyboardInterrupt
+
+        def sendto(self, data, address):
+            self.sent.append((data, address))
+
+        def close(self):
+            pass
+
+    malformed = [b"[]", b"[1,2,3]", b"42", b'"hello"', b"null", b"true", b"1.5"]
+    responder = DiscoveryResponder(scheme="http")
+    responder._socket = OneShotSocket(malformed)
+    with pytest.raises(KeyboardInterrupt):
+        responder._serve()
+    assert not responder._socket.sent
+
+    responder._socket = OneShotSocket([b"{}", b"[]"])
+    with pytest.raises(KeyboardInterrupt):
+        responder._serve()
+    assert not responder._socket.sent
+
+    responder._socket = OneShotSocket([
+        json.dumps({"type": DISCOVERY_REQUEST, "nonce": "abc"}).encode()
+    ])
+    with pytest.raises(KeyboardInterrupt):
+        responder._serve()
+    assert len(responder._socket.sent) == 1
 
 
 def test_production_server_environment_includes_tls_when_enabled(tmp_path, monkeypatch):

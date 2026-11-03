@@ -136,6 +136,17 @@ class DiscoveryResponder:
             try:
                 payload, address = self._socket.recvfrom(4096)
                 request = json.loads(payload.decode("utf-8"))
+                # The client side of this protocol is safe because it subscripts
+                # result["server_url"] inside its try, which raises TypeError for
+                # a non-object and TypeError is in its tuple. Reading
+                # request.get("type") instead raises AttributeError, which is not
+                # in the tuple below - so a datagram whose JSON parses to a list,
+                # an int, a string, null or a bool killed this thread outright.
+                # Discovery is unauthenticated UDP, so any LAN host could send
+                # one, and the effect lasted until restart: auto-discovery simply
+                # stopped. Guard the type the way the client guards it.
+                if not isinstance(request, dict):
+                    continue
                 if request.get("type") != DISCOVERY_REQUEST or not isinstance(request.get("nonce"), str):
                     continue
                 # Route lookup picks the LAN address associated with this client.
