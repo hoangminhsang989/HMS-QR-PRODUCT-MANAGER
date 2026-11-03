@@ -68,6 +68,40 @@ def test_artifact_identity_schema_and_manifest_negatives(tmp_path):
     manifest_path.write_text("{")
     with pytest.raises(ArtifactBuildError): verify_release(a)
 
+def test_a_manifest_that_parses_to_a_non_object_is_reported_not_raised(tmp_path):
+    """A manifest.json of the wrong JSON type must fail closed, not crash.
+
+    verify_release is the release gate, and it answers "malformed manifest" as a
+    clean ArtifactBuildError. Its try covers only the json.loads:
+
+        try: manifest = json.loads(mf.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc: raise ArtifactBuildError(...)
+
+    The next line reads set(manifest) and manifest.get("manifest_schema"):
+
+        if required - set(manifest) or manifest.get("manifest_schema") != ...
+
+    Neither is inside the try, and both raise TypeError when the manifest parses
+    to something other than a dict - set() on an int, a float, a bool or null
+    raises "not iterable", and set() on a list of dicts raises "unhashable
+    type". Verified directly: 42, 1.5, true, null and [{"manifest_schema": 1}]
+    all escape as TypeError, while a missing file and a truncated "{" correctly
+    answer ArtifactBuildError.
+
+    An empty array and a bare string do answer ArtifactBuildError, but only
+    because required - set(manifest) is truthy and short-circuits the or - the
+    guard holds by luck, not by construction.
+
+    The caller is preflight.py, the gate that runs before deployment.
+    """
+
+    _, a = _fixture_release(tmp_path)
+    manifest_path = a / "manifest.json"
+    for body in (b"42", b"1.5", b"true", b"null", b'[{"manifest_schema": 1}]'):
+        manifest_path.write_bytes(body)
+        with pytest.raises(ArtifactBuildError):
+            verify_release(a)
+
 def test_artifact_missing_wrong_hash_wrong_size_and_identity(tmp_path):
     _, a = _fixture_release(tmp_path); mf = a / "manifest.json"; original = json.loads(mf.read_text())
     for field, value in (("sha256", "0" * 64), ("size", original["files"][0]["size"] + 1)):

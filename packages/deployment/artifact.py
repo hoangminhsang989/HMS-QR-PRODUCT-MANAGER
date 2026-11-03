@@ -114,6 +114,15 @@ def verify_release(artifact_root: str | Path, *, expected_release_id: str | None
     root = Path(artifact_root); mf = root / "manifest.json"
     try: manifest = json.loads(mf.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc: raise ArtifactBuildError("malformed or truncated manifest") from exc
+    # set(manifest) and manifest.get() below both raise TypeError when the
+    # manifest parses to something other than a dict: set() on an int, a float,
+    # a bool or null is "not iterable", and set() on a list of dicts is
+    # "unhashable type". Neither is inside the try above, so a manifest.json of
+    # the wrong JSON type crashed the release gate instead of being reported as
+    # the malformed manifest this function exists to name. An empty array and a
+    # bare string did answer correctly, but only because required - set(manifest)
+    # is truthy and short-circuits the or - by luck, not by construction.
+    if not isinstance(manifest, dict): raise ArtifactBuildError("manifest is not a JSON object")
     required = {"manifest_schema", "release_id", "git_head", "git_tree", "expected_engine_migration_head", "created_at", "builder_version", "artifact_identity", "source_baseline", "python_runtime", "dependency_identity", "config_schema_version", "compatibility", "rollback", "files"}
     if required - set(manifest) or manifest.get("manifest_schema") != MANIFEST_SCHEMA or not isinstance(manifest.get("files"), list):
         raise ArtifactBuildError("unsupported manifest schema")
