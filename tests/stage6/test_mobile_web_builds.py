@@ -408,3 +408,65 @@ def test_gitattributes_pins_the_web_tree_to_lf():
         assert attrs.get("text") == "set", f"{rel} is not marked text: {attrs}"
         assert attrs.get("eol") == "lf", f"{rel} is not pinned to LF: {attrs}"
 
+
+def test_no_token_value_is_hardcoded_in_presentation():
+    """The mobile web had byte guards and no colour guard, so the token pass
+    could stop halfway and every test would still pass.
+
+    This is the same defect the portal grew a guard for on 2026-11-05
+    (``test_no_token_value_is_hardcoded_in_presentation`` in
+    ``test_portal_page_structure.py``): a tokenisation pass that finishes a
+    component's badge but leaves the ``<h3>`` two lines below it, or tokenises
+    one branch of a function and not the other, is invisible to a guard that
+    counts tokens, reads the stylesheet, or compares bytes. The portal had 22
+    such leftovers; this file is the mobile web's equivalent.
+
+    The web builds are asserted the same way and for the same reason: no value
+    declared in ``:root`` may appear in a ``style`` attribute or in a CSS rule
+    outside the token block. Both quote styles are checked because this file
+    writes its inline styles with single quotes and the portal with double.
+
+    What is deliberately not scanned: the ``rgba()`` literals outside ``:root``
+    - the header translucency, the elevation shadows, the torch button's dark
+    ground, the focus rings. Those are effect values rather than surface
+    colours and the board records a decision to leave them; a guard that
+    rejected them would fail on purpose-built markup. Only token *values* are
+    enforced, which is exactly the class that drifted.
+    """
+
+    for name in ("index.html", *DERIVED):
+        raw = (WEB / name).read_text(encoding="utf-8")
+
+        root = re.search(r":root\s*\{(.*?)\}", raw, re.DOTALL)
+        assert root, f"{name} has no :root token block"
+        token_values = set(re.findall(r"#[0-9a-fA-F]{6}\b", root.group(1)))
+        assert token_values, f"{name} declares no colour tokens"
+
+        style_block = raw[raw.index("<style>"):raw.index("</style>")]
+        css_outside_root = re.sub(r":root\s*\{.*?\}", "", style_block, flags=re.DOTALL)
+
+        # index.html writes its inline styles with single quotes; the derived
+        # builds inherit that, but double quotes are matched too so a future
+        # edit in either style is still covered.
+        attributes = [
+            quoted
+            for pair in re.findall(r"""style=(?:"([^"]*)"|'([^']*)')""", raw)
+            for quoted in pair
+            if quoted
+        ]
+        assert attributes, f"{name} has no inline style attributes to check"
+
+        offenders: list[str] = []
+        for declaration in attributes:
+            for value in sorted(token_values):
+                if value in declaration:
+                    offenders.append(f"style attribute uses {value}: {declaration[:90]}")
+        for value in sorted(token_values):
+            if value in css_outside_root:
+                offenders.append(f"a CSS rule outside :root hardcodes {value}")
+
+        assert not offenders, (
+            f"{name}: presentation duplicates a :root token value, so the token is "
+            "not the only place that colour lives:\n  " + "\n  ".join(offenders)
+        )
+
