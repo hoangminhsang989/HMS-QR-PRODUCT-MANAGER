@@ -161,3 +161,52 @@ def test_switch_tab_does_not_depend_on_the_global_event(monkeypatch):
     assert "getAttribute('onclick')" in body, (
         "switchTab no longer resolves the button it was invoked from"
     )
+
+
+def test_no_token_value_is_hardcoded_in_presentation(monkeypatch):
+    """A token pass that stops halfway is invisible to every other guard.
+
+    The portal was moved onto its ``:root`` token set twice - 2026-11-01 when it
+    came off the dark palette, and 2026-11-03 when the mobile web did. Both times
+    the pass was *almost* complete, and both times it stopped in the middle of a
+    single component: the Cloudflare card's "TOÀN CẦU + CAMERA" badge was
+    tokenized while the ``<h3>`` two lines below it kept ``color:#047857``; the
+    tunnel-status bar's failure branch used ``var(--danger)`` while its success
+    branch three lines above kept ``'#047857'``; the progress legend's swatches
+    became tokens while the ``<b>`` beside each swatch kept the literal.
+
+    Nothing catches that. A guard that reads the CSS sees a tokenised stylesheet;
+    a guard that counts tokens sees all of them declared; the page renders fine.
+    The value is simply duplicated in a place no token reaches, so changing
+    ``--success`` later would silently leave the old colour behind.
+
+    This asserts that no value declared in ``:root`` appears in *presentation* -
+    a ``style=""`` attribute or a CSS rule outside the token block. It is
+    deliberately not the whole document: ``<meta name="theme-color">``,
+    ``<input type="color" value="...">`` and the colour-picker's SVG ``fill``
+    cannot reference a custom property, and forcing them to would be wrong.
+    """
+
+    html = _rendered(monkeypatch)
+
+    root = re.search(r":root\s*\{(.*?)\}", html, re.DOTALL)
+    assert root, "portal has no :root token block"
+    token_values = set(re.findall(r"#[0-9a-fA-F]{6}\b", root.group(1)))
+    assert token_values, "portal :root declares no colour tokens"
+
+    style_block = html[html.index("<style>"):html.index("</style>")]
+    css_outside_root = re.sub(r":root\s*\{.*?\}", "", style_block, flags=re.DOTALL)
+
+    offenders: list[str] = []
+    for declaration in re.findall(r'style="([^"]*)"', html):
+        for value in sorted(token_values):
+            if value in declaration:
+                offenders.append(f"style attribute uses {value}: {declaration[:90]}")
+    for value in sorted(token_values):
+        if value in css_outside_root:
+            offenders.append(f"a CSS rule outside :root hardcodes {value}")
+
+    assert not offenders, (
+        "portal presentation duplicates a :root token value, so the token is not "
+        "the only place that colour lives:\n  " + "\n  ".join(offenders)
+    )

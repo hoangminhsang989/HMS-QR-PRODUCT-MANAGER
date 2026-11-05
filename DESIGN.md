@@ -25,13 +25,17 @@ colors:
 typography:
   body:
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
-    fontSize: "13px"
+    fontSize: "15px"
   base:
     fontSize: "16px"
+  secondary:
+    fontSize: "13px"
   label:
     fontSize: "12px"
   caption:
     fontSize: "11px"
+  closeGlyph:
+    fontSize: "18px"
   heading:
     fontWeight: "800"
   button:
@@ -39,7 +43,11 @@ typography:
 rounded:
   sm: "8px"
   md: "12px"
+  card: "14px"
   lg: "16px"
+  xl: "24px"
+  chip: "20px"
+  line: "2px"
   pill: "999px"
 spacing:
   xs: "4px"
@@ -89,7 +97,10 @@ Two token sets remain, because the desktop and the web are deliberately differen
 
 Source of truth: the `:root` block in `web/index.html:14`. `web/lan.html` and `web/vps.html` are derived mechanically by `scripts/build_mobile_web.py` — `index.html` is the program; the other two are the same program minus the connection screen. Never edit them by hand; run `python -m scripts.build_mobile_web`. `tests/stage6/test_mobile_web_builds.py` regenerates both files and fails unless the result is byte-identical to what is committed, so drift becomes a test failure.
 
-Look: cool slate background with a soft vertical gradient; white cards on soft shadows with 16px radius; translucent white header bar; teal (`#0f766e`) accent with a teal focus ring on inputs; pills and tabs as 999px-radius chips with 44px minimum touch height; semantic states carry a `-soft` background with dark text so they read on white; the toast is a soft success chip with dark text, never a solid dark block. `web/manifest.json` and `apps/static/manifest.json` declare the same light background and teal theme-color.
+> **A missing `<style>` shipped this page unstyled for three days.** Commit `eed607f` (2026-10-31) rewrote `web/index.html` and dropped the opening `<style>` while keeping the closing `</style>` at the end of line 476, so the HTML parser could not place the 463 lines of CSS in a style element and they rendered as character data. `https://hms-qr-product-manager-web.vercel.app/` served HTTP 200 with 0 stylesheets and the browser default Times New Roman. Every guard on that file read bytes — line endings, BOMs, marker counts, byte-identical derivation — and not one asked whether the CSS was *applied*. Fixed 2026-11-03 by inserting the tag and regenerating, plus `test_the_css_is_actually_inside_a_style_element`, which asserts the `<style`/`</style>` counts match and that `--accent` falls inside a style element. **A byte-identical derivation is not a rendered page — verify the styling, not the bytes.**
+
+
+Look: cool slate background with a soft vertical gradient; white cards on soft shadows with 16px radius; translucent white header bar; teal (`#0f766e`) accent with a teal focus ring on inputs; pills and tabs as 999px-radius chips with 44px minimum touch height; semantic states carry a `-soft` background with dark text so they read on white; the toast is a dark slab on the `--text` ground with `--on-text` ink, because a confirmation has to be unmistakable across a workshop — the *portal*'s toast is the soft success chip, and the two surfaces must not be swapped. `web/manifest.json` and `apps/static/manifest.json` declare the same light background and teal theme-color.
 
 ### Portal — `apps/server/portal.py`
 

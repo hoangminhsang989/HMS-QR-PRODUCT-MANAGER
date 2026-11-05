@@ -1504,12 +1504,12 @@ _SS_CSS = r"""
     .ss-cell:hover { background:rgba(15,23,42,0.03); }
     .ss-cell.ss-selected { background:rgba(15,118,110,0.14) !important; }
     .ss-cell.ss-active { background:rgba(15,118,110,0.22) !important; }
-    .ss-cell.ss-sel-top    { border-top:2px solid #0f766e !important; }
-    .ss-cell.ss-sel-bottom { border-bottom:2px solid #0f766e !important; }
-    .ss-cell.ss-sel-left   { border-left:2px solid #0f766e !important; }
-    .ss-cell.ss-sel-right  { border-right:2px solid #0f766e !important; }
+    .ss-cell.ss-sel-top    { border-top:2px solid var(--accent) !important; }
+    .ss-cell.ss-sel-bottom { border-bottom:2px solid var(--accent) !important; }
+    .ss-cell.ss-sel-left   { border-left:2px solid var(--accent) !important; }
+    .ss-cell.ss-sel-right  { border-right:2px solid var(--accent) !important; }
     .ss-cell-text { pointer-events:none; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ss-fill-handle { position:absolute; right:-3px; bottom:-3px; width:7px; height:7px; background:#0f766e; border:1.5px solid var(--bg); cursor:crosshair; z-index:20; }
+    .ss-fill-handle { position:absolute; right:-3px; bottom:-3px; width:7px; height:7px; background:var(--accent); border:1.5px solid var(--bg); cursor:crosshair; z-index:20; }
     #ss-context-menu { font-size:13px; }
     .ss-menu-item { padding:7px 18px; cursor:pointer; white-space:nowrap; color:var(--text); }
     .ss-menu-item:hover { background:rgba(15,23,42,0.05); }
@@ -1530,7 +1530,7 @@ _SS_CSS = r"""
     .ss-rb svg { width:18px; height:18px; flex-shrink:0; }
     .ss-rb:hover { background:rgba(15,23,42,0.05); border-color:var(--border); color:var(--text); }
     .ss-rb:active { background:rgba(15,118,110,0.16); }
-    .ss-rb.ss-rb-active { background:rgba(15,118,110,0.16); border-color:#0f766e; color:var(--accent); }
+    .ss-rb.ss-rb-active { background:rgba(15,118,110,0.16); border-color:var(--accent); color:var(--accent); }
     .ss-rb-tall { height:52px; font-size:11px; }
     .ss-rb-tall svg { width:22px; height:22px; }
     .ss-rb-icon { min-width:30px; width:30px; padding:3px; font-size:0; }
@@ -1551,12 +1551,12 @@ def render_portal_html() -> str:
     for e in events:
         ts = str(e.get("server_timestamp", ""))[:19].replace("T", " ")
         actor = e.get("actor", "")
-        part = f"{e.get('part_name', '')} <small style='color:#55637a;'>({e.get('tracking_code', '')})</small>"
+        part = f"{e.get('part_name', '')} <small style='color:var(--text-muted);'>({e.get('tracking_code', '')})</small>"
         action = f"<span style='color:var(--accent);font-weight:700;'>{e.get('action', '')}</span> ({e.get('detail', '')})"
         qty = str(e.get("quantity", ""))
         notes = e.get("notes", "") or "—"
-        rows.append(f"<tr style='border-bottom: 1px solid rgba(15,23,42,0.05);'><td style='padding: 10px 14px;'>{ts}</td><td style='padding: 10px 14px;'><b>{actor}</b></td><td style='padding: 10px 14px;'>{part}</td><td style='padding: 10px 14px;'>{action}</td><td style='padding: 10px 14px;'><b>{qty}</b></td><td style='padding: 10px 14px;color:#55637a;'>{notes}</td></tr>")
-    table_rows = "".join(rows) if rows else "<tr><td colspan='6' style='text-align:center;color:#55637a;padding:16px;'>Chưa có báo cáo nào được gửi.</td></tr>"
+        rows.append(f"<tr style='border-bottom: 1px solid rgba(15,23,42,0.05);'><td style='padding: 10px 14px;'>{ts}</td><td style='padding: 10px 14px;'><b>{actor}</b></td><td style='padding: 10px 14px;'>{part}</td><td style='padding: 10px 14px;'>{action}</td><td style='padding: 10px 14px;'><b>{qty}</b></td><td style='padding: 10px 14px;color:var(--text-muted);'>{notes}</td></tr>")
+    table_rows = "".join(rows) if rows else "<tr><td colspan='6' style='text-align:center;color:var(--text-muted);padding:16px;'>Chưa có báo cáo nào được gửi.</td></tr>"
 
     public_url = get_public_tunnel_url()
     public_mobile_url = f"{public_url}/tracking/mobile" if public_url else "/tracking/mobile"
@@ -1605,6 +1605,10 @@ def render_portal_html() -> str:
       --info-soft: #eff6ff;
       --border-strong: #c3d2e3;
       --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      --on-accent: #ffffff;
+      /* "Đã giao" - the sixth status hue, shared with the mobile web's
+         --violet so one status is one colour across both surfaces. */
+      --violet: #5b21b6;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -1638,13 +1642,13 @@ def render_portal_html() -> str:
     .brand-logo {{
       width: 36px;
       height: 36px;
-      background: linear-gradient(135deg, #0f766e 0%, #0b5f59 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
       border-radius: 9px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 900;
-      color: #ffffff;
+      color: var(--on-accent);
       font-size: 19px;
     }}
     .brand h1 {{
@@ -1677,8 +1681,8 @@ def render_portal_html() -> str:
       border: 1px solid transparent;
     }}
     .btn-primary {{
-      background: linear-gradient(135deg, #0f766e 0%, #0b5f59 100%);
-      color: #ffffff;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      color: var(--on-accent);
       box-shadow: 0 4px 14px rgba(15, 118, 110, 0.22);
     }}
     .btn-primary:hover {{
@@ -1700,8 +1704,8 @@ def render_portal_html() -> str:
       font-size: 13px;
     }}
     .btn-success {{
-      background: #047857;
-      color: #fff;
+      background: var(--success);
+      color: var(--on-accent);
     }}
     .btn:active {{ transform: scale(0.97); }}
     .container {{
@@ -1815,7 +1819,7 @@ def render_portal_html() -> str:
     .qr-card-comp {{
       font-size: 12px;
       font-weight: 800;
-      color: var(--accent);
+      color: var(--accent-strong);
       background: var(--accent-dim);
       padding: 2px 8px;
       border-radius: 4px;
@@ -1830,7 +1834,7 @@ def render_portal_html() -> str:
       font-weight: 700;
       margin-bottom: 10px;
       word-break: break-word;
-      color: #fff;
+      color: var(--text);
     }}
     .qr-card-body {{
       display: flex;
@@ -1932,7 +1936,7 @@ def render_portal_html() -> str:
       </div>
     </div>
     <div class="header-links">
-      <a href="#" onclick="downloadExcelReport(event)" class="btn btn-outline" id="excel-export-btn" style="background:#ecfdf5;border-color:#047857;color:#047857;">📥 Xuất Báo Cáo Excel</a>
+      <a href="#" onclick="downloadExcelReport(event)" class="btn btn-outline" id="excel-export-btn" style="background:var(--success-soft);border-color:var(--success);color:var(--success);">📥 Xuất Báo Cáo Excel</a>
       <a href="{public_mobile_url}" target="_blank" class="btn btn-primary">📱 Mở Mobile Scanner</a>
       <a href="/docs" target="_blank" class="btn btn-outline">📑 API Swagger</a>
       <a href="/health/readiness/database" target="_blank" class="btn btn-outline">🩺 DB Health</a>
@@ -1984,27 +1988,27 @@ def render_portal_html() -> str:
           </div>
         </div>
         <div style="height: 12px; width:100%; background: var(--card-raised); border-radius: 6px; overflow:hidden; display:flex; margin-bottom:12px;">
-          <div style="width:{pct_deliv}%; background:#6d28d9;" title="Đã giao hàng: {stats['deliv']}"></div>
-          <div style="width:{pct_pack}%; background:#0f766e;" title="Đã đóng gói: {stats['packed']}"></div>
-          <div style="width:{pct_qc}%; background:#047857;" title="QC đạt: {stats['qc']}"></div>
-          <div style="width:{pct_prod}%; background:#0f766e;" title="Đang gia công: {stats['in_prod']}"></div>
+          <div style="width:{pct_deliv}%; background:var(--violet);" title="Đã giao hàng: {stats['deliv']}"></div>
+          <div style="width:{pct_pack}%; background:var(--accent);" title="Đã đóng gói: {stats['packed']}"></div>
+          <div style="width:{pct_qc}%; background:var(--success);" title="QC đạt: {stats['qc']}"></div>
+          <div style="width:{pct_prod}%; background:var(--accent);" title="Đang gia công: {stats['in_prod']}"></div>
         </div>
         <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:12px; font-weight:700;">
           <div style="display:flex; align-items:center; gap:6px;">
-            <span style="width:10px; height:10px; background:#0f766e; border-radius:2px;"></span>
-            <span>Đang gia công: <b style="color:#0f766e;">{stats['in_prod']}</b> ({pct_prod}%)</span>
+            <span style="width:10px; height:10px; background:var(--accent); border-radius:2px;"></span>
+            <span>Đang gia công: <b style="color:var(--accent);">{stats['in_prod']}</b> ({pct_prod}%)</span>
           </div>
           <div style="display:flex; align-items:center; gap:6px;">
-            <span style="width:10px; height:10px; background:#047857; border-radius:2px;"></span>
-            <span>QC đạt: <b style="color:#047857;">{stats['qc']}</b> ({pct_qc}%)</span>
+            <span style="width:10px; height:10px; background:var(--success); border-radius:2px;"></span>
+            <span>QC đạt: <b style="color:var(--success);">{stats['qc']}</b> ({pct_qc}%)</span>
           </div>
           <div style="display:flex; align-items:center; gap:6px;">
-            <span style="width:10px; height:10px; background:#0f766e; border-radius:2px;"></span>
-            <span>Đã đóng gói: <b style="color:#0f766e;">{stats['packed']}</b> ({pct_pack}%)</span>
+            <span style="width:10px; height:10px; background:var(--accent); border-radius:2px;"></span>
+            <span>Đã đóng gói: <b style="color:var(--accent);">{stats['packed']}</b> ({pct_pack}%)</span>
           </div>
           <div style="display:flex; align-items:center; gap:6px;">
-            <span style="width:10px; height:10px; background:#6d28d9; border-radius:2px;"></span>
-            <span>Đã xuất xưởng: <b style="color:#6d28d9;">{stats['deliv']}</b> ({pct_deliv}%)</span>
+            <span style="width:10px; height:10px; background:var(--violet); border-radius:2px;"></span>
+            <span>Đã xuất xưởng: <b style="color:var(--violet);">{stats['deliv']}</b> ({pct_deliv}%)</span>
           </div>
         </div>
       </div>
@@ -2071,7 +2075,7 @@ def render_portal_html() -> str:
     <div id="tab-excel" class="tab-pane">
 
       <!-- SPREADSHEET EDITOR CARD -->
-      <div class="card" style="border-color:var(--accent);background:linear-gradient(135deg,rgba(15,118,110,0.06) 0%,#ffffff 100%);margin-bottom:20px;padding:0;">
+      <div class="card" style="border-color:var(--accent);background:linear-gradient(135deg,rgba(15,118,110,0.06) 0%,var(--card-bg) 100%);margin-bottom:20px;padding:0;">
 
         <!-- TITLE ROW -->
         <div style="padding:12px 16px 8px;border-bottom:1px solid var(--border);">
@@ -2285,7 +2289,7 @@ def render_portal_html() -> str:
         <!-- FORMULA BAR -->
         <div style="display:flex;align-items:center;gap:8px;margin:0;background:var(--card-raised);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:5px 10px;">
           <div id="ss-cell-addr" style="font-family:monospace;font-size:13px;color:var(--accent);min-width:50px;font-weight:700;text-align:center;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;padding:2px 6px;">A1</div>
-          <div style="color:var(--border);font-size:18px;line-height:1;">│</div>
+          <div style="color:var(--text-muted);font-size:18px;line-height:1;">│</div>
           <span style="font-size:13px;color:var(--accent);font-style:italic;font-weight:700;margin-right:2px;">fx</span>
           <input id="ss-formula-bar" type="text" placeholder="Nhập giá trị hoặc công thức: =SUM(C2:C10)"
             style="flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:monospace;font-size:13px;"
@@ -2378,16 +2382,16 @@ def render_portal_html() -> str:
 
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
           <!-- CLOUDFLARE HTTPS -->
-          <div style="background: linear-gradient(135deg, rgba(4, 120, 87, 0.12) 0%, rgba(255, 255, 255, 0.6) 100%); border: 1px solid #047857; border-radius: 14px; padding: 20px;">
+          <div style="background: linear-gradient(135deg, rgba(4, 120, 87, 0.12) 0%, rgba(255, 255, 255, 0.6) 100%); border: 1px solid var(--success); border-radius: 14px; padding: 20px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-              <h3 style="margin:0; font-size:16px; color:#047857;">🌐 Cloudflare Public HTTPS</h3>
-              <span style="background:#047857; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">TOÀN CẦU + CAMERA</span>
+              <h3 style="margin:0; font-size:16px; color:var(--success);">🌐 Cloudflare Public HTTPS</h3>
+              <span style="background:var(--success); color:var(--on-accent); font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">TOÀN CẦU + CAMERA</span>
             </div>
             <div style="display:flex; gap:16px; align-items:center; margin-bottom:14px;">
-              {'<div style="background:#fff; padding:8px; border-radius:10px; flex-shrink:0;"><img src="' + public_qr + '" alt="Public HTTPS QR" style="width:120px; height:120px; display:block;"></div>' if public_qr else '<div style="width:136px; height:136px; border-radius:10px; background:rgba(15,23,42,0.05); border:2px dashed #047857; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:11px; color:#047857; text-align:center; padding:8px;">Chưa có<br>tunnel<br>Cloudflare</div>'}
+              {'<div style="background:#fff; padding:8px; border-radius:10px; flex-shrink:0;"><img src="' + public_qr + '" alt="Public HTTPS QR" style="width:120px; height:120px; display:block;"></div>' if public_qr else '<div style="width:136px; height:136px; border-radius:10px; background:rgba(15,23,42,0.05); border:2px dashed var(--success); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:11px; color:var(--success); text-align:center; padding:8px;">Chưa có<br>tunnel<br>Cloudflare</div>'}
               <div>
                 <p style="font-size:13px; color:var(--text-muted); margin:0 0 8px;">Quét bằng camera iPhone/Android bất kỳ. Hoạt động trên mọi mạng 4G/5G/Wi-Fi từ xa và <b>mở khóa quyền camera quét mã</b>.</p>
-                <div id="public-url-display" style="font-family:monospace; font-size:13px; color:#047857; word-break:break-all; background:rgba(15,23,42,0.05); padding:6px 10px; border-radius:6px; margin-bottom:8px;">
+                <div id="public-url-display" style="font-family:monospace; font-size:13px; color:var(--success); word-break:break-all; background:rgba(15,23,42,0.05); padding:6px 10px; border-radius:6px; margin-bottom:8px;">
                   {public_mobile_url if public_url else '⚠️ Chưa có tunnel — Chạy CHAY_WEB.bat để kích hoạt Cloudflare'}
                 </div>
               </div>
@@ -2521,9 +2525,9 @@ def render_portal_html() -> str:
         const data = await res.json();
         if (data.tunnel_url) {{
           bar.style.background = 'rgba(4,120,87,0.1)';
-          bar.style.border = '1px solid #047857';
-          bar.style.color = '#047857';
-          bar.innerHTML = `✅ <b>Tunnel đang hoạt động:</b> <a href="${{data.mobile_url}}" target="_blank" style="color:#047857;">${{data.mobile_url}}</a> — Hãy tải lại trang (F5) để cập nhật QR.`;
+          bar.style.border = '1px solid var(--success)';
+          bar.style.color = 'var(--success)';
+          bar.innerHTML = `✅ <b>Tunnel đang hoạt động:</b> <a href="${{data.mobile_url}}" target="_blank" style="color:var(--success);">${{data.mobile_url}}</a> — Hãy tải lại trang (F5) để cập nhật QR.`;
         }} else {{
           bar.style.background = 'rgba(185,28,28,0.1)';
           bar.style.border = '1px solid var(--danger)';
