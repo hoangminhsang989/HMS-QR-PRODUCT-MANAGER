@@ -11,6 +11,7 @@
   <meta name='apple-mobile-web-app-capable' content='yes'>
   <meta name='apple-mobile-web-app-status-bar-style' content='default'>
 <script src='/static/jsqr.min.js'></script>
+  <style>
     :root {
       --bg: #f1f5f9;
       --bg-grad: linear-gradient(180deg, #eef4fb 0%, #f1f5f9 220px);
@@ -32,11 +33,37 @@
       --info-soft: #eff6ff;
       --text: #0f172a;
       --text-muted: #55637a;
+      --placeholder: #5f6b7d;
+      --on-accent: #ffffff;
+      --on-text: #f8fafc;
+      --scrim: rgba(15, 23, 42, 0.45);
       --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
       --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.05);
       --shadow-lg: 0 18px 40px rgba(15, 23, 42, 0.16);
       --radius: 16px;
       --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+
+      /* status "strong" text, one per hue, on the matching -soft ground */
+      --success-strong: #065f46;
+      --warning-strong: #92400e;
+      --danger-strong: #991b1b;
+      --info-strong: #1e40af;
+
+      /* status chip borders, one per hue */
+      --accent-border: #99e6da;
+      --success-border: #a7f3d0;
+      --warning-border: #fde68a;
+      --danger-border: #fecaca;
+      --info-border: #bfdbfe;
+
+      /* "Đã giao" - a sixth hue that is in no palette; declared here so it
+         is reviewable instead of buried in a rule body */
+      --violet: #5b21b6;
+      --violet-soft: #f5f3ff;
+      --violet-border: #ddd6fe;
+
+      /* camera viewfinder laser line */
+      --laser: #14b8a6;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body {
@@ -79,10 +106,13 @@
       gap: 6px;
     }
     .portal-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      padding: 6px 14px;
       font-size: 13px;
       color: var(--text-muted);
       text-decoration: none;
-      padding: 6px 10px;
       border-radius: 999px;
       background: var(--card-raised);
       border: 1px solid var(--border);
@@ -161,14 +191,15 @@
       font-family: inherit;
       font-size: 15px;
       padding: 11px 14px;
+      min-height: 44px;
       border-radius: 12px;
       border: 1px solid var(--border-strong);
-      background: #ffffff;
+      background: var(--card-bg);
       color: var(--text);
       outline: none;
       transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
     }
-    input::placeholder, textarea::placeholder { color: #94a3b8; }
+    input::placeholder, textarea::placeholder { color: var(--placeholder); }
     input:focus, select:focus, textarea:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-dim);
@@ -180,6 +211,7 @@
       align-items: center;
       justify-content: center;
       gap: 6px;
+      min-width: 44px;
       background: var(--card-raised);
       border: 1px solid var(--border-strong);
       color: var(--text);
@@ -188,8 +220,8 @@
     .btn-cam {
       width: 100%;
       min-height: 52px;
-      background: linear-gradient(135deg, #0f766e 0%, #0b5f59 100%);
-      color: #fff;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      color: var(--on-accent);
       font-size: 16px;
       font-weight: 800;
       border-radius: 14px;
@@ -199,7 +231,7 @@
     }
     .cam-container {
       position: relative;
-      background: #0f172a;
+      background: var(--text);
       border-radius: var(--radius);
       overflow: hidden;
       margin-bottom: 12px;
@@ -222,8 +254,8 @@
     .laser-line {
       width: 80%;
       height: 2px;
-      background: #14b8a6;
-      box-shadow: 0 0 8px #14b8a6, 0 0 16px #14b8a6;
+      background: var(--laser);
+      box-shadow: 0 0 8px var(--laser), 0 0 16px var(--laser);
       animation: laserScan 2s infinite ease-in-out;
     }
     @keyframes laserScan {
@@ -271,14 +303,14 @@
       background: transparent;
       color: var(--text-muted);
       font-weight: 700;
-      font-size: 14px;
+      font-size: 13px;
       padding: 11px 8px;
       border-radius: 999px;
       min-height: 44px;
     }
     .mode-tab-btn.active {
       background: var(--accent);
-      color: #fff;
+      color: var(--on-accent);
       box-shadow: 0 4px 12px rgba(15, 118, 110, 0.22);
     }
     .attempt-row {
@@ -292,7 +324,7 @@
       min-width: 65px;
       min-height: 44px;
       background: var(--accent);
-      color: #fff;
+      color: var(--on-accent);
       font-weight: 800;
       border: none;
       border-radius: 12px;
@@ -300,8 +332,8 @@
     .done {
       width: 100%;
       min-height: 46px;
-      background: linear-gradient(135deg, #047857 0%, #065f46 100%);
-      color: #fff;
+      background: linear-gradient(135deg, var(--success) 0%, var(--success-strong) 100%);
+      color: var(--on-accent);
       font-weight: 800;
       font-size: 15px;
       border: none;
@@ -321,14 +353,14 @@
       padding: 8px;
       border-radius: 12px;
       border: 1px solid var(--border-strong);
-      background: #ffffff;
+      background: var(--card-bg);
       color: var(--text);
     }
-    .qc-check { background: var(--success-soft); border-color: #a7f3d0; color: #065f46; }
-    .qc-short { background: var(--warning-soft); border-color: #fde68a; color: #92400e; }
-    .qc-ng    { background: var(--danger-soft); border-color: #fecaca; color: #991b1b; }
-    .qc-pack  { background: var(--info-soft); border-color: #bfdbfe; color: #1e40af; }
-    .qc-deliv { background: #f5f3ff; border-color: #ddd6fe; color: #5b21b6; }
+    .qc-check { background: var(--success-soft); border-color: var(--success-border); color: var(--success-strong); }
+    .qc-short { background: var(--warning-soft); border-color: var(--warning-border); color: var(--warning-strong); }
+    .qc-ng    { background: var(--danger-soft); border-color: var(--danger-border); color: var(--danger-strong); }
+    .qc-pack  { background: var(--info-soft); border-color: var(--info-border); color: var(--info-strong); }
+    .qc-deliv { background: var(--violet-soft); border-color: var(--violet-border); color: var(--violet); }
     .qc-gen   { background: var(--card-raised); border-color: var(--border-strong); color: var(--text-muted); }
     #history {
       list-style: none;
@@ -372,7 +404,7 @@
       letter-spacing: 0.4px;
       background: var(--accent-soft);
       color: var(--accent-strong);
-      border: 1px solid #99e6da;
+      border: 1px solid var(--accent-border);
     }
     #toast {
       position: fixed;
@@ -383,17 +415,17 @@
       transform: translate(-50%, 18px);
       opacity: 0;
       pointer-events: none;
-      background: #0f172a;
-      border: 1px solid #0f172a;
+      background: var(--text);
+      border: 1px solid var(--text);
       border-radius: 14px;
       box-shadow: var(--shadow-lg);
-      color: #f8fafc;
+      color: var(--on-text);
       font-weight: 700;
       padding: 12px 14px;
       text-align: center;
       transition: opacity 0.18s ease, transform 0.18s ease;
     }
-    #toast.error { background: var(--danger); border-color: var(--danger); color: #fff; }
+    #toast.error { background: var(--danger); border-color: var(--danger); color: var(--on-accent); }
     #toast.visible { opacity: 1; transform: translate(-50%, 0); }
     button:disabled { cursor: wait; opacity: 0.62; transform: none; }
     .stepper-wrap {
@@ -413,7 +445,7 @@
       width: 30px;
       height: 30px;
       border-radius: 50%;
-      background: #ffffff;
+      background: var(--card-bg);
       border: 2px solid var(--border-strong);
       color: var(--text-muted);
       font-size: 12px;
@@ -424,7 +456,7 @@
       transition: all 0.25s ease;
     }
     .step-name {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 700;
       color: var(--text-muted);
       margin-top: 5px;
@@ -442,14 +474,14 @@
     .step-item.done .step-circle {
       background: var(--success);
       border-color: var(--success);
-      color: #fff;
+      color: var(--on-accent);
     }
     .step-item.done .step-name { color: var(--success); }
     .step-line.done { background: var(--success); }
     .step-item.active .step-circle {
       background: var(--accent);
       border-color: var(--accent);
-      color: #fff;
+      color: var(--on-accent);
       box-shadow: 0 0 0 4px var(--accent-dim);
       animation: stepPulse 1.8s infinite;
     }
@@ -457,7 +489,7 @@
     .step-item.alert .step-circle {
       background: var(--danger);
       border-color: var(--danger);
-      color: #fff;
+      color: var(--on-accent);
       box-shadow: 0 0 0 4px rgba(185, 28, 28, 0.15);
     }
     .step-item.alert .step-name { color: var(--danger); font-weight: 800; }
@@ -472,6 +504,19 @@
       .wrap { padding: 10px; }
       header { padding: 8px 10px; }
       .card { padding: 14px; border-radius: 14px; }
+      /* At 360px a pill is 164px wide; 24px padding + 8px gap + a 75px label
+         leaves 57px for the value, and "Chưa chọn" needs 65px. One line cannot
+         hold both, so the label moves above the value and the value gets the
+         full width. Without this the default state every operator sees renders
+         as "Chưa c…" on the two most common phone widths. */
+      .pill-btn {
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 2px;
+        padding: 8px 12px;
+      }
+      .pill-btn b { max-width: 100%; }
     }
   .file-link{display:block;min-height:44px;padding:10px 0;color:var(--accent);font-weight:700;overflow-wrap:anywhere}#mobile-attachments{padding-left:20px}</style>
 </head>
@@ -496,7 +541,7 @@
       <select id='user-select' style='width:100%;margin-bottom:8px;'></select>
       <input id='new-user' placeholder='Hoặc nhập tên nhân sự mới' style='width:100%;margin-bottom:8px;'>
       <div style='display:flex;gap:6px;'>
-        <button onclick='selectUser()' style='flex:1;background:var(--accent);color:#fff;'>XÁC NHẬN USER</button>
+        <button onclick='selectUser()' style='flex:1;background:var(--accent);color:var(--on-accent);'>XÁC NHẬN USER</button>
         <button onclick="document.querySelector('#user-picker').hidden=true" style='background:transparent;'>Đóng</button>
       </div>
     </div>
@@ -504,7 +549,7 @@
       <div style='font-size:13px;font-weight:700;margin-bottom:6px;color:var(--accent);'>CHỌN CÔNG ĐOẠN:</div>
       <select id='process-select' style='width:100%;margin-bottom:8px;'></select>
       <div style='display:flex;gap:6px;'>
-        <button onclick='selectProcess()' style='flex:1;background:var(--accent);color:#fff;'>XÁC NHẬN LOẠI</button>
+        <button onclick='selectProcess()' style='flex:1;background:var(--accent);color:var(--on-accent);'>XÁC NHẬN LOẠI</button>
         <button onclick="document.querySelector('#process-picker').hidden=true" style='background:transparent;'>Đóng</button>
       </div>
     </div>
@@ -530,10 +575,10 @@
           <div class='laser-line'></div>
         </div>
         <div style='position:absolute;bottom:10px;left:0;right:0;text-align:center;display:flex;justify-content:center;gap:8px;'>
-          <button id='torch-btn' type='button' style='background:rgba(15,23,42,0.72);color:#fff;font-size:13px;padding:6px 14px;border-radius:20px;border:1px solid rgba(255,255,255,0.5);' onclick='toggleTorch()'>
+          <button id='torch-btn' type='button' style='background:rgba(15,23,42,0.72);color:var(--on-accent);font-size:13px;padding:6px 14px;border-radius:20px;border:1px solid rgba(255,255,255,0.5);' onclick='toggleTorch()'>
             💡 Đèn Flash
           </button>
-          <button type='button' style='background:#b91c1c;color:#fff;font-size:13px;padding:6px 16px;border-radius:20px;border:none;' onclick='stopCamera()'>
+          <button type='button' style='background:var(--danger);color:var(--on-accent);font-size:13px;padding:6px 16px;border-radius:20px;border:none;' onclick='stopCamera()'>
             ❌ Dừng Camera
           </button>
         </div>
@@ -555,8 +600,8 @@
     </div>
 
     <!-- PART PICKER MODAL -->
-    <div id='part-picker-modal' style='display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.45);z-index:200;padding:14px;'>
-      <div style='background:var(--card-bg);border:1px solid var(--border);border-radius:14px;max-width:540px;margin:30px auto;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,0.6);'>
+    <div id='part-picker-modal' style='display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--scrim);z-index:200;padding:14px;'>
+      <div style='background:var(--card-bg);border:1px solid var(--border);border-radius:14px;max-width:540px;margin:30px auto;max-height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);'>
         <div style='padding:14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;'>
           <h3 style='margin:0;font-size:16px;color:var(--accent);'>🔍 DANH SÁCH CHI TIẾT SẢN PHẨM</h3>
           <button onclick='closePartPicker()' style='background:transparent;border:none;color:var(--text-muted);font-size:18px;'>✕</button>
@@ -578,7 +623,7 @@
            tracking_code, so the scan succeeds while the printed name, customer or
            product code no longer match. The server computes that as qr_identity_consistent
            and nothing read it, so the operator was never told. -->
-      <div id='qr-mismatch' hidden style='margin-bottom:14px;background:var(--danger-soft);border:1px solid #fecaca;padding:12px 14px;border-radius:12px;'>
+      <div id='qr-mismatch' hidden style='margin-bottom:14px;background:var(--danger-soft);border:1px solid var(--danger-border);padding:12px 14px;border-radius:12px;'>
         <div style='font-size:12px;font-weight:800;color:var(--danger);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;'>⚠ Mã QR KHÔNG KHỚP Đữ LIệU</div>
         <div style='font-size:13px;color:var(--text);line-height:1.55;'>Tem này được in trước khi thông tin chi tiết bị thay đổi. Hệ thống vẫn tra đúng theo mã theo dõi, nhưng tên chi tiết, khách hàng hoặc mã sản phẩm in trên tem không còn khớp. Kiểm tra lại trước khi gia công.</div>
       </div>
@@ -646,12 +691,12 @@
           <button class='qc-btn qc-deliv' onclick="openWorkflow('DELIVERED')">🚚 ĐÃ GIAO HÀNG</button>
           <button class='qc-btn qc-gen' onclick="openWorkflow('GENERAL_REPORT')">📝 BÁO CÁO CHUNG</button>
         </div>
-        <div id='workflow-form' hidden style='margin-top:14px;background:var(--card-raised);padding:14px;border-radius:10px;border:1px solid var(--border);'>
+        <div id='workflow-form' hidden style='margin-top:14px;background:var(--card-raised);padding:14px;border-radius:12px;border:1px solid var(--border);'>
           <h4 id='workflow-title' style='margin:0 0 10px;color:var(--accent);'></h4>
           <input id='workflow-qty' type='number' min='0.0001' placeholder='Số lượng' style='width:100%;margin-bottom:8px;'>
           <textarea id='workflow-notes' placeholder='Nội dung báo cáo chi tiết...' style='width:100%;height:70px;margin-bottom:10px;'></textarea>
           <div style='display:flex;gap:8px;'>
-            <button onclick='sendWorkflow()' style='flex:1;background:var(--accent);color:#fff;min-height:44px;'>XÁC NHẬN GỬI</button>
+            <button onclick='sendWorkflow()' style='flex:1;background:var(--accent);color:var(--on-accent);min-height:44px;'>XÁC NHẬN GỬI</button>
             <button onclick="document.querySelector('#workflow-form').hidden=true" style='background:transparent;'>Hủy</button>
           </div>
         </div>
@@ -668,8 +713,8 @@
   <div id='toast' role='status' aria-live='polite'></div>
 
   <!-- CONNECTION / LOGIN -->
-  <div id='conn-modal' style='display:none;position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:400;padding:16px;overflow-y:auto;'>
-    <div style='background:var(--card-bg);border:1px solid var(--border);border-radius:14px;max-width:460px;margin:24px auto;'>
+  <div id='conn-modal' style='display:none;position:fixed;inset:0;background:var(--scrim);z-index:400;padding:16px;overflow-y:auto;'>
+    <div style='background:var(--card-bg);border:1px solid var(--border);border-radius:14px;max-width:460px;margin:24px auto;box-shadow:var(--shadow-lg);'>
       <div style='padding:14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;'>
         <h3 style='margin:0;font-size:16px;color:var(--accent);'>🔗 KẾT NỐI MÁY CHỦ</h3>
         <button onclick='closeConnection()' style='background:transparent;border:none;color:var(--text-muted);font-size:18px;'>✕</button>
@@ -682,15 +727,15 @@
           Nhập địa chỉ Cloudflare Tunnel của máy chủ xưởng. Để trống nếu điện thoại đang mở trực tiếp từ máy chủ.
         </div>
         <div style='display:flex;gap:8px;'>
-          <button onclick='saveConnection()' style='flex:1;background:var(--accent);color:#fff;min-height:44px;'>LƯU &amp; KẾT NỐI</button>
+          <button onclick='saveConnection()' style='flex:1;background:var(--accent);color:var(--on-accent);min-height:44px;'>LƯU &amp; KẾT NỐI</button>
           <button onclick='clearConnection()' style='background:transparent;'>Đặt lại</button>
         </div>
       </div>
     </div>
   </div>
 
-  <div id='login-modal' style='display:none;position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:410;padding:16px;overflow-y:auto;'>
-    <div style='background:var(--card-bg);border:1px solid var(--border);border-radius:14px;max-width:420px;margin:40px auto;'>
+  <div id='login-modal' style='display:none;position:fixed;inset:0;background:var(--scrim);z-index:410;padding:16px;overflow-y:auto;'>
+    <div style='background:var(--card-bg);border:1px solid var(--border);border-radius:14px;max-width:420px;margin:40px auto;box-shadow:var(--shadow-lg);'>
       <div style='padding:14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;'>
         <h3 style='margin:0;font-size:16px;color:var(--accent);'>🔐 ĐĂNG NHẬP</h3>
         <button onclick='closeLogin()' style='background:transparent;border:none;color:var(--text-muted);font-size:18px;'>✕</button>
@@ -699,7 +744,7 @@
         <input id='login-user' placeholder='Tên đăng nhập' autocomplete='username' style='width:100%;'>
         <input id='login-pass' type='password' placeholder='Mật khẩu' autocomplete='current-password' style='width:100%;'>
         <div id='login-error' style='font-size:13px;color:var(--danger);' hidden></div>
-        <button id='login-btn' onclick='submitLogin()' style='background:var(--accent);color:#fff;min-height:44px;'>ĐĂNG NHẬP</button>
+        <button id='login-btn' onclick='submitLogin()' style='background:var(--accent);color:var(--on-accent);min-height:44px;'>ĐĂNG NHẬP</button>
         <button onclick='logout()' style='background:transparent;font-size:13px;'>Đăng xuất</button>
       </div>
     </div>

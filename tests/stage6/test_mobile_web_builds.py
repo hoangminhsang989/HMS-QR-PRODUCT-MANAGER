@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from itertools import chain
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -65,6 +66,162 @@ def test_every_build_uses_one_consistent_line_ending():
         assert crlf == 0 or lone_lf == 0, (
             f"{name} mixes line endings: {crlf} CRLF and {lone_lf} LF"
         )
+
+
+def test_the_global_control_rule_enforces_the_44px_touch_target():
+    """Every control must be at least 44px, not only the ones that remember to.
+
+    ``DESIGN.md`` requires 44px mobile action targets. The stylesheet honoured
+    that in seven specific selectors (``.pill-btn``, ``.qc-btn``,
+    ``.mode-tab-btn``, ``.sample-btn``, ``.btn-cam``, ``.portal-link``,
+    ``.file-link``) - and in the global ``button, input, select, textarea`` rule
+    it relied on ``padding: 11px 14px`` alone, with no ``min-height``.
+
+    That works until something overrides the padding, and two buttons did: the
+    camera overlay's torch and stop buttons carry inline ``padding: 6px 14px``,
+    which lands them at **31px** tall. Two more were too small without any
+    override at all - the modal close glyph is 18px in an 11px-padded box, which
+    is 43px *wide*, and the login modal's "Đăng xuất" is a 13px font in the same
+    box, which is 41px tall.
+
+    All four were invisible to the first audit because it measured only the
+    initial page. Driving the page into the camera and login states and measuring
+    every visible control found them; the fix belongs on the global rule, so that
+    a future button cannot repeat the mistake by forgetting a ``min-height``.
+
+    This asserts the global rule carries the floor. It is structural and
+    deterministic - it does not need a browser - and it fails if the rule is
+    ever narrowed back to padding alone.
+    """
+
+    for name in ("index.html", *DERIVED):
+        raw = (WEB / name).read_text(encoding="utf-8")
+
+        m = re.search(r"button,\s*input,\s*select,\s*textarea\s*\{([^}]*)\}", raw)
+        assert m, f"{name} has no global control rule"
+        shared = m.group(1)
+        assert re.search(r"min-height:\s*44px", shared), (
+            f"{name}: the global button/input/select/textarea rule has no 44px "
+            "min-height, so any control whose padding is overridden - as the "
+            "camera overlay's torch and stop buttons do - drops below the "
+            "44px touch target DESIGN.md requires"
+        )
+
+        b = re.search(r"(?<![\w-])button\s*\{([^}]*)\}", raw)
+        assert b, f"{name} has no button rule"
+        assert re.search(r"min-width:\s*44px", b.group(1)), (
+            f"{name}: the button rule has no 44px min-width, so a small glyph "
+            "button such as the modal close 'x' stays narrower than the touch "
+            "target (measured 43px wide)"
+        )
+
+
+def test_narrow_widths_do_not_truncate_the_pill_values():
+    """The default pill state must be readable at 360px, the commonest phone width.
+
+    ``.pill-btn`` is a row: label on the left, value on the right, with the value
+    capped by ``.pill-btn b { max-width: 130px; overflow: hidden;
+    text-overflow: ellipsis }``. The cap is deliberate - a long operator name or
+    process name has to be cut somehow - but at 360px the arithmetic leaves no
+    room for even the *default* value.
+
+    Measured in Chrome at 360px: the pill is 164px wide, minus 24px padding, 8px
+    gap and a 75px label, leaves **57px** for the value. ``Chưa chọn`` needs
+    **65px**. So every operator, before they have picked anything, saw
+    ``Chưa c…``. ``Đăng nhập`` needed 66px against 63px and was cut the same way.
+    390px was short by 2px. Both are among the most common phone widths.
+
+    An ellipsis is the right answer for a value that is genuinely too long. It is
+    the wrong answer for the state every user starts in, which is not long at all
+    - the container is simply too narrow to hold a label and a value side by side.
+
+    The fix stacks the pill at <=480px so the value takes the full width, which is
+    why this asserts the stacking rather than a pixel count: a browser is needed
+    to measure text, and this suite is deliberately deterministic.
+    """
+
+    for name in ("index.html", *DERIVED):
+        raw = (WEB / name).read_text(encoding="utf-8")
+
+        start = raw.find("@media (max-width: 480px)")
+        assert start != -1, f"{name} has no narrow-width media query"
+        depth = 0
+        end = start
+        while end < len(raw):
+            if raw[end] == "{":
+                depth += 1
+            elif raw[end] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            end += 1
+        block = raw[start : end + 1]
+
+        assert re.search(r"\.pill-btn\s*\{[^}]*flex-direction:\s*column", block), (
+            f"{name}: at <=480px the pill still lays its label and value out in a "
+            "row, so a 65px value gets 57px and renders as an ellipsis"
+        )
+        assert re.search(r"\.pill-btn\s+b\s*\{[^}]*max-width:\s*100%", block), (
+            f"{name}: the value keeps its 130px cap at narrow widths, so it is "
+            "still squeezed even once the pill is stacked"
+        )
+
+
+def test_the_css_is_actually_inside_a_style_element():
+    """The stylesheet has to reach the browser, not just exist in the file.
+
+    ``web/index.html`` carries 463 lines of CSS - the whole design system:
+    ``--accent`` teal, the 16px card radius, the status colours, the shadows. On
+    2026-11-03 the opening ``<style>`` tag was gone while the closing
+    ``</style>`` survived, so the HTML parser could not put those bytes in a style
+    element and they became character data instead.
+
+    Nothing noticed, because every guard here reads bytes: this file checks
+    line endings, BOMs and byte-identical derivation, and the deployment tests
+    check what is served. Not one of them asks whether the CSS is *applied*. The
+    page shipped unstyled to production.
+
+    Verified by measurement, not by reading. Loaded in Chrome at
+    https://hms-qr-product-manager-web.vercel.app/, HTTP 200:
+
+        styleElements: 0
+        sheetCount: 0
+        bodyFont: "Times New Roman"     <- the browser default, not --font
+        bodyBg: "rgba(0, 0, 0, 0)"      <- no --bg-grad
+        accent: ""                      <- the :root block never registered
+
+    ``"Times New Roman"`` is the tell: it is what a page with no CSS at all looks
+    like, and it is not any font this project declares.
+
+    The assertion is structural and deterministic - it asks where the token block
+    lives rather than launching a browser - so it runs everywhere and still fails
+    on exactly this defect.
+    """
+
+    for name in ("index.html", *DERIVED):
+        raw = (WEB / name).read_text(encoding="utf-8")
+        opening = raw.count("<style")
+        closing = raw.count("</style>")
+        assert opening == closing, (
+            f"{name} has {opening} opening <style> tag(s) but {closing} </style>; "
+            "CSS outside a style element is inert text"
+        )
+        assert opening >= 1, f"{name} has no <style> element at all"
+
+        # The :root token block must sit between a <style> and its </style>.
+        token_at = raw.find("--accent")
+        assert token_at != -1, f"{name} declares no --accent token"
+        last_open = raw.rfind("<style", 0, token_at)
+        assert last_open != -1, (
+            f"{name} declares --accent with no <style> before it, so the browser "
+            "never sees the token"
+        )
+        close_after = raw.find("</style>", last_open)
+        assert close_after > token_at, (
+            f"{name} declares --accent outside any <style> element, so the whole "
+            "design system is inert"
+        )
+
 
 
 def test_check_mode_passes_on_the_committed_builds():
