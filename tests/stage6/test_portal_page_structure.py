@@ -210,3 +210,71 @@ def test_no_token_value_is_hardcoded_in_presentation(monkeypatch):
         "portal presentation duplicates a :root token value, so the token is not "
         "the only place that colour lives:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_the_two_surfaces_declare_the_same_value_for_every_shared_token(monkeypatch):
+    """Two surfaces disagreeing about one colour is how a third palette starts.
+
+    It has happened twice here. On 2026-11-01 the portal had drifted to a dark
+    palette of its own (``--bg: #0d1520``, ``--accent: #00d2b4``) that
+    ``DESIGN.md`` never covered - the same failure that took the admin page, and
+    the same shape: a surface escapes the authority because nothing compares it
+    to the authority. Then "Đã giao" shipped as **two different purples**,
+    ``#6d28d9`` in the portal and ``#5b21b6`` in the mobile web, because the two
+    surfaces had no shared declaration to disagree with.
+
+    ``DESIGN.md`` names the mobile web as the authority for the shared tokens:
+    the portal's ``:root`` "carries the same light tokens as the mobile web - it
+    is not a third palette". This asserts exactly that, and it is the guard that
+    was missing both times.
+
+    Two clauses, because catching a *contradiction* is not the same as catching a
+    *replacement*:
+
+    1. every token the portal declares must also exist on the mobile web, so the
+       shared core cannot quietly empty out and leave two disjoint palettes that
+       technically "never disagree";
+    2. every shared token must carry the same value, so one status cannot become
+       two colours.
+
+    The mobile web legitimately carries more than the portal does - shadows,
+    chip borders, the camera laser, the scrim - so only the portal's side is
+    required to be a subset. Today that is 22 of the web's 42, and they agree on
+    all 22.
+    """
+
+    portal_root = _token_block(_rendered(monkeypatch))
+    web_root = _token_block(
+        (SOURCE_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    )
+
+    assert portal_root, "portal declares no :root tokens"
+    assert web_root, "web/index.html declares no :root tokens"
+
+    portal_only = sorted(set(portal_root) - set(web_root))
+    assert not portal_only, (
+        "the portal declares tokens the mobile web does not, so the shared core "
+        f"can diverge without either side noticing: {portal_only}"
+    )
+
+    contradictions = [
+        f"--{name}: portal={portal_root[name]!r} vs web={web_root[name]!r}"
+        for name in sorted(set(portal_root) & set(web_root))
+        if portal_root[name] != web_root[name]
+    ]
+    assert not contradictions, (
+        "the two surfaces disagree about a shared colour, so one status is two "
+        "colours across the product:\n  " + "\n  ".join(contradictions)
+    )
+
+
+def _token_block(html: str) -> dict[str, str]:
+    """``--name: value`` for the ``:root`` block, whitespace-normalised."""
+
+    root = re.search(r":root\s*\{(.*?)\}", html, re.DOTALL)
+    if not root:
+        return {}
+    return {
+        name: " ".join(value.split())
+        for name, value in re.findall(r"--([\w-]+)\s*:\s*([^;]+);", root.group(1))
+    }
