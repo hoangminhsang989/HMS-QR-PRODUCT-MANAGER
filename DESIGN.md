@@ -124,7 +124,11 @@ Source of truth: `apps/design_tokens.py`. Warm neutral background (`#f3f1ec`), b
 
 ## Status mapping
 
-IN_PROCESS/info, WAITING_QC/warning, QC_CHECKED/success, QC_NG/danger, REWORK/danger, SHORTAGE/warning, PACKING/info, PACKED/success, PARTIALLY_DELIVERED/info, DELIVERED/success, HOLD/warning. Always render status as text plus semantic color and icon.
+Keyed by `packages.domain.product.ProductStatus` member name, which is what `order_tracking_items.status` stores. NEW/info, WAITING/warning, IN_PROGRESS/info, WAITING_QC/warning, QC_PASS/success, QC_NG/danger, REWORK/danger, PACKED/success, DELIVERED/success, HOLD/warning, CANCELLED/neutral. Always render status as text plus semantic color and icon.
+
+This mapping was stale until 2026-11-05: it named `IN_PROCESS`, `QC_CHECKED`, `SHORTAGE`, `PACKING` and `PARTIALLY_DELIVERED`, none of which exist in `ProductStatus`, and omitted `NEW`, `WAITING`, `IN_PROGRESS`, `QC_PASS` and `CANCELLED`, which do. `apps/design_tokens.py` copied it verbatim, so the desktop tracking window's `value in STATUS_COLORS` check left five of the eleven statuses with no background colour at all while the design said every status carries one. `tests/stage1/test_design_tokens.py` now fails if this mapping and the enum disagree.
+
+Open for LO, recorded rather than decided: `DELIVERED` is green here and on the desktop, but **violet** on the mobile web (`.qc-deliv`) and in the portal (`--violet`) — a sixth hue that exists in neither palette's declared status set. Which one is right is a product decision; the token guard only enforces that the two web surfaces agree with each other.
 
 ## Component and interaction rules
 
