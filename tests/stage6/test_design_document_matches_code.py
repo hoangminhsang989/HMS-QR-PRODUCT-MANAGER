@@ -183,3 +183,36 @@ def test_every_status_the_desktop_colours_is_declared_in_the_document():
         f"  real statuses not documented: {sorted(real - documented)}\n"
         f"  documented names that are not real statuses: {sorted(documented - real)}"
     )
+
+
+def test_the_documented_card_radius_is_the_radius_the_web_declares():
+    """The colour axis was not the only one that had drifted.
+
+    ``DESIGN.md``'s front-matter declared ``rounded.card: "14px"`` while
+    ``web/index.html`` declares ``--radius: 16px`` and ``.card`` reads
+    ``var(--radius)``. The document contradicted **its own body**, which says the
+    cards carry "16px radius" - so the front-matter was the wrong one, and the
+    code was right. A reader who trusted the machine-readable block over the prose
+    would have concluded the cards are 14px.
+
+    This pins the one radius the document makes a specific claim about to the
+    custom property the web actually uses. The radius axis has no token guard
+    beyond this, and that gap is recorded in DESIGN.md rather than papered over:
+    the same file also carries six hardcoded ``border-radius: 14px`` rules that
+    bypass ``--radius``, and the portal declares nine distinct radii with no
+    radius token at all. Both are the "a value duplicated where no token reaches"
+    defect on a different axis, and both are product decisions to make, not
+    assumptions to bake in.
+    """
+
+    web = (SOURCE_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    declared = dict(re.findall(r"(--radius)\s*:\s*([0-9]+)px", web))
+    assert declared, "web/index.html declares no --radius custom property"
+
+    documented = _block("rounded")["card"]
+    assert documented == f"{declared['--radius']}px", (
+        f"DESIGN.md declares rounded.card {documented} but the web's --radius is "
+        f"{declared['--radius']}px, and .card reads var(--radius) - so the "
+        "front-matter contradicts both the code and DESIGN.md's own body, which "
+        'says the cards carry "16px radius"'
+    )

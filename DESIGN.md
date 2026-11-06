@@ -44,7 +44,7 @@ typography:
 rounded:
   sm: "8px"
   md: "12px"
-  card: "14px"
+  card: "16px"
   lg: "16px"
   xl: "24px"
   chip: "20px"
