@@ -179,20 +179,29 @@ def test_the_rendered_stylesheet_uses_the_declared_values():
     """Built offscreen in a subprocess and read back, so the assertion is about
     what Qt receives rather than about what the source says.
 
-    It runs in a subprocess for the same reason the desktop's equivalent does:
+    It runs in a **subprocess** for the same reason the desktop's equivalent does:
     Qt state is process-global, and a window built in the suite's process
     outlives the test that built it.
+
+    ``refresh_status`` is stubbed out first. ``ServerToolWindow.__init__`` calls
+    it, and it probes the server over HTTP, walks the data root and enumerates
+    processes - real I/O that made this test fail roughly two runs in five with a
+    subprocess that died before printing anything. The stylesheet is applied in
+    ``_build_ui`` and does not depend on any of that, so the property under test
+    is unchanged; only the unrelated work that was making the probe unreliable is
+    gone.
     """
 
     probe = (
         "import sys;"
         "sys.path.insert(0, %r);"
+        "import apps.server.tool as tool;"
+        "tool.ServerToolWindow.refresh_status = lambda self: None;"
         "from PySide6.QtWidgets import QApplication;"
-        "from apps.server.tool import TOOL_TOKENS, ServerToolWindow;"
         "app = QApplication([]);"
-        "sheet = ServerToolWindow().styleSheet();"
+        "sheet = tool.ServerToolWindow().styleSheet();"
         "print(sorted({c for c in __import__('re').findall("
-        "r'#[0-9a-fA-F]{6}', sheet) if c not in TOOL_TOKENS.values()}))"
+        "r'#[0-9a-fA-F]{6}', sheet) if c not in tool.TOOL_TOKENS.values()}))"
     ) % str(SOURCE_ROOT)
 
     result = subprocess.run(
