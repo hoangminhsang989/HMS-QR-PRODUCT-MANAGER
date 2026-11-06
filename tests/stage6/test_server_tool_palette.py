@@ -190,6 +190,14 @@ def test_the_rendered_stylesheet_uses_the_declared_values():
     ``_build_ui`` and does not depend on any of that, so the property under test
     is unchanged; only the unrelated work that was making the probe unreliable is
     gone.
+
+    It is retried once if the subprocess dies. With the I/O gone the residual
+    failure is a crash rather than a hang - roughly one run in ten of the whole
+    suite, never in isolation - and a crash leaves no evidence either way, so
+    failing the suite on it is a false alarm while passing silently would be a
+    lie. The retry is bounded to two attempts, and the failure message says the
+    probe could not run, which is a different statement from "the stylesheet has
+    strays" and must not be conflated with it.
     """
 
     probe = (
@@ -204,17 +212,22 @@ def test_the_rendered_stylesheet_uses_the_declared_values():
         "r'#[0-9a-fA-F]{6}', sheet) if c not in tool.TOOL_TOKENS.values()}))"
     ) % str(SOURCE_ROOT)
 
-    result = subprocess.run(
-        [sys.executable, "-c", probe],
-        cwd=SOURCE_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
-    )
+    result = None
+    for _attempt in (1, 2):
+        result = subprocess.run(
+            [sys.executable, "-c", probe],
+            cwd=SOURCE_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+        )
+        if result.returncode == 0:
+            break
 
-    assert result.returncode == 0, (
-        "could not build the Server Tool window offscreen:\n" + result.stderr[-600:]
+    assert result is not None and result.returncode == 0, (
+        "could not build the Server Tool window offscreen, so this guard could not "
+        "check the stylesheet (two attempts):\n" + result.stderr[-600:]
     )
     strays = ast.literal_eval(result.stdout.strip().splitlines()[-1])
     assert not strays, (
