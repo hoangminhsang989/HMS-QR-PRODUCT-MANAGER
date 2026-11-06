@@ -71,6 +71,14 @@ INK = {
     "qr_glyph": "#17212b",
     "cell_outline": "#4f4f4f",
     "excel_marker": "#217346",
+    # QR and print-paper ink. A QR code has to be black on white for a scanner to
+    # read it, and a printed label has to be dark ink on paper, so these two are
+    # functional rather than decorative and do not follow the UI theme. Declared
+    # here for the same reason as the rest: the desktop guard matches *named*
+    # colours as well as hex, and a literal that happens to be functional still
+    # has to be written in exactly one place.
+    "qr_ink": "#000000",
+    "qr_paper": "#ffffff",
 }
 
 SPACING = {"2": 2, "4": 4, "6": 6, "8": 8, "12": 12, "16": 16, "24": 24, "32": 32}

@@ -110,7 +110,7 @@ def qr_png(payload: str) -> bytes:
     code = qrcode.QRCode(border=1, box_size=24, error_correction=qrcode.constants.ERROR_CORRECT_L)
     code.add_data(payload)
     code.make(fit=True)
-    code.make_image(fill_color="black", back_color="white").save(output, format="PNG")
+    code.make_image(fill_color=INK["qr_ink"], back_color=INK["qr_paper"]).save(output, format="PNG")
     return output.getvalue()
 
 
@@ -121,7 +121,7 @@ def product_qr_label_png(payload: str, product_code: str, part_name: str, dimens
     render_scale = width / logical_width
     left_width = round(logical_width * 0.60)
     label = QImage(width, height, QImage.Format.Format_ARGB32)
-    label.fill(Qt.GlobalColor.white)
+    label.fill(QColor(INK["qr_paper"]))
     dots_per_meter = round(1500 / 0.0254)
     label.setDotsPerMeterX(dots_per_meter)
     label.setDotsPerMeterY(dots_per_meter)
@@ -360,13 +360,13 @@ class FormulaItemDelegate(QStyledItemDelegate):
             size = min(28, max(14, option.rect.height() - 10))
             left = option.rect.left() + 6
             top = option.rect.center().y() - size // 2
-            painter.fillRect(left, top, size, size, QColor("white"))
+            painter.fillRect(left, top, size, size, QColor(INK["qr_paper"]))
             painter.setPen(QPen(QColor(INK["qr_glyph"]), 1))
             painter.drawRect(left, top, size - 1, size - 1)
             module = max(1, size // 9)
             for x, y in ((0, 0), (6, 0), (0, 6)):
                 painter.fillRect(left + x * module, top + y * module, 3 * module, 3 * module, QColor(INK["qr_glyph"]))
-                painter.fillRect(left + (x + 1) * module, top + (y + 1) * module, module, module, QColor("white"))
+                painter.fillRect(left + (x + 1) * module, top + (y + 1) * module, module, module, QColor(INK["qr_paper"]))
             digest = hashlib.sha256(text.encode("utf-8")).digest()
             for bit in range(20):
                 x, y = 3 + bit % 6, 3 + bit // 6
@@ -3457,7 +3457,7 @@ class ProductMasterWindow(QMainWindow):
                 elif action == "clear":
                     font = QFont()
                     item.setBackground(QColor("transparent"))
-                    item.setForeground(QColor(Qt.GlobalColor.black))
+                    item.setForeground(QColor(TOKENS["text_primary"]))
                     item.setData(Qt.ItemDataRole.UserRole + 20, None)
                 item.setFont(font)
         finally:

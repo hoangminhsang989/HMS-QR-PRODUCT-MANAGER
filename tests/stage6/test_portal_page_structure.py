@@ -212,6 +212,68 @@ def test_no_token_value_is_hardcoded_in_presentation(monkeypatch):
     )
 
 
+def test_every_colour_in_presentation_is_a_token_or_declared_ink(monkeypatch):
+    """The value-based guard above cannot see a colour that belongs to no palette.
+
+    It checks that no ``:root`` value is *duplicated* in presentation, which
+    catches a token pass that stopped halfway. It says nothing about a colour
+    that was never a token at all: ``#f00`` in a UI rule, or ``#000`` in a text
+    colour, pass straight through because they are not in ``:root`` to begin
+    with. That is the same class as the desktop's QR confirmation chip, whose
+    teal ``#147a69`` matched none of the four palettes in the product.
+
+    So this asserts the converse direction: every colour in presentation is
+    either a token value or ink that *must* ignore the theme. Print styles are
+    the second category and are exempted by name, not by accident - the portal
+    prints thermal and sticker labels, and those have to be black on white
+    whichever way the screen theme goes, exactly as the desktop's 1500-DPI label
+    does. Exempting them explicitly is what lets the rest be checked at all.
+    """
+
+    html = _rendered(monkeypatch)
+    root = re.search(r":root\s*\{(.*?)\}", html, re.DOTALL)
+    assert root, "portal has no :root token block"
+    token_values = {value.casefold() for value in re.findall(r"#[0-9a-fA-F]{3,6}\b", root.group(1))}
+
+    style_block = html[html.index("<style>"):html.index("</style>")]
+    css_outside_root = re.sub(r":root\s*\{.*?\}", "", style_block, flags=re.DOTALL)
+
+    # The print stylesheet, kept whole so its ink is exempted as a unit.
+    print_at = css_outside_root.find("@media print")
+    assert print_at != -1, "portal has no @media print block to exempt"
+    on_screen_css = css_outside_root[:print_at]
+
+    # The label templates the print buttons build. Their ink lives in ``style=""``
+    # attributes inside JavaScript rather than in the ``@media print`` CSS, so
+    # exempting only the stylesheet would miss them - which is how ``#000`` sat
+    # there unchecked. There are two: ``printLabel()`` for one label and
+    # ``printLabels()`` for a filtered set, and both are thermal/sticker ink that
+    # has to be black on white whichever way the screen theme goes.
+    starts = [m.start() for m in re.finditer(r"printArea\.innerHTML", html)]
+    assert starts, "portal builds no print-label template to exempt"
+    template_end = html.find("`;", starts[-1])
+    assert template_end != -1, "cannot find the end of the last print-label template"
+    label_start, label_end = starts[0], template_end
+
+    offenders: list[str] = []
+    for label, text in (("CSS rule outside :root", on_screen_css),):
+        for literal in sorted(set(re.findall(r"#[0-9a-fA-F]{3,6}\b", text))):
+            if literal.casefold() not in token_values:
+                offenders.append(f"{label} uses {literal}, which is not a :root token")
+
+    for match in re.finditer(r'style="([^"]*)"', html):
+        if label_start <= match.start() <= label_end:
+            continue
+        for literal in sorted(set(re.findall(r"#[0-9a-fA-F]{3,6}\b", match.group(1)))):
+            if literal.casefold() not in token_values:
+                offenders.append(f"style attribute uses {literal}: {match.group(1)[:80]}")
+
+    assert not offenders, (
+        "the portal shows colours that belong to no declared palette, so nothing "
+        "notices if they drift:\n  " + "\n  ".join(offenders)
+    )
+
+
 def test_the_two_surfaces_declare_the_same_value_for_every_shared_token(monkeypatch):
     """Two surfaces disagreeing about one colour is how a third palette starts.
 

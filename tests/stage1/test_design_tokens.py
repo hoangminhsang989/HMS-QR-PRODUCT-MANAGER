@@ -47,6 +47,15 @@ SOURCE_ROOT = Path(__file__).resolve().parents[2]
 DESIGN = SOURCE_ROOT / "DESIGN.md"
 
 _HEX = re.compile(r"#[0-9a-fA-F]{6}\b")
+# Colour *forms*, not just six-digit hex. A guard that matches only hex is blind
+# to ``#fff``, to ``white``, and to ``QColor("white")`` - which is how five named
+# colours sat outside the desktop's token blocks while the guard passed.
+_COLOUR_FORMS = re.compile(
+    r"#[0-9a-fA-F]{3,6}\b"
+    r"|QColor\(\s*[\"'](?:white|black|red|green|blue|gray|grey)[\"']\s*\)"
+    r"|Qt\.GlobalColor\.(?:white|black|red|green|blue|gray|grey)"
+    r"|(?:fill_color|back_color)\s*=\s*[\"'](?:white|black)[\"']"
+)
 
 
 def test_status_colors_covers_exactly_the_real_statuses():
@@ -215,9 +224,14 @@ def test_no_desktop_file_writes_a_colour_outside_the_token_blocks():
     label, four print-label and QR-glyph inks, and a ``VALIDATION_WARNING_COLOR``
     that duplicated a status ground by value.
 
-    A guard scoped to ``design_tokens.py`` passes on all of that, because the
-    token file itself is clean. The defect is always in the file that *uses* the
-    colour, so the guard has to read the users.
+    It also matched only hex, so five **named** colours sat outside the blocks
+    unnoticed. Four of them are functional - a QR code has to be black on white
+    for a scanner to read it, and a printed label has to be dark ink on paper -
+    and are now declared as ``qr_ink`` and ``qr_paper`` in ``INK``. The fifth was
+    a real defect: the "clear" action set a cell's foreground to
+    ``Qt.GlobalColor.black`` while every other cell renders ``text_primary``
+    ``#333333``, so a cleared cell's text was pure black and no other cell's was.
+    Nothing caught it because the guard did not look at named colours at all.
 
     Two blocks are excluded: ``TOKENS`` and ``INK``. ``INK`` is separate because
     the desktop also *draws* things - the 1500-DPI print label, the faux QR glyph
@@ -234,7 +248,7 @@ def test_no_desktop_file_writes_a_colour_outside_the_token_blocks():
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line.lstrip().startswith("#"):
                 continue
-            for literal in _HEX.findall(line):
+            for literal in _COLOUR_FORMS.findall(line):
                 offenders.append(
                     f"{path.relative_to(SOURCE_ROOT).as_posix()}:{number}: {literal}"
                 )

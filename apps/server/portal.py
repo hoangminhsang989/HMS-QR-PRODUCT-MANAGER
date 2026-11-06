@@ -1845,7 +1845,7 @@ def render_portal_html() -> str:
     .qr-card-img {{
       width: 100px;
       height: 100px;
-      background: #fff;
+      background: var(--card-bg);
       padding: 6px;
       border-radius: 8px;
       flex-shrink: 0;
@@ -2388,7 +2388,7 @@ def render_portal_html() -> str:
               <span style="background:var(--success); color:var(--on-accent); font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">TOÀN CẦU + CAMERA</span>
             </div>
             <div style="display:flex; gap:16px; align-items:center; margin-bottom:14px;">
-              {'<div style="background:#fff; padding:8px; border-radius:10px; flex-shrink:0;"><img src="' + public_qr + '" alt="Public HTTPS QR" style="width:120px; height:120px; display:block;"></div>' if public_qr else '<div style="width:136px; height:136px; border-radius:10px; background:rgba(15,23,42,0.05); border:2px dashed var(--success); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:11px; color:var(--success); text-align:center; padding:8px;">Chưa có<br>tunnel<br>Cloudflare</div>'}
+              {'<div style="background:var(--card-bg); padding:8px; border-radius:10px; flex-shrink:0;"><img src="' + public_qr + '" alt="Public HTTPS QR" style="width:120px; height:120px; display:block;"></div>' if public_qr else '<div style="width:136px; height:136px; border-radius:10px; background:rgba(15,23,42,0.05); border:2px dashed var(--success); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:11px; color:var(--success); text-align:center; padding:8px;">Chưa có<br>tunnel<br>Cloudflare</div>'}
               <div>
                 <p style="font-size:13px; color:var(--text-muted); margin:0 0 8px;">Quét bằng camera iPhone/Android bất kỳ. Hoạt động trên mọi mạng 4G/5G/Wi-Fi từ xa và <b>mở khóa quyền camera quét mã</b>.</p>
                 <div id="public-url-display" style="font-family:monospace; font-size:13px; color:var(--success); word-break:break-all; background:rgba(15,23,42,0.05); padding:6px 10px; border-radius:6px; margin-bottom:8px;">
@@ -2410,7 +2410,7 @@ def render_portal_html() -> str:
               <span style="background:var(--card-bg); color:var(--accent); font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px; border:1px solid var(--border);">LAN 192.168.x</span>
             </div>
             <div style="display:flex; gap:16px; align-items:center; margin-bottom:14px;">
-              <div style="background:#fff; padding:8px; border-radius:10px; flex-shrink:0;">
+              <div style="background:var(--card-bg); padding:8px; border-radius:10px; flex-shrink:0;">
                 <img src="{wifi_qr}" alt="Wi-Fi QR" style="width:120px; height:120px; display:block;">
               </div>
               <div>
