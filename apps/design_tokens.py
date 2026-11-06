@@ -39,6 +39,21 @@ TOKENS = {
     "danger": "#c44747",
     "info": "#3b72a6",
     "neutral": "#e4e4e4",
+    # Status cell grounds. Pale on purpose: a status cell carries dark
+    # ``text_primary`` text and no separate foreground, so the ground has to be
+    # light enough to read. The saturated semantic colours above are for text
+    # and borders, never for a cell that also holds text.
+    "status_new": "#dceeff",
+    "status_waiting": "#fff1bf",
+    "status_in_progress": "#cfe9ff",
+    "status_waiting_qc": "#eadcff",
+    "status_qc_pass": "#c7f2d3",
+    "status_qc_ng": "#ffd0d0",
+    "status_rework": "#ffdca8",
+    "status_packed": "#d9e5f5",
+    "status_delivered": "#b8e8c7",
+    "status_hold": "#ffe0a3",
+    "status_cancelled": "#e4e4e4",
 }
 
 SPACING = {"2": 2, "4": 4, "6": 6, "8": 8, "12": 12, "16": 16, "24": 24, "32": 32}
@@ -52,18 +67,27 @@ SPACING = {"2": 2, "4": 4, "6": 6, "8": 8, "12": 12, "16": 16, "24": 24, "32": 3
 # statuses with no background colour, against DESIGN.md's rule that status is
 # always text plus semantic colour. ``tests/stage1/test_design_tokens.py``
 # now fails if the key set and the enum ever disagree again.
+#
+# The values are *cell grounds*, not the semantic colours: a status cell paints
+# dark ``text_primary`` text straight onto this background and sets no
+# foreground of its own, so the ground has to stay pale. They used to be the
+# saturated colours (``info``, ``warning``, ...), which measured 2.5-3.5:1
+# against ``text_primary`` - ten of the eleven statuses below the 4.5:1 DESIGN.md
+# requires. ``apps/desktop/product_master_window.py`` already painted the same
+# cells with these tints; the two windows disagreed, and the paler one was
+# right. Both now read this dict.
 STATUS_COLORS = {
-    "NEW": TOKENS["info"],
-    "WAITING": TOKENS["warning"],
-    "IN_PROGRESS": TOKENS["info"],
-    "WAITING_QC": TOKENS["warning"],
-    "QC_PASS": TOKENS["success"],
-    "QC_NG": TOKENS["danger"],
-    "REWORK": TOKENS["danger"],
-    "PACKED": TOKENS["success"],
-    "DELIVERED": TOKENS["success"],
-    "HOLD": TOKENS["warning"],
-    "CANCELLED": TOKENS["neutral"],
+    "NEW": TOKENS["status_new"],
+    "WAITING": TOKENS["status_waiting"],
+    "IN_PROGRESS": TOKENS["status_in_progress"],
+    "WAITING_QC": TOKENS["status_waiting_qc"],
+    "QC_PASS": TOKENS["status_qc_pass"],
+    "QC_NG": TOKENS["status_qc_ng"],
+    "REWORK": TOKENS["status_rework"],
+    "PACKED": TOKENS["status_packed"],
+    "DELIVERED": TOKENS["status_delivered"],
+    "HOLD": TOKENS["status_hold"],
+    "CANCELLED": TOKENS["status_cancelled"],
 }
 
 PY_SIDE_THEME = f"""

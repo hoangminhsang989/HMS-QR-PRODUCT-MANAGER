@@ -117,6 +117,89 @@ def test_the_stylesheet_interpolates_tokens_rather_than_pasting_them():
     )
 
 
+def test_every_status_ground_carries_readable_text():
+    """A status cell paints dark ``text_primary`` text straight onto the ground
+    and sets no foreground of its own.
+
+    ``apps/desktop/tracking_window.py:135`` calls ``setBackground`` and nothing
+    else, so the ground has to be light enough for the table's own text colour
+    to read on. It used not to be: ``STATUS_COLORS`` held the *saturated*
+    semantic colours (``info``, ``warning``, ``success``, ``danger``), which
+    measure 2.49-3.47:1 against ``text_primary`` - ten of the eleven statuses
+    below the 4.5:1 that DESIGN.md's status-mapping rule requires, and the
+    defect had been there for the six statuses that were coloured before the
+    key fix landed.
+
+    ``apps/desktop/product_master_window.py`` painted the very same cells from
+    its own dict of pale tints, all of which clear 9:1. The two windows
+    disagreed and the paler one was right, so both now read the one dict in
+    ``apps.design_tokens`` and this asserts the property that made it right.
+    """
+
+    text = TOKENS["text_primary"]
+    failures = [
+        f"{status}: {colour} on {text} is {_contrast(text, colour):.2f}:1"
+        for status, colour in STATUS_COLORS.items()
+        if _contrast(text, colour) < 4.5
+    ]
+
+    assert not failures, (
+        "a status cell ground is too dark for the text the table paints on it "
+        "(no foreground is set, so the ground must stay pale):\n  "
+        + "\n  ".join(failures)
+    )
+
+
+def _contrast(foreground: str, background: str) -> float:
+    """WCAG 2.1 relative-luminance contrast ratio for two ``#rrggbb`` colours."""
+
+    def _luminance(colour: str) -> float:
+        channels = []
+        for index in (1, 3, 5):
+            value = int(colour[index:index + 2], 16) / 255
+            channels.append(
+                value / 12.92 if value <= 0.03928
+                else ((value + 0.055) / 1.055) ** 2.4
+            )
+        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+    light, dark = sorted((_luminance(foreground), _luminance(background)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def test_the_two_desktop_windows_paint_status_cells_from_one_palette():
+    """``product_master_window`` used to keep its own eleven hex tints.
+
+    The two windows painted the same status cells from two different palettes,
+    which is how the tracking window came to use saturated grounds while its
+    sibling used pale ones. ``product_master_window`` now derives its
+    label-keyed view from ``apps.design_tokens.STATUS_COLORS``, so a change to
+    a status colour is a change in one place.
+
+    It looks the colours up by the *label* the tables display, so this also
+    asserts the bridge is complete: every status must have a label, and the
+    resulting map must agree with the shared one.
+    """
+
+    from apps.desktop import product_master_window as master
+
+    derived = master.STATUS_COLORS
+    expected = {
+        master.STATUS_LABELS[status]: colour
+        for status, colour in STATUS_COLORS.items()
+    }
+
+    assert len(derived) == len(STATUS_COLORS) == len(master.STATUS_LABELS), (
+        "the desktop windows do not cover the same statuses: "
+        f"{len(derived)} label-keyed, {len(STATUS_COLORS)} status-keyed, "
+        f"{len(master.STATUS_LABELS)} labels"
+    )
+    assert derived == expected, (
+        "product_master_window's status colours no longer come from "
+        "apps.design_tokens.STATUS_COLORS"
+    )
+
+
 def _code_outside_the_token_block() -> str:
     """The module source with its docstring and its ``TOKENS`` block removed.
 

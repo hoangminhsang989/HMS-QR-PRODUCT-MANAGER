@@ -34,7 +34,7 @@ from .stage2_window import Stage2Window
 from .version import APP_VERSION
 from packages.domain.product import Product, ProductStatus, ProductValidationError, format_quantity
 from packages.domain.repository import ProductPage
-from apps.design_tokens import PY_SIDE_THEME
+from apps.design_tokens import PY_SIDE_THEME, STATUS_COLORS as STATUS_GROUNDS
 from apps.desktop.file_panels import AdminStoragePanel, ProductFilesPanel
 from packages.excel.desktop_formula_engine import FormulaEngine, FormulaError
 import qrcode
@@ -84,9 +84,15 @@ DEFAULT_CELL_SIZE_SETTINGS = {
 }
 
 STATUS_COLORS = {
-    "Mới": "#dceeff", "Chờ xử lý": "#fff1bf", "Đang thực hiện": "#cfe9ff", "Chờ QC": "#eadcff",
-    "QC đạt": "#c7f2d3", "QC không đạt": "#ffd0d0", "Làm lại": "#ffdca8", "Đã đóng gói": "#d9e5f5",
-    "Đã giao": "#b8e8c7", "Tạm giữ": "#ffe0a3", "Đã hủy": "#e4e4e4",
+    # Keyed by the Vietnamese label the tables display, because all three call
+    # sites look a colour up from ``item.text()``. The colours themselves live
+    # in ``apps.design_tokens.STATUS_COLORS``, keyed by ``ProductStatus``
+    # member name - this dict used to carry its own eleven hex tints, so the
+    # two desktop windows painted the same status cells from two different
+    # palettes and neither could be changed in one place. ``STATUS_LABELS`` is
+    # the bridge between the two key spaces.
+    STATUS_LABELS[status]: colour
+    for status, colour in STATUS_GROUNDS.items()
 }
 VALIDATION_WARNING_COLOR = "#fff1bf"
 
