@@ -470,3 +470,53 @@ def test_no_token_value_is_hardcoded_in_presentation():
             "not the only place that colour lives:\n  " + "\n  ".join(offenders)
         )
 
+
+def test_every_colour_in_the_mobile_web_is_a_token_or_declared_ink():
+    """The converse direction, which the guard above cannot see.
+
+    That one is value-based: it catches a token value *duplicated* in
+    presentation. It says nothing about a colour that was never a token at all,
+    so ``.card { color: #ff00ff }`` sails straight through - the same blind spot
+    the portal had until it grew a second guard, and the same class as the
+    desktop's QR chip whose teal matched none of the four palettes.
+
+    This asserts that every colour outside ``:root`` is one of two things: a
+    ``:root`` value, or the ``<meta name='theme-color'>`` content. That meta is
+    the browser chrome colour and cannot reference a custom property, so it is
+    the single legitimate literal in the file - and it is pinned to ``--accent``
+    as well, because a theme-colour that lags the accent is the same drift one
+    layer out.
+
+    All three builds are checked, since the derived ones inherit the markup.
+    """
+
+    for name in ("index.html", *DERIVED):
+        raw = (WEB / name).read_text(encoding="utf-8")
+        root = re.search(r":root\s*\{(.*?)\}", raw, re.DOTALL)
+        assert root, f"{name} has no :root token block"
+        token_values = {value.casefold() for value in re.findall(r"#[0-9a-fA-F]{3,6}\b", root.group(1))}
+        assert token_values, f"{name} declares no colour tokens"
+
+        # The only place a literal may legitimately live outside :root.
+        theme_color = re.search(r"<meta name='theme-color' content='([^']+)'>", raw)
+        assert theme_color, f"{name} declares no theme-color meta to exempt"
+
+        remainder = raw[: root.start()] + raw[root.end():]
+        offenders = [
+            literal
+            for literal in sorted(set(re.findall(r"#[0-9a-fA-F]{3,6}\b", remainder)))
+            if literal.casefold() not in token_values
+            and literal not in theme_color.group(1)
+        ]
+        assert not offenders, (
+            f"{name} shows colours that belong to no declared palette, so nothing "
+            f"notices if they drift: {offenders}"
+        )
+
+        accent = re.search(r"--accent:\s*(#[0-9a-fA-F]{6})", root.group(1))
+        assert accent, f"{name} declares no --accent token"
+        assert theme_color.group(1).casefold() == accent.group(1).casefold(), (
+            f"{name}'s theme-color is {theme_color.group(1)} but --accent is "
+            f"{accent.group(1)}, so the browser chrome and the app disagree"
+        )
+
