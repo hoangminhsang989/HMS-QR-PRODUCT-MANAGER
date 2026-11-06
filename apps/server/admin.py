@@ -13,7 +13,7 @@ from packages.application.server_auth import AuthenticationError, ServerAuthServ
 from packages.persistence.database import DatabaseRuntime
 
 
-# The LAN admin page's palette. This is a fifth one in the product - see the
+# The LAN admin page's palette. This is a fourth one in the product - see the
 # Server Tool section of DESIGN.md - and it lived inline in the ``<style>``
 # below, where nothing read it and nothing guarded it. Declared here for the
 # same reason as every other surface: a colour written in one place can be

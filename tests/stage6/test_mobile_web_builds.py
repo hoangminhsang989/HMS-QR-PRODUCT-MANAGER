@@ -409,6 +409,56 @@ def test_gitattributes_pins_the_web_tree_to_lf():
         assert attrs.get("eol") == "lf", f"{rel} is not pinned to LF: {attrs}"
 
 
+def test_every_file_pinned_to_lf_is_actually_lf_on_disk():
+    """The guard above asks Git what each file's attributes *resolve to*. This one
+    asks what the bytes on disk are, and the difference is the whole point.
+
+    ``web/sw.js`` was found sitting at 54 CRLF and 0 LF while ``.gitattributes``
+    pinned it to ``eol=lf`` and the guard above passed. ``git status`` reported
+    nothing: with ``core.autocrlf=true`` the clean filter rewrites CRLF back to
+    LF before comparing, so a working file that is entirely CRLF looks identical
+    to the LF blob it was committed as. ``git diff`` was empty. The file was wrong
+    in exactly the way the ``.gitattributes`` comment describes - "a fresh clone
+    silently received CRLF copies" - and every guard that could have caught it was
+    asking Git instead of asking the disk.
+
+    So this reads the bytes, and asks Git only *which* files are pinned. The first
+    version re-implemented the glob with ``fnmatch``, which does not understand
+    git's ``**``: ``web/**/*.js`` needs two path segments in fnmatch and
+    ``web/sw.js`` has one, so the pattern matched nothing and the guard passed on
+    a file that was entirely CRLF. Proven by injecting exactly that - which is the
+    only reason it is written this way now.
+    """
+
+    def eol_of(rel_path: str) -> str:
+        out = subprocess.run(
+            ["git", "check-attr", "eol", "--", rel_path],
+            cwd=SOURCE_ROOT, capture_output=True, text=True,
+        ).stdout.strip()
+        parts = out.split(": ")
+        return parts[2] if len(parts) == 3 else "unspecified"
+
+    checked = 0
+    for path in chain(
+        (SOURCE_ROOT / "web").rglob("*"), (SOURCE_ROOT / "apps" / "static").rglob("*")
+    ):
+        if not path.is_file():
+            continue
+        rel = str(path.relative_to(SOURCE_ROOT)).replace("\\", "/")
+        if eol_of(rel) != "lf":
+            continue
+        crlf = path.read_bytes().count(b"\r\n")
+        assert crlf == 0, (
+            f"{rel} is pinned to eol=lf by .gitattributes but has {crlf} CRLF "
+            "byte pair(s) on disk. Git cannot see this - core.autocrlf makes the "
+            "clean filter rewrite CRLF to LF before comparing, so git status and "
+            "git diff both report the file as unchanged. Rewrite it with LF."
+        )
+        checked += 1
+
+    assert checked, "no file resolved to eol=lf; the pin is not reaching the web tree"
+
+
 def test_no_token_value_is_hardcoded_in_presentation():
     """The mobile web had byte guards and no colour guard, so the token pass
     could stop halfway and every test would still pass.

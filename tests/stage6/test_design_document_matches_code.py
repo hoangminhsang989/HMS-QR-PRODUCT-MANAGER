@@ -276,6 +276,63 @@ def test_the_webs_font_sizes_are_exactly_the_declared_type_scale():
     )
 
 
+def test_the_documents_palette_count_matches_the_token_blocks_that_exist():
+    """DESIGN.md used to claim "four palettes" and list three.
+
+    The sentence counted correctly and omitted the LAN admin page, which has
+    declared ``ADMIN_TOKENS`` since 2026-11-05. ``apps/server/admin.py`` then
+    compounded it by describing its own palette as "a fifth one in the product"
+    when it is the fourth. Both read as reassuring, which is what makes this the
+    same class as a docstring citing a section that does not exist: a claim that
+    is wrong in a way that sounds settled.
+
+    The invariant is that the enumeration names every token block the code
+    declares, and the stated count equals how many there are. A palette added to
+    the code without being named here is exactly how the Server Tool and the admin
+    page both escaped notice the first time.
+    """
+
+    matter = _front_matter()
+    text = DESIGN.read_text(encoding="utf-8")
+
+    # The palettes the code actually declares, keyed by the token block that
+    # carries them. The mobile web and the portal share one set, so they are one
+    # entry - that sharing is asserted elsewhere, not here.
+    declared_blocks = {
+        "desktop": (SOURCE_ROOT / "apps" / "design_tokens.py").read_text(encoding="utf-8"),
+        "Server Tool": (SOURCE_ROOT / "apps" / "server" / "tool.py").read_text(encoding="utf-8"),
+        "LAN admin page": (SOURCE_ROOT / "apps" / "server" / "admin.py").read_text(encoding="utf-8"),
+    }
+    for name, block in (("TOKENS", declared_blocks["desktop"]),
+                        ("TOOL_TOKENS", declared_blocks["Server Tool"]),
+                        ("ADMIN_TOKENS", declared_blocks["LAN admin page"])):
+        assert re.search(rf"^{name} = \{{", block, re.MULTILINE), (
+            f"the code no longer declares {name}, so this guard's map is stale"
+        )
+
+    total = len(declared_blocks) + 1  # +1 for the shared web/portal set
+
+    sentence = re.search(
+        r"The product now carries \*\*(\w+) palettes\*\*(.*?)(?:\n\n|\.\s)", text, re.DOTALL
+    )
+    assert sentence, "DESIGN.md no longer states how many palettes the product carries"
+    words = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+    stated = words.get(sentence.group(1).lower())
+    assert stated is not None, f"unrecognised palette count: {sentence.group(1)!r}"
+    assert stated == total, (
+        f"DESIGN.md says the product carries {stated} palettes but the code "
+        f"declares {total} token blocks"
+    )
+
+    # Every named palette must actually be named in the enumeration that follows.
+    enumeration = sentence.group(2)
+    for name in declared_blocks:
+        assert name in enumeration, (
+            f"DESIGN.md counts {total} palettes but its enumeration never names "
+            f"the {name} palette, so a reader cannot tell which ones it means"
+        )
+
+
 def test_every_status_the_desktop_colours_is_declared_in_the_document():
     """``desktop_status_colors`` is keyed by ``ProductStatus`` member name for the
     same reason ``STATUS_COLORS`` is: a lookup by name cannot silently miss. The
