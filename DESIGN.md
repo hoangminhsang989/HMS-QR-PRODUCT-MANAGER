@@ -142,6 +142,17 @@ Source of truth: the `TOOL_TOKENS` block in that file. Cool light ground (`#f4f7
 
 This window was absent from DESIGN.md until 2026-11-05, which is why it is described here at all: it kept 34 colour literals inline in one Qt stylesheet, and nothing read them. They are declared now, with the values they already had — **the only colour that moved is a 0.3% contrast nudge** (`#617487` to `#5d6b7b`, 4.49:1 to 5.07:1, collapsing two secondary-text colours into one). Merging this palette into the desktop's would recolour a shipped surface on a decision nobody has taken, so **whether the Server Tool should share the desktop's blue accent is open** and recorded here rather than answered.
 
+Both are for LO. Neither is guessed at here.
+
+### Radius — recorded, not yet reconciled
+
+The front-matter's `rounded.card` said `14px` while `web/index.html` declares `--radius: 16px` and `.card` reads `var(--radius)`; the body of this document had said 16px all along, so the machine-readable block was the wrong one. `tests/stage6/test_design_document_matches_code.py` now pins `rounded.card` to `--radius` in both directions. That is the **only** radius guard in the tree, and two gaps sit behind it:
+
+- **`web/index.html` carries six hardcoded `border-radius: 14px` rules** (`.btn-cam`, `#toast`, and a second `.card` rule) that bypass `--radius` entirely. This is the same defect as the portal's `#fff`: a value duplicated where no token reaches it, so changing `--radius` later would silently leave six radii behind.
+- **The portal declares nine distinct radii** — 10, 8, 4, 6, 2, 14, 9, 12 and 5px — and has **no radius token at all**. It is the shape the Server Tool's palette was in before it was declared.
+
+Whether to introduce `--radius-*` tokens for the web and the portal is a product decision, recorded here rather than taken. The mobile web's byte-identical build (`scripts/build_mobile_web.py`) means any change to `web/index.html` has to be regenerated into `web/lan.html` and `web/vps.html`, not hand-edited.
+
 ### Known drift — recorded, not yet reconciled
 
 `apps/design_tokens.py` predates the R007 light-web redesign and no longer describes the web UI: its accent is blue `#246b9c` where the web is teal `#0f766e`, its background is warm `#f3f1ec` where the web is cool `#f1f5f9`, its radius is 4px where the web card is 16px, and its face is Segoe UI where the web uses the system stack. Treat the file as the desktop token source only. Reconciling the two palettes into one token set is a product decision; this file records the difference so an agent never "fixes" one surface toward the other by accident.
