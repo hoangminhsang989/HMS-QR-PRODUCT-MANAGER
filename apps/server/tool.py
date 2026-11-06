@@ -44,6 +44,62 @@ SECRETS_PATH = DEFAULT_DATA_ROOT / "server-tool-secrets.json"
 DEFAULT_ADMIN_PASSWORD = "admin"
 AUTO_START_TASK_NAME = "HMS QR Server (Current User)"
 
+# The Server Tool's own palette. This window is a fourth surface - DESIGN.md
+# covers the mobile web, the portal and the PySide6 desktop, and says nothing
+# about this one - so it kept its colours inline in the stylesheet below, where
+# nothing could read them and nothing guarded them. They are declared here for
+# the same reason the other surfaces declare theirs: a colour written in one
+# place can be changed in one place, and drift becomes visible.
+#
+# The palette is *not* merged with the desktop's. Merging would recolour a
+# shipped surface on a decision nobody has taken, so the values are exactly the
+# ones the stylesheet already used. ``tests/stage6/test_server_tool_palette.py``
+# holds the two invariants: no colour outside this block, and every text colour
+# clearing 4.5:1 on the ground it is painted on.
+TOOL_TOKENS = {
+    "ground": "#f4f7fb",
+    "text": "#182230",
+    "card": "#ffffff",
+    "card_border": "#d9e2ec",
+    "gridline": "#e5edf3",
+    "row_alt": "#f5f9fc",
+    "input_border": "#cbd5e1",
+    "focus": "#168aad",
+    "accent": "#0b7285",
+    "accent_hover": "#095c6d",
+    "accent_text": "#155e75",
+    "accent_deep": "#0b5563",
+    "accent_soft": "#edf5f7",
+    "accent_soft_hover": "#edf8fa",
+    "accent_border": "#aad7dd",
+    "accent_border_soft": "#9fc6d1",
+    "title": "#0d3b66",
+    "heading": "#274c77",
+    "muted": "#5d6b7b",
+    "section_label": "#526779",
+    "caption": "#617487",
+    "ok": "#176b42",
+    "warn": "#9a3412",
+    "hero_border": "#b9d8e8",
+    "hero_bg": "#f8fcff",
+    "overview_border": "#d3e4dc",
+    "overview_bg": "#fbfffd",
+    "header_bg": "#eaf3f8",
+    "header_border": "#cddfe8",
+    "selected_bg": "#cfeef2",
+    "selected_text": "#12303b",
+    "disabled_bg": "#e5e7eb",
+    "disabled_text": "#9ca3af",
+    # The activity log is a console, not a surface: dark ground, light ink, the
+    # one place in this window that inverts. 11.18:1.
+    "console_bg": "#102a43",
+    "console_text": "#d9e2ec",
+    # ``caption`` measured 4.49:1 on the ground, a 0.3% miss. The subtitle colour
+    # already clears 5.07:1 and does the same job, so the two secondary-text
+    # colours are now one colour.
+    "secondary_text": "#5d6b7b",
+}
+
 
 def _validated_root(value: str) -> Path:
     root = Path(value).expanduser().resolve(strict=False)
@@ -979,41 +1035,41 @@ class ServerToolWindow(QMainWindow):
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setWidget(root)
         self.setCentralWidget(scroll)
-        self.setStyleSheet("""
-            QMainWindow, QWidget { background: #f4f7fb; color: #182230; font: 8pt 'Segoe UI'; }
-            QLabel#title { color: #0d3b66; font: 700 16pt 'Segoe UI'; letter-spacing: 1px; }
-            QLabel#subtitle { color: #5d6b7b; font: 8pt 'Segoe UI'; padding-bottom: 1px; }
-            QGroupBox { background: #ffffff; border: 1px solid #d9e2ec; border-radius: 6px; margin-top: 7px; padding: 7px 5px 5px 5px; font: 700 8pt 'Segoe UI'; color: #274c77; }
-            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; background: #ffffff; }
-            QGroupBox#heroCard { border: 1px solid #b9d8e8; background: #f8fcff; }
-            QGroupBox#heroCard::title { background: #f8fcff; }
-            QGroupBox#overviewCard { border: 1px solid #d3e4dc; background: #fbfffd; }
-            QGroupBox#overviewCard::title { background: #fbfffd; }
-            QLineEdit, QComboBox { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 3px; min-height: 16px; color: #182230; }
-            QLineEdit:focus, QComboBox:focus { border: 2px solid #168aad; }
-            QPushButton { border-radius: 4px; padding: 4px 7px; min-height: 16px; font: 700 8pt 'Segoe UI'; }
-            QPushButton#primaryButton { background: #0b7285; color: white; border: 1px solid #0b7285; }
-            QPushButton#primaryButton:hover { background: #095c6d; }
-            QPushButton#secondaryButton { background: #edf5f7; color: #0b5563; border: 1px solid #aad7dd; }
-            QPushButton#outlineButton { background: #ffffff; color: #155e75; border: 1px solid #9fc6d1; }
-            QPushButton#outlineButton:hover { background: #edf8fa; }
-            QPushButton:disabled { background: #e5e7eb; color: #9ca3af; border-color: #e5e7eb; }
-            QLabel#serverUrl, QLabel#lanAddress { color: #0b7285; font: 700 8pt 'Consolas'; }
-            QLabel#status, QLabel#listenerState, QLabel#lanReadinessState, QLabel#firewallState { font: 700 8pt 'Segoe UI'; }
-            QLabel#status, QLabel#lanReadinessState { color: #176b42; }
-            QLabel#listenerState { color: #155e75; }
-            QLabel#firewallState { color: #9a3412; }
-            QLabel#locationsState { color: #9a3412; font: 700 8pt 'Segoe UI'; }
-            QLabel#sectionLabel { color: #526779; font: 700 8pt 'Segoe UI'; letter-spacing: 1px; }
-            QLabel#refreshTime { color: #617487; font: 8pt 'Segoe UI'; }
-            QLabel#overviewCaption { color: #617487; font: 700 8pt 'Segoe UI'; }
-            QLabel#overviewValue { color: #155e75; font: 700 9pt 'Segoe UI'; }
-            QProgressBar { border: 1px solid #9fc6d1; border-radius: 4px; text-align: center; min-height: 16px; background: #ffffff; }
-            QProgressBar::chunk { background: #0b7285; border-radius: 3px; }
-            QPlainTextEdit { background: #102a43; color: #d9e2ec; border: 0; border-radius: 5px; padding: 5px; font: 8pt 'Consolas'; }
-            QTableWidget { background: #ffffff; alternate-background-color: #f5f9fc; border: 1px solid #d9e2ec; border-radius: 6px; gridline-color: #e5edf3; }
-            QHeaderView::section { background: #eaf3f8; color: #274c77; border: 0; border-bottom: 1px solid #cddfe8; padding: 5px; font-weight: 700; }
-            QTableWidget::item:selected { background: #cfeef2; color: #12303b; }
+        self.setStyleSheet(f"""
+            QMainWindow, QWidget {{ background: {TOOL_TOKENS['ground']}; color: {TOOL_TOKENS['text']}; font: 8pt 'Segoe UI'; }}
+            QLabel#title {{ color: {TOOL_TOKENS['title']}; font: 700 16pt 'Segoe UI'; letter-spacing: 1px; }}
+            QLabel#subtitle {{ color: {TOOL_TOKENS['muted']}; font: 8pt 'Segoe UI'; padding-bottom: 1px; }}
+            QGroupBox {{ background: {TOOL_TOKENS['card']}; border: 1px solid {TOOL_TOKENS['card_border']}; border-radius: 6px; margin-top: 7px; padding: 7px 5px 5px 5px; font: 700 8pt 'Segoe UI'; color: {TOOL_TOKENS['heading']}; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; background: {TOOL_TOKENS['card']}; }}
+            QGroupBox#heroCard {{ border: 1px solid {TOOL_TOKENS['hero_border']}; background: {TOOL_TOKENS['hero_bg']}; }}
+            QGroupBox#heroCard::title {{ background: {TOOL_TOKENS['hero_bg']}; }}
+            QGroupBox#overviewCard {{ border: 1px solid {TOOL_TOKENS['overview_border']}; background: {TOOL_TOKENS['overview_bg']}; }}
+            QGroupBox#overviewCard::title {{ background: {TOOL_TOKENS['overview_bg']}; }}
+            QLineEdit, QComboBox {{ background: {TOOL_TOKENS['card']}; border: 1px solid {TOOL_TOKENS['input_border']}; border-radius: 4px; padding: 3px; min-height: 16px; color: {TOOL_TOKENS['text']}; }}
+            QLineEdit:focus, QComboBox:focus {{ border: 2px solid {TOOL_TOKENS['focus']}; }}
+            QPushButton {{ border-radius: 4px; padding: 4px 7px; min-height: 16px; font: 700 8pt 'Segoe UI'; }}
+            QPushButton#primaryButton {{ background: {TOOL_TOKENS['accent']}; color: {TOOL_TOKENS['card']}; border: 1px solid {TOOL_TOKENS['accent']}; }}
+            QPushButton#primaryButton:hover {{ background: {TOOL_TOKENS['accent_hover']}; }}
+            QPushButton#secondaryButton {{ background: {TOOL_TOKENS['accent_soft']}; color: {TOOL_TOKENS['accent_deep']}; border: 1px solid {TOOL_TOKENS['accent_border']}; }}
+            QPushButton#outlineButton {{ background: {TOOL_TOKENS['card']}; color: {TOOL_TOKENS['accent_text']}; border: 1px solid {TOOL_TOKENS['accent_border_soft']}; }}
+            QPushButton#outlineButton:hover {{ background: {TOOL_TOKENS['accent_soft_hover']}; }}
+            QPushButton:disabled {{ background: {TOOL_TOKENS['disabled_bg']}; color: {TOOL_TOKENS['disabled_text']}; border-color: {TOOL_TOKENS['disabled_bg']}; }}
+            QLabel#serverUrl, QLabel#lanAddress {{ color: {TOOL_TOKENS['accent']}; font: 700 8pt 'Consolas'; }}
+            QLabel#status, QLabel#listenerState, QLabel#lanReadinessState, QLabel#firewallState {{ font: 700 8pt 'Segoe UI'; }}
+            QLabel#status, QLabel#lanReadinessState {{ color: {TOOL_TOKENS['ok']}; }}
+            QLabel#listenerState {{ color: {TOOL_TOKENS['accent_text']}; }}
+            QLabel#firewallState {{ color: {TOOL_TOKENS['warn']}; }}
+            QLabel#locationsState {{ color: {TOOL_TOKENS['warn']}; font: 700 8pt 'Segoe UI'; }}
+            QLabel#sectionLabel {{ color: {TOOL_TOKENS['section_label']}; font: 700 8pt 'Segoe UI'; letter-spacing: 1px; }}
+            QLabel#refreshTime {{ color: {TOOL_TOKENS['secondary_text']}; font: 8pt 'Segoe UI'; }}
+            QLabel#overviewCaption {{ color: {TOOL_TOKENS['secondary_text']}; font: 700 8pt 'Segoe UI'; }}
+            QLabel#overviewValue {{ color: {TOOL_TOKENS['accent_text']}; font: 700 9pt 'Segoe UI'; }}
+            QProgressBar {{ border: 1px solid {TOOL_TOKENS['accent_border_soft']}; border-radius: 4px; text-align: center; min-height: 16px; background: {TOOL_TOKENS['card']}; }}
+            QProgressBar::chunk {{ background: {TOOL_TOKENS['accent']}; border-radius: 3px; }}
+            QPlainTextEdit {{ background: {TOOL_TOKENS['console_bg']}; color: {TOOL_TOKENS['console_text']}; border: 0; border-radius: 5px; padding: 5px; font: 8pt 'Consolas'; }}
+            QTableWidget {{ background: {TOOL_TOKENS['card']}; alternate-background-color: {TOOL_TOKENS['row_alt']}; border: 1px solid {TOOL_TOKENS['card_border']}; border-radius: 6px; gridline-color: {TOOL_TOKENS['gridline']}; }}
+            QHeaderView::section {{ background: {TOOL_TOKENS['header_bg']}; color: {TOOL_TOKENS['heading']}; border: 0; border-bottom: 1px solid {TOOL_TOKENS['header_border']}; padding: 5px; font-weight: 700; }}
+            QTableWidget::item:selected {{ background: {TOOL_TOKENS['selected_bg']}; color: {TOOL_TOKENS['selected_text']}; }}
         """)
         self.start_button.clicked.connect(self.start_server)
         self.stop_button.clicked.connect(self.stop_server)

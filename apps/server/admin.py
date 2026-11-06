@@ -13,6 +13,24 @@ from packages.application.server_auth import AuthenticationError, ServerAuthServ
 from packages.persistence.database import DatabaseRuntime
 
 
+# The LAN admin page's palette. This is a fifth one in the product - see the
+# Server Tool section of DESIGN.md - and it lived inline in the ``<style>``
+# below, where nothing read it and nothing guarded it. Declared here for the
+# same reason as every other surface: a colour written in one place can be
+# changed in one place. The values are the ones already in use, so no pixel
+# moved. ``tests/stage6/test_server_tool_palette.py`` covers this file too.
+ADMIN_TOKENS = {
+    "ground": "#f4f7f8",
+    "text": "#102a35",
+    "card": "#ffffff",
+    "shadow": "#cccccc",
+    "accent": "#087f6b",
+    "console_bg": "#122b39",
+    "console_text": "#d9f5ed",
+    "error": "#b42318",
+}
+
+
 class LoginRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=0, max_length=512)
@@ -52,14 +70,21 @@ def _local_ip() -> str:
 
 
 def admin_page() -> HTMLResponse:
-    return HTMLResponse("""<!doctype html><html lang='vi'><meta charset='utf-8'><title>HMS QR Server Admin</title>
-<style>body{font:15px system-ui;max-width:960px;margin:32px auto;background:#f4f7f8;color:#102a35}section{background:#fff;padding:20px;margin:16px 0;border-radius:10px;box-shadow:0 1px 4px #ccd}input,select,button{padding:8px;margin:4px}button{background:#087f6b;color:#fff;border:0;border-radius:4px}pre{background:#122b39;color:#d9f5ed;padding:12px;overflow:auto}.bad{color:#b42318}</style>
+    # Placeholders rather than an f-string: the page carries a block of
+    # JavaScript, and every brace in it would have to be doubled to survive
+    # f-string parsing. ``__token__`` cannot collide with CSS or JS, so the
+    # substitution below is the whole story.
+    page = """<!doctype html><html lang='vi'><meta charset='utf-8'><title>HMS QR Server Admin</title>
+<style>body{font:15px system-ui;max-width:960px;margin:32px auto;background:__ground__;color:__text__}section{background:__card__;padding:20px;margin:16px 0;border-radius:10px;box-shadow:0 1px 4px __shadow__}input,select,button{padding:8px;margin:4px}button{background:__accent__;color:__card__;border:0;border-radius:4px}pre{background:__console_bg__;color:__console_text__;padding:12px;overflow:auto}.bad{color:__error__}</style>
 <h1>HMS QR Server</h1><p>Quản trị tài khoản LAN, thông tin website và chẩn đoán kết nối.</p>
 <section><h2>Đăng nhập quản trị</h2><input id='username' placeholder='Tên đăng nhập'><input id='password' type='password' placeholder='Mật khẩu'><button onclick='login()'>Đăng nhập</button><p id='login'></p></section>
 <section><h2>Thông tin truy cập</h2><pre id='network'>Đăng nhập để xem trạng thái.</pre><button onclick='diagnostics()'>Kiểm tra lại</button></section>
 <section><h2>Tài khoản LAN</h2><input id='new-name' placeholder='Tên đăng nhập'><input id='new-password' type='password' placeholder='Mật khẩu tối thiểu 3 ký tự, hoặc để trống khi server bật chế độ nội bộ'><select id='new-role'><option>EDITOR</option><option>VIEWER</option><option>ADMIN</option></select><button onclick='createAccount()'>Tạo tài khoản</button><pre id='accounts'></pre></section>
 <section><h2>Thông tin website</h2><input id='site-title' placeholder='Tiêu đề website'><input id='site-message' placeholder='Thông báo hiển thị'><button onclick='saveSettings()'>Lưu</button><pre id='settings'></pre></section>
-<script>let token='';const api='/admin-api';const headers=()=>({'Authorization':'Bearer '+token,'Content-Type':'application/json'});async function request(path,options={}){let r=await fetch(api+path,{...options,headers:{...headers(),...(options.headers||{})}});let b=await r.json();if(!r.ok)throw Error(b.detail?.message||b.detail||'Yêu cầu thất bại');return b}async function login(){try{let b=await request('/api/v1/auth/login',{method:'POST',body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})});token=b.access_token;document.getElementById('login').innerText='Đã đăng nhập: '+b.username;await Promise.all([accounts(),diagnostics(),settings()])}catch(e){let el=document.getElementById('login');el.innerText=e.message;el.className='bad'}}async function accounts(){document.getElementById('accounts').innerText=JSON.stringify(await request('/api/v1/admin/accounts'),null,2)}async function createAccount(){try{await request('/api/v1/admin/accounts',{method:'POST',body:JSON.stringify({username:document.getElementById('new-name').value,password:document.getElementById('new-password').value,role:document.getElementById('new-role').value})});await accounts()}catch(e){document.getElementById('accounts').innerText=e.message}}async function diagnostics(){try{document.getElementById('network').innerText=JSON.stringify(await request('/api/v1/admin/diagnostics'),null,2)}catch(e){document.getElementById('network').innerText=e.message}}async function settings(){try{let b=await request('/api/v1/admin/settings');document.getElementById('site-title').value=b.site_title||'';document.getElementById('site-message').value=b.site_message||'';document.getElementById('settings').innerText=JSON.stringify(b,null,2)}catch(e){document.getElementById('settings').innerText=e.message}}async function saveSettings(){try{await request('/api/v1/admin/settings',{method:'PUT',body:JSON.stringify({site_title:document.getElementById('site-title').value,site_message:document.getElementById('site-message').value})});await settings()}catch(e){document.getElementById('settings').innerText=e.message}}</script></html>""")
+<script>let token='';const api='/admin-api';const headers=()=>({'Authorization':'Bearer '+token,'Content-Type':'application/json'});async function request(path,options={}){let r=await fetch(api+path,{...options,headers:{...headers(),...(options.headers||{})}});let b=await r.json();if(!r.ok)throw Error(b.detail?.message||b.detail||'Yêu cầu thất bại');return b}async function login(){try{let b=await request('/api/v1/auth/login',{method:'POST',body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})});token=b.access_token;document.getElementById('login').innerText='Đã đăng nhập: '+b.username;await Promise.all([accounts(),diagnostics(),settings()])}catch(e){let el=document.getElementById('login');el.innerText=e.message;el.className='bad'}}async function accounts(){document.getElementById('accounts').innerText=JSON.stringify(await request('/api/v1/admin/accounts'),null,2)}async function createAccount(){try{await request('/api/v1/admin/accounts',{method:'POST',body:JSON.stringify({username:document.getElementById('new-name').value,password:document.getElementById('new-password').value,role:document.getElementById('new-role').value})});await accounts()}catch(e){document.getElementById('accounts').innerText=e.message}}async function diagnostics(){try{document.getElementById('network').innerText=JSON.stringify(await request('/api/v1/admin/diagnostics'),null,2)}catch(e){document.getElementById('network').innerText=e.message}}async function settings(){try{let b=await request('/api/v1/admin/settings');document.getElementById('site-title').value=b.site_title||'';document.getElementById('site-message').value=b.site_message||'';document.getElementById('settings').innerText=JSON.stringify(b,null,2)}catch(e){document.getElementById('settings').innerText=e.message}}async function saveSettings(){try{await request('/api/v1/admin/settings',{method:'PUT',body:JSON.stringify({site_title:document.getElementById('site-title').value,site_message:document.getElementById('site-message').value})});await settings()}catch(e){document.getElementById('settings').innerText=e.message}}</script></html>"""
+    for name, value in ADMIN_TOKENS.items():
+        page = page.replace(f"__{name}__", value)
+    return HTMLResponse(page)
 
 
 def build_admin_api(config: AppConfig, runtime: DatabaseRuntime) -> FastAPI:

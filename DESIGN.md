@@ -87,11 +87,13 @@ This document is the canonical presentation authority for HMS QR. It governs vis
 
 Light neutral industrial software for factory-floor product tracking. High information density on desktop; touch-friendly compact cards on mobile. Vietnamese-first labels. Every status is explicit text plus semantic color and icon — never color alone. The light theme is the canonical acceptance direction (`CANONICAL_THEME=LIGHT`, R007B7D); a dark theme may remain optional in future.
 
-## Three surfaces, one light direction
+## Four surfaces, one light direction
 
 LO's direction, 2026-11-01: **all UI light, no dark UI.** `CANONICAL_THEME=LIGHT` (R007B7D) is therefore not just the mobile acceptance direction — it is the whole product's. A surface that goes dark has drifted, whatever its history.
 
-Two token sets remain, because the desktop and the web are deliberately different palettes. Agents must read the right one for the surface they are editing.
+Four palettes remain, because the surfaces are deliberately different and reconciling them is a product decision nobody has taken. Agents must read the right one for the surface they are editing, and must not "fix" one toward another.
+
+Two of the four are the same set: the mobile web and the portal declare identical values for all 22 tokens they share, and `test_the_two_surfaces_declare_the_same_value_for_every_shared_token` fails if they ever disagree. The desktop and the Server Tool each have their own.
 
 ### Mobile Web / PWA — tokens above
 
@@ -118,9 +120,17 @@ The portal's spreadsheet engine (`_SS_CSS`, `_SS_JS`) uses the same tokens; its 
 
 Source of truth: `apps/design_tokens.py`. Warm neutral background (`#f3f1ec`), blue accent (`#246b9c`), 4px control radius, Segoe UI 13px, spacing scale 2/4/6/8/12/16/24/32px. `PY_SIDE_THEME` in that file renders the same names into Qt stylesheet.
 
+### Server Tool — PySide6 (`apps/server/tool.py`)
+
+Source of truth: the `TOOL_TOKENS` block in that file. Cool light ground (`#f4f7fb`), teal accent (`#0b7285`), 8pt Segoe UI at desktop density, and a dark activity-log console (`#102a43` ground, `#d9e2ec` ink — 11.18:1) that is the one inverted panel in the product. `tests/stage6/test_server_tool_palette.py` holds two invariants: no colour outside that block, and every text colour clearing 4.5:1 on the ground it is painted on.
+
+This window was absent from DESIGN.md until 2026-11-05, which is why it is described here at all: it kept 34 colour literals inline in one Qt stylesheet, and nothing read them. They are declared now, with the values they already had — **the only colour that moved is a 0.3% contrast nudge** (`#617487` to `#5d6b7b`, 4.49:1 to 5.07:1, collapsing two secondary-text colours into one). Merging this palette into the desktop's would recolour a shipped surface on a decision nobody has taken, so **whether the Server Tool should share the desktop's blue accent is open** and recorded here rather than answered.
+
 ### Known drift — recorded, not yet reconciled
 
 `apps/design_tokens.py` predates the R007 light-web redesign and no longer describes the web UI: its accent is blue `#246b9c` where the web is teal `#0f766e`, its background is warm `#f3f1ec` where the web is cool `#f1f5f9`, its radius is 4px where the web card is 16px, and its face is Segoe UI where the web uses the system stack. Treat the file as the desktop token source only. Reconciling the two palettes into one token set is a product decision; this file records the difference so an agent never "fixes" one surface toward the other by accident.
+
+The product now carries **four palettes**, not the two this section used to imply: the mobile web and the portal share one token set (22 tokens, identical values, enforced by `test_the_two_surfaces_declare_the_same_value_for_every_shared_token`), the desktop has its own, and the Server Tool has its own. A fifth colour — the QR copy confirmation chip's teal `#147a69` in `product_master_window.py` — matches none of the four and is likewise recorded, not decided.
 
 ## Status mapping
 
