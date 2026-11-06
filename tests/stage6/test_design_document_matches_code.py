@@ -166,6 +166,50 @@ def test_the_two_documented_palettes_are_distinct():
     )
 
 
+def _top_block(name: str) -> str:
+    """Everything under a top-level front-matter key, up to the next one.
+
+    The regex a flat ``^  key: "value"`` scan uses stops dead on this document's
+    nested blocks - ``typography`` indents its ``fontSize`` four spaces, under a
+    ``body:`` key - which is why the first version of this helper reported the
+    type scale as empty and flagged every font size on both surfaces as
+    undeclared. The scale was right; the parser was not.
+    """
+
+    matter = _front_matter()
+    start = matter.index(f"\n{name}:") + 1
+    rest = matter[start:]
+    following = re.search(r"^\S", rest[rest.index("\n"):], re.MULTILINE)
+    return rest[: rest.index("\n") + 1 + (following.start() if following else len(rest))]
+
+
+def test_the_webs_font_sizes_are_exactly_the_declared_type_scale():
+    """The one axis that was already right, so it is worth locking in.
+
+    The front-matter's ``typography`` block declares six sizes - 11, 12, 13, 15,
+    16 and 18px - and ``web/index.html`` uses **exactly those six and no others**.
+    Nothing asserted that, and the radius axis had already drifted, so an
+    unguarded match is not evidence of a stable one.
+
+    Only the web is checked. The portal uses five sizes off the scale (10, 14,
+    17, 19 and 28px) and the spacing scale is off by more still; both are recorded
+    in DESIGN.md as decisions to make rather than guessed at here, exactly as the
+    radius gaps are.
+    """
+
+    declared = set(re.findall(r'fontSize:\s*"(\d+)px"', _top_block("typography")))
+    assert declared, "DESIGN.md's typography block declares no font sizes"
+
+    web = (SOURCE_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    used = set(re.findall(r"font-size:\s*(\d+)px", web))
+
+    assert used == declared, (
+        "the web's font sizes and DESIGN.md's type scale disagree:\n"
+        f"  declared but unused: {sorted(declared - used)}\n"
+        f"  used but undeclared: {sorted(used - declared)}"
+    )
+
+
 def test_every_status_the_desktop_colours_is_declared_in_the_document():
     """``desktop_status_colors`` is keyed by ``ProductStatus`` member name for the
     same reason ``STATUS_COLORS`` is: a lookup by name cannot silently miss. The

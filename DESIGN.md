@@ -153,6 +153,16 @@ The front-matter's `rounded.card` said `14px` while `web/index.html` declares `-
 
 Whether to introduce `--radius-*` tokens for the web and the portal is a product decision, recorded here rather than taken. The mobile web's byte-identical build (`scripts/build_mobile_web.py`) means any change to `web/index.html` has to be regenerated into `web/lan.html` and `web/vps.html`, not hand-edited.
 
+### Typography, spacing and shadows — recorded, not yet reconciled
+
+Of the four non-colour axes the front-matter declares, **typography is the one that is already true**: it declares six sizes — 11, 12, 13, 15, 16 and 18px — and `web/index.html` uses exactly those six and no others. `tests/stage6/test_design_document_matches_code.py` asserts it, so the one axis that matches stays matching. The other three do not, and each gap is a decision rather than something to guess at:
+
+- **Spacing.** The declared scale is five values (4, 8, 12, 16, 24px). The web uses fourteen distinct values, nine of them off-scale (2, 6, 9, 10, 11, 14, 20, 30, 40); the portal uses twenty, fifteen off-scale (1, 2, 3, 5, 6, 7, 9, 10, 11, 14, 18, 20, 22, 30, 60). The scale describes neither surface.
+- **Portal type.** The portal uses five sizes off the declared scale — 10, 14, 17, 19 and 28px. The web does not.
+- **Shadows.** The web reads a `--shadow-*` token for 7 of its 13 box-shadows; the portal reads one for **0 of 7** and declares no shadow token at all. That is the shape the portal's colours were in before `:root`.
+
+The radius guard above is the pattern to copy if any of these is taken on: pin the one value the document makes a specific claim about, in both directions, and record the rest.
+
 ### Known drift — recorded, not yet reconciled
 
 `apps/design_tokens.py` predates the R007 light-web redesign and no longer describes the web UI: its accent is blue `#246b9c` where the web is teal `#0f766e`, its background is warm `#f3f1ec` where the web is cool `#f1f5f9`, its radius is 4px where the web card is 16px, and its face is Segoe UI where the web uses the system stack. Treat the file as the desktop token source only. Reconciling the two palettes into one token set is a product decision; this file records the difference so an agent never "fixes" one surface toward the other by accident.
