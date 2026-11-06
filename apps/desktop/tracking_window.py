@@ -22,8 +22,7 @@ class TrackingHistoryDialog(QDialog):
 class TrackingWindow(QMainWindow):
     STATUS_COLORS=STATUS_COLORS
     def __init__(self,workflow_actions=None,workflow_context=None,summary_rows=None):
-        self._stage5_theme = PY_SIDE_THEME
-        super().__init__();self.setWindowTitle("HMS QR — Theo dõi đơn hàng và QR");self.resize(1050,650);self.setStyleSheet("QWidget{background:#18212b;color:#eef4fa} QPushButton{background:#177e70;padding:8px}")
+        super().__init__();self.setWindowTitle("HMS QR — Theo dõi đơn hàng và QR");self.resize(1050,650)
         self.selected_delivery_date=date.today()
         self._summary_rows=[]
         root=QWidget();layout=QVBoxLayout(root);layout.addWidget(QLabel("TRACKING ITEM / QR / GIA CÔNG / QC / ĐÓNG GÓI / GIAO HÀNG"))
@@ -48,7 +47,15 @@ class TrackingWindow(QMainWindow):
         # Apply the canonical Stage 5 theme after all widgets are constructed.
         # This keeps the existing workflow wiring intact while aligning the
         # desktop shell with apps.design_tokens.PY_SIDE_THEME.
-        self.setStyleSheet(self._stage5_theme)
+        #
+        # This line used to be preceded by a hand-written dark stylesheet
+        # (#18212b ground, #eef4fa text, #177e70 buttons) that this call
+        # overwrote before the window was ever shown, so it never rendered -
+        # but it was the third dark palette in this tree, after the portal's
+        # and the admin page's, and DESIGN.md names LIGHT as canonical. Dead
+        # code that contradicts the documented theme is removed, not left for a
+        # future reordering to wake up.
+        self.setStyleSheet(PY_SIDE_THEME)
         if workflow_context:self.bind_workflow_context(**workflow_context)
         if summary_rows is not None:self.show_summaries(summary_rows)
 

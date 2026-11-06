@@ -34,7 +34,7 @@ from .stage2_window import Stage2Window
 from .version import APP_VERSION
 from packages.domain.product import Product, ProductStatus, ProductValidationError, format_quantity
 from packages.domain.repository import ProductPage
-from apps.design_tokens import PY_SIDE_THEME, STATUS_COLORS as STATUS_GROUNDS
+from apps.design_tokens import INK, TOKENS, PY_SIDE_THEME, STATUS_COLORS as STATUS_GROUNDS
 from apps.desktop.file_panels import AdminStoragePanel, ProductFilesPanel
 from packages.excel.desktop_formula_engine import FormulaEngine, FormulaError
 import qrcode
@@ -94,7 +94,7 @@ STATUS_COLORS = {
     STATUS_LABELS[status]: colour
     for status, colour in STATUS_GROUNDS.items()
 }
-VALIDATION_WARNING_COLOR = "#fff1bf"
+VALIDATION_WARNING_COLOR = STATUS_GROUNDS[ProductStatus.WAITING]
 
 
 def product_qr_value(product_code: str, company: str) -> str:
@@ -131,13 +131,13 @@ def product_qr_label_png(payload: str, product_code: str, part_name: str, dimens
     try:
         painter.scale(render_scale, height / logical_height)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.setPen(QPen(QColor("#111111"), 2))
+        painter.setPen(QPen(QColor(INK["label_text"]), 2))
         painter.drawRect(1, 1, logical_width - 2, logical_height - 2)
         qr_size = min(left_width - 8, 270)
         qr_target = qr.scaled(qr_size, qr_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
         painter.drawImage((left_width - qr_target.width()) // 2, 3, qr_target)
 
-        painter.setPen(QColor("#111111"))
+        painter.setPen(QColor(INK["label_text"]))
         font = QFont()
         font.setBold(True)
         # The painter scales all layout coordinates to 1500 DPI, including this logical pixel size.
@@ -150,7 +150,7 @@ def product_qr_label_png(payload: str, product_code: str, part_name: str, dimens
         )
 
         text_rect = QRect(left_width + 14, 20, width - left_width - 28, 246)
-        painter.setPen(QColor("#111111"))
+        painter.setPen(QColor(INK["label_text"]))
         font.setPixelSize(16)
         font.setBold(True)
         painter.setFont(font)
@@ -279,7 +279,7 @@ def attach_formula_completer(editor: QLineEdit) -> None:
     editor.setCompleter(completer)
 
     hint = QLabel(editor)
-    hint.setStyleSheet("color: #505a66; font-size: 11px; padding: 2px 5px;")
+    hint.setStyleSheet(f"color: {TOKENS['hint_text']}; font-size: 11px; padding: 2px 5px;")
     hint.hide()
 
     def suggest(text: str) -> None:
@@ -361,17 +361,17 @@ class FormulaItemDelegate(QStyledItemDelegate):
             left = option.rect.left() + 6
             top = option.rect.center().y() - size // 2
             painter.fillRect(left, top, size, size, QColor("white"))
-            painter.setPen(QPen(QColor("#17212b"), 1))
+            painter.setPen(QPen(QColor(INK["qr_glyph"]), 1))
             painter.drawRect(left, top, size - 1, size - 1)
             module = max(1, size // 9)
             for x, y in ((0, 0), (6, 0), (0, 6)):
-                painter.fillRect(left + x * module, top + y * module, 3 * module, 3 * module, QColor("#17212b"))
+                painter.fillRect(left + x * module, top + y * module, 3 * module, 3 * module, QColor(INK["qr_glyph"]))
                 painter.fillRect(left + (x + 1) * module, top + (y + 1) * module, module, module, QColor("white"))
             digest = hashlib.sha256(text.encode("utf-8")).digest()
             for bit in range(20):
                 x, y = 3 + bit % 6, 3 + bit // 6
                 if x < 9 and y < 9 and digest[bit] & 1:
-                    painter.fillRect(left + x * module, top + y * module, module, module, QColor("#17212b"))
+                    painter.fillRect(left + x * module, top + y * module, module, module, QColor(INK["qr_glyph"]))
             text_rect.adjust(size + 8, 0, 0, 0)
         painter.drawText(
             text_rect,
@@ -389,7 +389,7 @@ class FormulaItemDelegate(QStyledItemDelegate):
             option.features &= ~QStyleOptionViewItem.ViewItemFeature.WrapText
         if index.data(Qt.ItemDataRole.UserRole + 20):
             painter.save()
-            painter.setPen(QPen(QColor("#4f4f4f"), 1))
+            painter.setPen(QPen(QColor(INK["cell_outline"]), 1))
             painter.drawRect(option.rect.adjusted(0, 0, -1, -1))
             painter.restore()
 
@@ -816,13 +816,13 @@ class SpreadsheetEntryGrid(QTableWidget):
         if not bottom_right.isValid():
             return
         painter = QPainter(self.viewport())
-        painter.fillRect(QRect(bottom_right.right() - 4, bottom_right.bottom() - 4, 6, 6), QColor("#217346"))
+        painter.fillRect(QRect(bottom_right.right() - 4, bottom_right.bottom() - 4, 6, 6), QColor(INK["excel_marker"]))
         if self._fill_drag_target:
             target_row, target_column = self._fill_drag_target
             target = self._cell_rect(target_row, target_column)
             source_rect = self._range_rect(top, left, bottom, right)
             if source_rect.isValid() and target.isValid():
-                painter.setPen(QPen(QColor("#217346"), 1, Qt.PenStyle.DashLine))
+                painter.setPen(QPen(QColor(INK["excel_marker"]), 1, Qt.PenStyle.DashLine))
                 painter.drawRect(source_rect.united(target).adjusted(0, 0, -1, -1))
         painter.end()
 
@@ -3236,7 +3236,8 @@ class ProductMasterWindow(QMainWindow):
     def show_qr_copy_confirmation(self) -> None:
         message = QLabel(f"Đã copy tem QR ({self._qr_copy_scale}%)", self.entry_grid.viewport())
         message.setStyleSheet(
-            "QLabel { background: #147a69; color: white; border: 1px solid #0f5b4e; "
+            f"QLabel {{ background: {TOKENS['qr_toast_bg']}; color: {TOKENS['on_accent']}; "
+            f"border: 1px solid {TOKENS['qr_toast_border']}; "
             "border-radius: 5px; font-weight: bold; padding: 8px 12px; }"
         )
         message.adjustSize()

@@ -54,6 +54,23 @@ TOKENS = {
     "status_delivered": "#b8e8c7",
     "status_hold": "#ffe0a3",
     "status_cancelled": "#e4e4e4",
+    # Non-status UI text and the QR copy confirmation chip.
+    "hint_text": "#505a66",
+    "qr_toast_bg": "#147a69",
+    "qr_toast_border": "#0f5b4e",
+}
+
+# Ink for the things the desktop *draws* rather than styles: the 1500-DPI print
+# label, the faux QR glyph painted inside a table cell, the Excel corner marker.
+# Kept apart from ``TOKENS`` because these are image values, not surface chrome -
+# a printed label has to be dark ink on paper regardless of which way the UI
+# theme goes. ``tests/stage1/test_design_tokens.py`` treats both blocks as the
+# only places in the desktop surface where a colour may be written.
+INK = {
+    "label_text": "#111111",
+    "qr_glyph": "#17212b",
+    "cell_outline": "#4f4f4f",
+    "excel_marker": "#217346",
 }
 
 SPACING = {"2": 2, "4": 4, "6": 6, "8": 8, "12": 12, "16": 16, "24": 24, "32": 32}

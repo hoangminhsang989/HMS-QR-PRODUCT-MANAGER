@@ -33,11 +33,14 @@ desktop - had none.
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import re
+import subprocess
+import sys
 
 from packages.domain.product import ProductStatus
 
-from apps.design_tokens import STATUS_COLORS, TOKENS, PY_SIDE_THEME
+from apps.design_tokens import INK, STATUS_COLORS, TOKENS, PY_SIDE_THEME
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
@@ -82,7 +85,7 @@ def test_status_colors_only_uses_declared_tokens():
     docstring too, because it names the two colours it is describing.
     """
 
-    literals = _HEX.findall(_code_outside_the_token_block())
+    literals = _HEX.findall(_code_outside_the_token_blocks())
 
     assert not literals, (
         "a colour is written outside the TOKENS block, so that colour now lives "
@@ -100,7 +103,7 @@ def test_the_stylesheet_interpolates_tokens_rather_than_pasting_them():
     the dictionary at all, which is silent.
     """
 
-    body = _code_outside_the_token_block()
+    body = _code_outside_the_token_blocks()
     references = set(re.findall(r"TOKENS\['([\w]+)'\]", body))
 
     assert references, "PY_SIDE_THEME no longer interpolates any TOKENS entry"
@@ -200,12 +203,137 @@ def test_the_two_desktop_windows_paint_status_cells_from_one_palette():
     )
 
 
-def _code_outside_the_token_block() -> str:
-    """The module source with its docstring and its ``TOKENS`` block removed.
+def test_no_desktop_file_writes_a_colour_outside_the_token_blocks():
+    """The guard has to cover the surface, not just the token file.
 
-    Those two are the only places a hex literal is allowed to appear: the block
-    is where colours are declared, and the docstring describes the colours it is
-    talking about.
+    This is the lesson that cost three sessions. The portal got a token guard,
+    then the mobile web got one, then this file got one - and each time the
+    guard only read the file that declares the tokens. ``apps/desktop/`` is the
+    surface; it renders from several files, and until this test existed **16
+    hex literals lived in it** with nothing looking: a teal confirmation chip in
+    a palette that matches neither the desktop's blue nor the web's teal, a hint
+    label, four print-label and QR-glyph inks, and a ``VALIDATION_WARNING_COLOR``
+    that duplicated a status ground by value.
+
+    A guard scoped to ``design_tokens.py`` passes on all of that, because the
+    token file itself is clean. The defect is always in the file that *uses* the
+    colour, so the guard has to read the users.
+
+    Two blocks are excluded: ``TOKENS`` and ``INK``. ``INK`` is separate because
+    the desktop also *draws* things - the 1500-DPI print label, the faux QR glyph
+    in a table cell, the Excel corner marker - and a printed label has to be dark
+    ink on paper whichever way the UI theme goes. Both blocks are still the only
+    places a colour may be written.
+    """
+
+    surface = sorted((SOURCE_ROOT / "apps" / "desktop").rglob("*.py"))
+    assert surface, "apps/desktop contains no Python files to check"
+
+    offenders: list[str] = []
+    for path in surface:
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            for literal in _HEX.findall(line):
+                offenders.append(
+                    f"{path.relative_to(SOURCE_ROOT).as_posix()}:{number}: {literal}"
+                )
+
+    assert not offenders, (
+        "the desktop surface writes colours outside apps/design_tokens.py, so "
+        "they cannot be changed in one place and nothing notices when they "
+        "drift:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_theme_the_desktop_applies_is_light():
+    """``DESIGN.md`` names LIGHT the canonical acceptance direction
+    (``CANONICAL_THEME=LIGHT``), and this tree has produced a dark palette three
+    times: the portal's ``#0d1520``/``#00d2b4``, the admin page's, and a
+    hand-written stylesheet in ``tracking_window`` (``#18212b`` ground,
+    ``#eef4fa`` text, ``#177e70`` buttons).
+
+    That last one never rendered - the line below it applied ``PY_SIDE_THEME``
+    over it before the window was shown, which this test verifies directly - but
+    it is exactly the kind of thing that starts as dead code and becomes live the
+    day somebody reorders two lines. So the property is asserted, not the line.
+    """
+
+    assert _luminance(TOKENS["background"]) > 0.5, (
+        f"the desktop ground {TOKENS['background']} is dark, but DESIGN.md names "
+        "LIGHT as the canonical theme"
+    )
+    assert _luminance(TOKENS["text_primary"]) < 0.2, (
+        f"the desktop text {TOKENS['text_primary']} is too light for a light ground"
+    )
+
+
+def test_the_tracking_window_renders_light_not_from_a_dead_dark_stylesheet():
+    """Empirical, not inferred: the window is built offscreen and its effective
+    palette is read back.
+
+    The dark stylesheet this replaced was never visible, and a test that only
+    grepped the source could not tell the difference between "the dark code is
+    gone" and "the dark code is still there but overwritten". Only reading the
+    rendered window can.
+
+    It runs in a **subprocess** on purpose. The first version built the window in
+    this process and passed on its own, then broke two tests in
+    ``tests/test_desktop_license_gate.py`` that assert no top-level widget is
+    visible - because a shown ``TrackingWindow`` outlives the test in the shared
+    ``QApplication``. Qt state is global, so anything that creates and shows a
+    window has to be kept out of the suite's process, not tidied up after.
+    """
+
+    probe = (
+        "import sys;"
+        "sys.path.insert(0, %r);"
+        "from PySide6.QtWidgets import QApplication;"
+        "from apps.desktop.tracking_window import TrackingWindow;"
+        "app = QApplication([]);"
+        "w = TrackingWindow();"
+        "print(w.palette().color(w.backgroundRole()).name())"
+    ) % str(SOURCE_ROOT)
+
+    environment = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=SOURCE_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=environment,
+    )
+
+    assert result.returncode == 0, (
+        "could not build the tracking window offscreen:\n" + result.stderr[-600:]
+    )
+    ground = result.stdout.strip().splitlines()[-1]
+    assert _luminance(ground) > 0.5, (
+        f"the tracking window renders on a dark ground ({ground}); DESIGN.md "
+        "names LIGHT canonical and every other desktop window applies PY_SIDE_THEME"
+    )
+
+
+def _luminance(colour: str) -> float:
+    """WCAG relative luminance for a ``#rrggbb`` colour."""
+
+    channels = []
+    for index in (1, 3, 5):
+        value = int(colour[index:index + 2], 16) / 255
+        channels.append(
+            value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+        )
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _code_outside_the_token_blocks() -> str:
+    """The module source with its docstring and its colour blocks removed.
+
+    Those are the only places a hex literal is allowed to appear: the blocks are
+    where colours are declared, and the docstring describes the colours it is
+    talking about. ``INK`` is a block too - see
+    ``test_no_desktop_file_writes_a_colour_outside_the_token_blocks``.
     """
 
     import ast
@@ -213,10 +341,12 @@ def _code_outside_the_token_block() -> str:
     source = (SOURCE_ROOT / "apps" / "design_tokens.py").read_text(encoding="utf-8")
     docstring = ast.get_docstring(ast.parse(source), clean=False) or ""
 
-    block = re.search(r"^TOKENS = \{.*?^\}", source, re.DOTALL | re.MULTILINE)
-    assert block, "design_tokens.py has no TOKENS = {...} block to exclude"
+    for name in ("TOKENS", "INK"):
+        block = re.search(rf"^{name} = \{{.*?^\}}", source, re.DOTALL | re.MULTILINE)
+        assert block, f"design_tokens.py has no {name} = {{...}} block to exclude"
+        source = source.replace(block.group(0), "", 1)
 
-    return source.replace(docstring, "", 1).replace(block.group(0), "", 1)
+    return source.replace(docstring, "", 1)
 
 
 def test_the_documented_status_mapping_names_the_same_statuses():
