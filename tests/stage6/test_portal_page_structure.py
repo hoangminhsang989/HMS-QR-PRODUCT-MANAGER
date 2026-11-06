@@ -212,6 +212,29 @@ def test_no_token_value_is_hardcoded_in_presentation(monkeypatch):
     )
 
 
+def _without_print_block(css: str) -> str:
+    """``css`` with the whole ``@media print { ... }`` rule removed.
+
+    Braces are balanced rather than the text being cut at ``@media print``,
+    because cutting leaves everything *after* the print block exempt too - and in
+    this portal that is the entire spreadsheet engine, which is interpolated at
+    the end of the ``<style>`` block.
+    """
+
+    start = css.find("@media print")
+    assert start != -1, "portal has no @media print block to exempt"
+    open_brace = css.index("{", start)
+    depth = 0
+    for position in range(open_brace, len(css)):
+        if css[position] == "{":
+            depth += 1
+        elif css[position] == "}":
+            depth -= 1
+            if depth == 0:
+                return css[:start] + css[position + 1:]
+    raise AssertionError("the @media print block is never closed")
+
+
 def test_every_colour_in_presentation_is_a_token_or_declared_ink(monkeypatch):
     """The value-based guard above cannot see a colour that belongs to no palette.
 
@@ -238,10 +261,13 @@ def test_every_colour_in_presentation_is_a_token_or_declared_ink(monkeypatch):
     style_block = html[html.index("<style>"):html.index("</style>")]
     css_outside_root = re.sub(r":root\s*\{.*?\}", "", style_block, flags=re.DOTALL)
 
-    # The print stylesheet, kept whole so its ink is exempted as a unit.
-    print_at = css_outside_root.find("@media print")
-    assert print_at != -1, "portal has no @media print block to exempt"
-    on_screen_css = css_outside_root[:print_at]
+    # The print stylesheet, exempted as a unit - thermal and sticker labels have to
+    # be black on white whichever way the screen theme goes. It is removed by
+    # matching its braces rather than by cutting everything after it, because the
+    # spreadsheet engine's stylesheet is interpolated *after* the print block:
+    # slicing at ``@media print`` silently exempted all of ``_SS_CSS``, which is
+    # most of the portal's CSS, and a literal planted in it passed every guard.
+    on_screen_css = _without_print_block(css_outside_root)
 
     # The label templates the print buttons build. Their ink lives in ``style=""``
     # attributes inside JavaScript rather than in the ``@media print`` CSS, so
