@@ -22,6 +22,7 @@ colors:
   text_primary: "#0f172a"
   text_secondary: "#55637a"
   toast: "#0f172a"
+  violet: "#5b21b6"
 typography:
   body:
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
@@ -63,15 +64,31 @@ desktop_colors:
   background: "#f3f1ec"
   surface: "#ffffff"
   surface_raised: "#e7e8e8"
+  surface_alt: "#f0f1f2"
   border: "#b8bdc1"
   text_primary: "#333333"
   text_secondary: "#555555"
   text_disabled: "#777777"
+  hint_text: "#505a66"
   accent: "#246b9c"
   success: "#2f8f63"
   warning: "#b7791f"
   danger: "#c44747"
   info: "#3b72a6"
+  qr_toast_bg: "#147a69"
+  qr_toast_border: "#0f5b4e"
+desktop_status_colors:
+  NEW: "#dceeff"
+  WAITING: "#fff1bf"
+  IN_PROGRESS: "#cfe9ff"
+  WAITING_QC: "#eadcff"
+  QC_PASS: "#c7f2d3"
+  QC_NG: "#ffd0d0"
+  REWORK: "#ffdca8"
+  PACKED: "#d9e5f5"
+  DELIVERED: "#b8e8c7"
+  HOLD: "#ffe0a3"
+  CANCELLED: "#e4e4e4"
 desktop_typography:
   fontFamily: "Segoe UI"
   fontSize: "13px"
@@ -107,7 +124,6 @@ Look: cool slate background with a soft vertical gradient; white cards on soft s
 ### Portal — `apps/server/portal.py`
 
 Source of truth: its own `:root` block, which carries the **same light tokens as the mobile web** — it is not a third palette. The portal was brought onto this set on 2026-11-01 after it had drifted to a dark one (`--bg: #0d1520`, `--accent: #00d2b4`) that no document covered, which is exactly how a surface escapes the authority. It is named here so that cannot happen silently again.
-
 What the re-theme had to fix beyond the token swap, because each was a latent defect the dark surface had been hiding:
 
 - `var(--card)` was referenced but never declared, so spreadsheet cells, submenus and the context menu resolved to **no background at all**. They use `--card-bg`.
@@ -131,6 +147,8 @@ This window was absent from DESIGN.md until 2026-11-05, which is why it is descr
 `apps/design_tokens.py` predates the R007 light-web redesign and no longer describes the web UI: its accent is blue `#246b9c` where the web is teal `#0f766e`, its background is warm `#f3f1ec` where the web is cool `#f1f5f9`, its radius is 4px where the web card is 16px, and its face is Segoe UI where the web uses the system stack. Treat the file as the desktop token source only. Reconciling the two palettes into one token set is a product decision; this file records the difference so an agent never "fixes" one surface toward the other by accident.
 
 The product now carries **four palettes**, not the two this section used to imply: the mobile web and the portal share one token set (22 tokens, identical values, enforced by `test_the_two_surfaces_declare_the_same_value_for_every_shared_token`), the desktop has its own, and the Server Tool has its own. A fifth colour — the QR copy confirmation chip's teal `#147a69` in `product_master_window.py` — matches none of the four and is likewise recorded, not decided.
+
+The front-matter at the top of this file declares the two palettes this document claims as its system — `colors` for the web and portal, `desktop_colors` plus `desktop_status_colors` for the desktop — and `tests/stage6/test_design_document_matches_code.py` asserts the code matches it, in both directions. It had drifted twice before that guard existed: `desktop_colors` declared 12 colours while `apps/design_tokens.py` had grown to 27, and `--violet` lived in `:root` on both web surfaces without being declared anywhere. **A fix that grows a palette must grow this document too**, or the next agent reads a description that is missing half the truth. The Server Tool and the LAN admin page are deliberately outside the front-matter; they are described above with their own token blocks, and folding them in would be the product decision this section defers.
 
 ## Status mapping
 
