@@ -94,6 +94,15 @@ desktop_typography:
   fontSize: "13px"
 desktop_rounded:
   control: "4px"
+desktop_spacing:
+  "2": "2px"
+  "4": "4px"
+  "6": "6px"
+  "8": "8px"
+  "12": "12px"
+  "16": "16px"
+  "24": "24px"
+  "32": "32px"
 ---
 
 # HMS QR UI Design Authority — Stage 5 R007

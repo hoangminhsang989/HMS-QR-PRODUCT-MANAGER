@@ -183,6 +183,72 @@ def _top_block(name: str) -> str:
     return rest[: rest.index("\n") + 1 + (following.start() if following else len(rest))]
 
 
+def test_the_documented_desktop_axes_match_the_desktop_code():
+    """``desktop_typography``, ``desktop_rounded`` and ``desktop_spacing`` against
+    ``apps/design_tokens.py``.
+
+    ``desktop_spacing`` was missing outright until this guard was written: the code
+    has declared ``SPACING = {2, 4, 6, 8, 12, 16, 24, 32}`` since before the
+    front-matter existed, and DESIGN.md's body has said "spacing scale
+    2/4/6/8/12/16/24/32px" all along, but the machine-readable block never carried
+    it. Same shape as the colour drift, one axis over: a reader who trusted the
+    front-matter over the prose would have found no desktop spacing scale at all.
+
+    The other two are checked here too because nothing checked them anywhere. They
+    happened to be right - Segoe UI 13px and a 4px control radius - but the radius
+    axis had already drifted once, so "happens to be right" is not a reason to
+    leave it unguarded.
+    """
+
+    tokens = (SOURCE_ROOT / "apps" / "design_tokens.py").read_text(encoding="utf-8")
+
+    # --- typography -------------------------------------------------------
+    typography = _top_block("desktop_typography")
+    family = re.search(r'fontFamily:\s*"([^"]+)"', typography)
+    size = re.search(r'fontSize:\s*"(\d+)px"', typography)
+    assert family and size, "DESIGN.md's desktop_typography block is incomplete"
+
+    code_family = set(re.findall(r"font-family:\s*'([^']+)'", tokens))
+    code_size = set(re.findall(r"font-size:\s*(\d+)px", tokens))
+    assert code_family and code_size, "apps/design_tokens.py declares no desktop type"
+
+    assert {family.group(1)} == code_family, (
+        f"DESIGN.md says the desktop face is {family.group(1)!r} but the code "
+        f"declares {sorted(code_family)}"
+    )
+    assert size.group(1) in code_size, (
+        f"DESIGN.md says the desktop body is {size.group(1)}px but the code "
+        f"declares {sorted(code_size)}px"
+    )
+
+    # --- control radius ---------------------------------------------------
+    radius = _top_block("desktop_rounded")
+    documented_radius = re.search(r'control:\s*"(\d+)px"', radius)
+    assert documented_radius, "DESIGN.md's desktop_rounded block has no control radius"
+    code_radius = set(re.findall(r"border-radius:\s*(\d+)px", tokens))
+    assert documented_radius.group(1) in code_radius, (
+        f"DESIGN.md says the desktop control radius is {documented_radius.group(1)}px "
+        f"but the code declares {sorted(code_radius)}px"
+    )
+
+    # --- spacing ----------------------------------------------------------
+    spacing = _top_block("desktop_spacing")
+    documented_spacing = set(re.findall(r'"(\d+)":\s*"\d+px"', spacing))
+    assert documented_spacing, (
+        "DESIGN.md declares no desktop_spacing, though apps/design_tokens.py has "
+        "SPACING and DESIGN.md's body describes the scale"
+    )
+    code_spacing = set(re.findall(r'"(\d+)"\s*:\s*\d+', re.search(
+        r"^SPACING = \{([^}]*)\}", tokens, re.MULTILINE
+    ).group(1)))
+
+    assert documented_spacing == code_spacing, (
+        "DESIGN.md's desktop spacing scale and apps/design_tokens.py disagree:\n"
+        f"  declared but not in code: {sorted(documented_spacing - code_spacing, key=int)}\n"
+        f"  in code but not declared: {sorted(code_spacing - documented_spacing, key=int)}"
+    )
+
+
 def test_the_webs_font_sizes_are_exactly_the_declared_type_scale():
     """The one axis that was already right, so it is worth locking in.
 
