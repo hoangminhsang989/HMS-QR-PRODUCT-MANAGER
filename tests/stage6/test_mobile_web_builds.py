@@ -339,6 +339,30 @@ def test_check_mode_passes_on_a_crlf_checkout(tmp_path, monkeypatch):
     )
 
 
+def _git_attributes(rel_path: str) -> dict[str, str]:
+    """What Git says this one file's attributes resolve to.
+
+    ``check-attr`` prints ``<path>: <attr>: <value>``, so the attribute name
+    is the middle field - keying on the path instead silently returned the
+    value of whichever line happened to come last, which is how this guard
+    first passed while asserting the wrong thing.
+
+    """
+    out = subprocess.run(
+        ["git", "check-attr", "text", "eol", "--", rel_path],
+        cwd=SOURCE_ROOT,
+        capture_output=True,
+        text=True,
+    ).stdout
+    resolved = {}
+    for line in out.strip().splitlines():
+        parts = line.split(": ")
+        if len(parts) == 3:
+            resolved[parts[1]] = parts[2]
+    return resolved
+    return resolved
+
+
 def test_gitattributes_pins_the_web_tree_to_lf():
     """The fix for the clone case, asserted rather than assumed.
 
@@ -358,27 +382,7 @@ def test_gitattributes_pins_the_web_tree_to_lf():
     attributes = SOURCE_ROOT / ".gitattributes"
     assert attributes.is_file(), "no .gitattributes; web/ endings follow the host"
 
-    def resolved(rel_path):
-        """What Git says this one file's attributes resolve to.
 
-        ``check-attr`` prints ``<path>: <attr>: <value>``, so the attribute name
-        is the middle field - keying on the path instead silently returned the
-        value of whichever line happened to come last, which is how this guard
-        first passed while asserting the wrong thing.
-
-        """
-        out = subprocess.run(
-            ["git", "check-attr", "text", "eol", "--", rel_path],
-            cwd=SOURCE_ROOT,
-            capture_output=True,
-            text=True,
-        ).stdout
-        resolved_now = {}
-        for line in out.strip().splitlines():
-            parts = line.split(": ")
-            if len(parts) == 3:
-                resolved_now[parts[1]] = parts[2]
-        return resolved_now
 
     trees = (SOURCE_ROOT / "web", SOURCE_ROOT / "apps" / "static")
     images = [
@@ -389,7 +393,7 @@ def test_gitattributes_pins_the_web_tree_to_lf():
     assert images, "expected the shipped images to exist; the web tree is empty"
 
     for image in images:
-        attrs = resolved(str(image.relative_to(SOURCE_ROOT)).replace("\\", "/"))
+        attrs = _git_attributes(str(image.relative_to(SOURCE_ROOT)).replace("\\", "/"))
         assert attrs.get("text") in {"unset", "unspecified"}, (
             f"{image.name} resolves as text={attrs.get('text')!r}, so Git may rewrite "
             "the CRLF byte pair inside its binary data"
@@ -404,7 +408,7 @@ def test_gitattributes_pins_the_web_tree_to_lf():
 
     for path in text_files:
         rel = str(path.relative_to(SOURCE_ROOT)).replace("\\", "/")
-        attrs = resolved(rel)
+        attrs = _git_attributes(rel)
         assert attrs.get("text") == "set", f"{rel} is not marked text: {attrs}"
         assert attrs.get("eol") == "lf", f"{rel} is not pinned to LF: {attrs}"
 
@@ -457,6 +461,55 @@ def test_every_file_pinned_to_lf_is_actually_lf_on_disk():
         checked += 1
 
     assert checked, "no file resolved to eol=lf; the pin is not reaching the web tree"
+
+
+def test_no_file_in_the_served_tree_escapes_the_line_ending_pin():
+    """A new extension in ``web/`` would silently follow ``core.autocrlf``.
+
+    The two guards above check the extensions the pin set happens to name - html,
+    js, json, md - and skip everything else. So the first ``.css``, ``.svg`` or
+    ``.woff2`` added to the served tree resolves to ``text: unspecified, eol:
+    unspecified``, follows ``core.autocrlf=true``, and arrives as CRLF on a fresh
+    clone. Proven by planting ``web/_probe.css``: both guards above passed on it.
+
+    That is the same defect the ``.gitattributes`` comment records - "every guard
+    that compares bytes or checksums a shipped asset failed on a clone that had
+    changed nothing" - reached by a different door. The original rules were also
+    written too narrowly once already, as ``web/** text eol=lf``, which marked the
+    PNGs as text and made Git rewrite the CRLF pair inside each one.
+
+    So the rule is inverted: a file in the served tree must be *pinned*, one way
+    or the other. Anything that resolves to neither ``eol=lf`` nor an explicit
+    binary mark is a hole, and the message says which pin to add.
+    """
+
+    binary_extensions = {
+        ".png", ".jpg", ".jpeg", ".gif", ".ico", ".bmp", ".webp",
+    }
+
+    served = 0
+    for tree in (SOURCE_ROOT / "web", SOURCE_ROOT / "apps" / "static"):
+        for path in sorted(tree.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = str(path.relative_to(SOURCE_ROOT)).replace("\\", "/")
+            attrs = _git_attributes(rel)
+            pinned_lf = attrs.get("eol") == "lf"
+            pinned_binary = (
+                attrs.get("text") in {"unset", "unspecified"}
+                and path.suffix.lower() in binary_extensions
+            )
+            assert pinned_lf or pinned_binary, (
+                f"{rel} is served from disk but resolves to "
+                f"text={attrs.get('text')!r}, eol={attrs.get('eol')!r}, so it "
+                "follows core.autocrlf and a fresh clone receives CRLF bytes that "
+                "the repository stores as LF. Add a .gitattributes pin for it: "
+                "'*<ext> binary' if it is binary, or 'web/**/*<ext> text eol=lf' "
+                "if it is text."
+            )
+            served += 1
+
+    assert served, "no file was checked; the served trees are empty"
 
 
 def test_no_token_value_is_hardcoded_in_presentation():
