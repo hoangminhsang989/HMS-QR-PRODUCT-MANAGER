@@ -23,6 +23,7 @@ from __future__ import annotations
 import email.parser
 import hashlib
 import re
+import struct
 import zipfile
 from pathlib import Path
 
@@ -269,3 +270,136 @@ def test_the_whole_dependency_closure_is_covered():
         "the offline wheel set cannot install requirements.txt; these "
         f"distributions have no wheel: {sorted(set(missing))}"
     )
+
+
+# --- no byte of a wheel may sit outside its own ZIP structure ----------------
+
+_EOCD = b"PK\x05\x06"
+_CENTRAL = b"PK\x01\x02"
+_LOCAL = b"PK\x03\x04"
+_DESCRIPTOR = b"PK\x07\x08"
+
+
+def _unaccounted_zip_bytes(path: Path) -> list[str]:
+    """Every byte of a wheel must sit inside its own ZIP structure.
+
+    REA flagged this gap itself: its inventory, like ``zipfile``, lists
+    central-directory entries only, so a ZIP comment after the
+    End-Of-Central-Directory record, bytes prepended before the first local
+    header, and space between members are invisible to both. Nothing here
+    looked, and these wheels are installed by a one-click Server setup that
+    runs elevated on a customer machine.
+
+    Returns one finding per region that no member accounts for.
+    """
+
+    data = path.read_bytes()
+    findings: list[str] = []
+    name = path.name
+
+    eocd = data.rfind(_EOCD)
+    if eocd < 0:
+        return [f"{name}: no End-Of-Central-Directory record"]
+    if len(data) < eocd + 22:
+        return [f"{name}: truncated End-Of-Central-Directory record"]
+    try:
+        (_disk, _cd_disk, _recs, total, cd_size, cd_off,
+         comment_len) = struct.unpack("<HHHHIIH", data[eocd + 4:eocd + 22])
+    except struct.error:
+        return [f"{name}: unreadable End-Of-Central-Directory record"]
+
+    if comment_len:
+        findings.append(f"{name}: a {comment_len}-byte ZIP comment follows the central directory")
+
+    # A plain archive begins with its first local header, so this is checkable
+    # before anything else and survives a central directory that will not walk.
+    if data[:4] != _LOCAL:
+        findings.append(f"{name}: the archive does not begin with a local file header, so bytes were prepended to it")
+
+    # Walk the central directory. Where the walk ends must be where the record
+    # says a cd_size-byte central directory ends.
+    pos = cd_off
+    entries = []
+    for _ in range(total):
+        if data[pos:pos + 4] != _CENTRAL:
+            findings.append(f"{name}: bad central-directory signature at byte {pos}")
+            break
+        if len(data) < pos + 46:
+            findings.append(f"{name}: truncated central-directory header at byte {pos}")
+            break
+        try:
+            (_made, _need, flags, _method, _mtime, _mdate, _crc, csize, _usize,
+             nlen, elen, clen, _disk_no, _iattr, _eattr, lho) = struct.unpack(
+                "<HHHHHHIIIHHHHHII", data[pos + 4:pos + 46])
+        except struct.error:
+            findings.append(f"{name}: unreadable central-directory header at byte {pos}")
+            break
+        entries.append({"lho": lho, "csize": csize, "flags": flags})
+        pos += 46 + nlen + elen + clen
+    if pos != cd_off + cd_size:
+        findings.append(
+            f"{name}: the central directory occupies {pos - cd_off} bytes but its "
+            f"record claims {cd_size}"
+        )
+
+    # Walk the local headers in offset order and account for the space between.
+    ends = []
+    for entry in sorted(entries, key=lambda e: e["lho"]):
+        lho = entry["lho"]
+        if data[lho:lho + 4] != _LOCAL:
+            findings.append(f"{name}: bad local header signature at byte {lho}")
+            continue
+        if len(data) < lho + 30:
+            findings.append(f"{name}: truncated local header at byte {lho}")
+            continue
+        try:
+            (_ver, _flags, _method, _mtime, _mdate, _crc, _lcsize, _lusize,
+             nlen, elen) = struct.unpack("<HHHHHIIIHH", data[lho + 4:lho + 30])
+        except struct.error:
+            findings.append(f"{name}: unreadable local header at byte {lho}")
+            continue
+        end = lho + 30 + nlen + elen + entry["csize"]
+        if entry["flags"] & 0x08:
+            # A data descriptor trails the data only when bit 3 is set: an
+            # optional signature, then crc, compressed size and uncompressed
+            # size. Stepping over the central directory's csize already
+            # crossed the data, so only the descriptor itself is left.
+            end += 16 if data[end:end + 4] == _DESCRIPTOR else 12
+        ends.append((lho, end))
+
+    if ends:
+        if ends[0][0]:
+            findings.append(f"{name}: {ends[0][0]} bytes precede the first local header")
+        for before, after in zip(ends, ends[1:]):
+            gap = after[0] - before[1]
+            if gap:
+                findings.append(
+                    f"{name}: {gap} bytes between the member ending at {before[1]} "
+                    f"and the next local header at {after[0]}"
+                )
+        if cd_off != ends[-1][1]:
+            findings.append(
+                f"{name}: {cd_off - ends[-1][1]} bytes between the last member "
+                f"and the central directory"
+            )
+
+    if eocd + 22 + comment_len != len(data):
+        findings.append(
+            f"{name}: {len(data) - (eocd + 22 + comment_len)} bytes follow the "
+            f"End-Of-Central-Directory record"
+        )
+
+    return findings
+
+
+def test_no_wheel_carries_bytes_outside_its_own_zip_structure():
+    """A wheel that installs nothing extra is not a wheel that carries nothing
+    extra, and the difference is invisible to every ZIP reader."""
+
+    for wheel in _require_wheels():
+        findings = _unaccounted_zip_bytes(wheel)
+        assert findings == [], (
+            "these bytes belong to no member of the archive, so no ZIP reader "
+            "and no inventory built from one would ever list them: "
+            + "; ".join(findings)
+        )
