@@ -495,6 +495,93 @@ def test_the_recorded_spacing_gap_matches_the_two_surfaces():
         )
 
 
+def test_the_recorded_tokenisation_counts_match_the_two_surfaces():
+    """The same paragraph recorded three more counts that were wrong.
+
+    It said the portal used "five sizes off the declared scale — 10, 14, 17, 19
+    and 28px"; the portal uses four, because ``10px`` appears nowhere. It said the
+    web read a ``--shadow-*`` token for "7 of its 13 box-shadows"; the web has ten
+    and reads a token in four. It said the portal read one for "0 of 7"; the zero
+    is right and the seven is not - there are four.
+
+    Each is measured here rather than trusted, for the same reason as the spacing
+    paragraph: a count that is wrong in a passage whose purpose is to record a gap
+    makes the record worse than nothing.
+
+    The radius count in the same section is deliberately not folded in. The portal
+    does declare nine distinct radii, but two of them - ``2px`` and ``5px`` - live
+    in inline ``style`` attributes and JS template strings rather than the
+    ``<style>`` block, so the claim is true only under the whole-file reading.
+    Measuring the stylesheet alone gives seven. Which reading is correct is a
+    question about what "declares" means, and that is a decision, not an
+    assumption - so it is recorded here rather than pinned.
+    """
+
+    text = DESIGN.read_text(encoding="utf-8")
+
+    web_css = (SOURCE_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    web_css = web_css[web_css.index("<style>"):web_css.index("</style>")]
+    portal_src = (SOURCE_ROOT / "apps" / "server" / "portal.py").read_text(encoding="utf-8")
+    portal_css = portal_src[portal_src.index("<style>"):portal_src.index("</style>")]
+
+    # --- portal type: off-scale font sizes
+    type_scale = set()
+    for match in re.finditer(r"^[ \t]+fontSize:\s*\"([^\"]+)\"", _top_block("typography"), re.MULTILINE):
+        type_scale.add(match.group(1))
+    assert type_scale, "DESIGN.md declares no type scale"
+    portal_sizes = {
+        f"{value}px" for value in re.findall(r"font-size:\s*(\d+)px", portal_css)
+    }
+    portal_off = portal_sizes - type_scale
+
+    sentence = re.search(
+        r"The portal uses (\w+) sizes off the declared scale — ([^.]+?)\. The web does not\.",
+        text,
+    )
+    assert sentence, "DESIGN.md no longer records the portal's off-scale sizes"
+    words = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
+    claimed = words.get(sentence.group(1).lower())
+    assert claimed is not None, f"unrecognised count: {sentence.group(1)!r}"
+    listed = {
+        f"{value.strip().removesuffix('px')}px"
+        for value in re.split(r",|\band\b", sentence.group(2))
+        if value.strip()
+    }
+    assert claimed == len(portal_off), (
+        f"DESIGN.md says {claimed} of the portal's font sizes are off-scale but "
+        f"{len(portal_off)} are: {sorted(portal_off, key=lambda s: int(s[:-2]))}"
+    )
+    assert listed == portal_off, (
+        f"the portal's off-scale font sizes do not match the record:\n"
+        f"  recorded but not used: {sorted(listed - portal_off)}\n"
+        f"  used but not recorded: {sorted(portal_off - listed)}"
+    )
+
+    # --- shadow tokenisation, both surfaces
+    def counted(css: str) -> tuple[int, int]:
+        declarations = re.findall(r"box-shadow\s*:\s*([^;}]+)", css)
+        tokenised = [d for d in declarations if "var(--shadow" in d]
+        return len(tokenised), len(declarations)
+
+    web_tokens, web_total = counted(web_css)
+    portal_tokens, portal_total = counted(portal_css)
+
+    shadow = re.search(
+        r"The web reads a `--shadow-\*` token for (\d+) of its (\d+) box-shadows; "
+        r"the portal reads one for \*\*(\d+) of (\d+)\*\*",
+        text,
+    )
+    assert shadow, "DESIGN.md no longer records the shadow tokenisation counts"
+    assert (web_tokens, web_total) == (int(shadow.group(1)), int(shadow.group(2))), (
+        f"DESIGN.md says the web reads a shadow token for {shadow.group(1)} of "
+        f"{shadow.group(2)} box-shadows, but it is {web_tokens} of {web_total}"
+    )
+    assert (portal_tokens, portal_total) == (int(shadow.group(3)), int(shadow.group(4))), (
+        f"DESIGN.md says the portal reads a shadow token for {shadow.group(3)} of "
+        f"{shadow.group(4)} box-shadows, but it is {portal_tokens} of {portal_total}"
+    )
+
+
 def test_the_documented_shadows_are_the_shadows_the_web_declares():
     """The shadow axis was declared in the front-matter and never checked.
 

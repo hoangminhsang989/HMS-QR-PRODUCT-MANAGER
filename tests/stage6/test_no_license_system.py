@@ -13,6 +13,7 @@ RED by re-introducing the code it forbids.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -43,11 +44,27 @@ FORBIDDEN_TOKENS = (
 
 
 def _source_files():
-    for path in sorted(SOURCE_ROOT.rglob("*")):
-        if not path.is_file() or "__pycache__" in path.parts:
+    """Every file git tracks, relative to SOURCE_ROOT.
+
+    The same defect ``test_no_qr_payment.py`` had: this walked the tree with
+    ``rglob`` and skipped a denylist of extensions, so ``installer/``'s 331 MB of
+    wheels and a Python installer executable were read as UTF-8 text. Asking git
+    bounds the scan to the tracked sources, and the denylist stops being
+    load-bearing.
+    """
+
+    listed = subprocess.run(
+        ["git", "ls-files"],
+        cwd=SOURCE_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    for relative in sorted(listed.splitlines()):
+        if relative.startswith(".git/") or "__pycache__" in relative:
             continue
-        relative = path.relative_to(SOURCE_ROOT).as_posix()
-        if relative.startswith((".git/", ".opencode/")):
+        path = SOURCE_ROOT / relative
+        if not path.is_file():
             continue
         if path.suffix in {".png", ".jpg", ".jpeg", ".ico", ".pdf", ".xlsx", ".db", ".pyc", ".min.js"}:
             continue

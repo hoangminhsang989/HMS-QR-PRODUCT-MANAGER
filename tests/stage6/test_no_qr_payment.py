@@ -12,6 +12,7 @@ RED by re-introducing the code it forbids.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -45,18 +46,34 @@ FORBIDDEN_TOKENS = (
 
 
 def _tracked_source_files():
-    """Every source file under the repo, relative to SOURCE_ROOT.
+    """Every file git tracks, relative to SOURCE_ROOT.
 
-    Bytecode caches are skipped: a stale ``.pyc`` from before the removal still
-    holds the old strings, and it is not source.
+    This walked the tree with ``rglob`` and skipped a denylist of extensions,
+    despite its name and its docstring. ``installer/`` holds nine binaries
+    totalling 331 MB - a 160 MB PySide6 wheel, a 73 MB one, a 42 MB one and a
+    29 MB Python installer executable - none of them gitignored and none in the
+    denylist, so three guards read hundreds of megabytes of wheel as UTF-8 text
+    and raised ``MemoryError``. It failed once, then three times, as
+    ``installer/`` grew.
+
+    Asking git bounds the scan to the 3.2 MB of sources it claims to scan, and
+    makes the name true. The suffix skip list is kept for the reason it was
+    written - a ``.pyc`` is not source - but it is no longer load-bearing, which
+    is the point: a denylist fails on the first extension nobody listed.
     """
-    for path in sorted(SOURCE_ROOT.rglob("*")):
+
+    listed = subprocess.run(
+        ["git", "ls-files"],
+        cwd=SOURCE_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    for relative in sorted(listed.splitlines()):
+        if relative.startswith(".git/") or "__pycache__" in relative:
+            continue
+        path = SOURCE_ROOT / relative
         if not path.is_file():
-            continue
-        if "__pycache__" in path.parts:
-            continue
-        relative = path.relative_to(SOURCE_ROOT).as_posix()
-        if relative.startswith((".git/", ".opencode/")):
             continue
         if path.suffix in {".png", ".jpg", ".jpeg", ".ico", ".pdf", ".xlsx", ".db", ".pyc"}:
             continue
