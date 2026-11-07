@@ -892,3 +892,119 @@ def test_the_documented_card_radius_is_the_radius_the_web_declares():
         "front-matter contradicts both the code and DESIGN.md's own body, which "
         'says the cards carry "16px radius"'
     )
+
+
+def test_the_qr_label_document_names_only_what_the_code_can_produce():
+    """``docs/design/QR_LABELS.md`` claimed two things the code does not do.
+
+    It named three label variants - TEM NHÃN, TEM TIÊU CHUẨN, TEM ĐÓNG ĐỒ - and
+    said printed labels "may show material, quantity, size, delivery date, PO
+    and notes". Measured: one of the three variants exists, and PO never
+    reaches the page. ``LabelData`` carries both ``order_code`` and
+    ``customer_po_number``, and ``LabelTemplateRenderer.LABELS`` holds a
+    Vietnamese label for each, but ``LabelTemplate.visible_fields`` lists
+    neither - so the data is loaded and the label exists and the field is
+    dropped by the one line that decides what prints. The same shape as the
+    spacing scale: the machinery is present in every layer and disconnected at
+    the point a reader would look.
+
+    No test read this document, or ``packages/labels/service.py``, at all.
+
+    The four-field QR contract it also states is true and enforced, so it is
+    asserted here rather than corrected. The guard holds the document to the
+    code in both directions: a name the document presents as real must be
+    producible, and the NOT YET ADOPTED marker must not be decoration - while
+    it is present at least one named thing must still be missing, and the
+    counts it states must be the counts that are measured.
+    """
+
+    doc = (SOURCE_ROOT / "docs" / "design" / "QR_LABELS.md").read_text(encoding="utf-8")
+
+    # --- what the code can actually produce ---------------------------------
+    from packages.labels.service import LabelTemplate, LabelTemplateRenderer
+
+    template = LabelTemplate()
+    rendered = set(template.visible_fields)
+
+    # A variant is producible if it is the default name, or a name some caller
+    # passes. Only the definition itself constructs a LabelTemplate.
+    callers = []
+    for tree in (SOURCE_ROOT / "apps", SOURCE_ROOT / "packages"):
+        for path in sorted(tree.rglob("*.py")):
+            if "__pycache__" in path.parts or path.name == "service.py":
+                continue
+            source = path.read_text(encoding="utf-8", errors="ignore")
+            callers.extend(re.findall(r"LabelTemplate\(\s*name\s*=\s*[\"']([^\"']+)[\"']", source))
+    producible = {template.name, *callers}
+
+    # --- variants -----------------------------------------------------------
+    variant_claim = re.search(
+        r"Of the (\d+) variants named here, (\d+) is defined: `([^`]+)`", doc)
+    assert variant_claim, (
+        "QR_LABELS.md does not state its variant counts in the form this guard "
+        "reads: 'Of the N variants named here, M is defined: `NAME`'"
+    )
+    claimed_variants = int(variant_claim.group(1))
+    claimed_defined = int(variant_claim.group(2))
+    named_variant = variant_claim.group(3)
+
+    pending = re.search(r"NOT YET ADOPTED \((\d+)\): (.+?)\.", doc)
+    assert pending, (
+        "QR_LABELS.md does not mark its undefined variants NOT YET ADOPTED with "
+        "a count: 'NOT YET ADOPTED (N): `A`, `B`'"
+    )
+    pending_names = re.findall(r"`([^`]+)`", pending.group(2))
+    assert claimed_variants == 1 + len(pending_names), (
+        f"QR_LABELS.md says {claimed_variants} variants are named, but it names "
+        f"1 defined plus {len(pending_names)} not adopted"
+    )
+    assert named_variant in producible, (
+        f"QR_LABELS.md says {named_variant!r} is a defined variant, but no "
+        f"LabelTemplate carries that name: {sorted(producible)}"
+    )
+    assert claimed_defined == len(producible), (
+        f"QR_LABELS.md says {claimed_defined} variants are defined, but the code "
+        f"can produce {len(producible)}: {sorted(producible)}"
+    )
+    for name in pending_names:
+        assert name not in producible, (
+            f"QR_LABELS.md still marks {name!r} NOT YET ADOPTED, but the code "
+            "can produce it. Remove the marker and this guard holds the whole "
+            "list to the code from then on."
+        )
+    assert pending_names, (
+        "QR_LABELS.md carries the NOT YET ADOPTED marker but nothing is pending; "
+        "the marker is decoration"
+    )
+
+    # --- printed fields -----------------------------------------------------
+    field_claim = re.search(
+        r"Of the (\d+) fields named here, (\d+) render: (.+?)\.", doc)
+    assert field_claim, (
+        "QR_LABELS.md does not state its printed-field counts in the form this "
+        "guard reads: 'Of the N fields named here, M render: `a`, `b`'"
+    )
+    claimed_fields = int(field_claim.group(1))
+    claimed_render = int(field_claim.group(2))
+    claimed_rendering = set(re.findall(r"`([^`]+)`", field_claim.group(3)))
+
+    assert claimed_render == len(claimed_rendering), (
+        f"QR_LABELS.md says {claimed_render} fields render but names "
+        f"{len(claimed_rendering)}"
+    )
+    assert claimed_fields == claimed_render + 1, (
+        "QR_LABELS.md states field counts that do not add up: the fields it "
+        "names are the ones that render plus PO"
+    )
+    assert claimed_rendering <= rendered, (
+        "QR_LABELS.md says these fields render, but LabelTemplate.visible_fields "
+        f"does not list them: {sorted(claimed_rendering - rendered)}"
+    )
+    po = {"order_code", "customer_po_number"}
+    assert not (po & rendered), (
+        "QR_LABELS.md says PO does not render, but visible_fields now lists "
+        f"{sorted(po & rendered)} - update the document, it is out of date"
+    )
+    assert po <= set(LabelTemplateRenderer.LABELS), (
+        "LabelTemplateRenderer.LABELS no longer holds a label for every PO field"
+    )
