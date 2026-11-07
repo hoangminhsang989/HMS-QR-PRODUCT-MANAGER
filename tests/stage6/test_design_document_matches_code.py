@@ -640,6 +640,97 @@ def test_the_document_does_not_claim_viewport_widths_the_suite_never_uses():
     )
 
 
+def test_the_second_design_documents_claims_match_the_first():
+    """``docs/design/DESIGN_SYSTEM.md`` states the design and nothing reads it.
+
+    It says the tokens live in ``apps/design_tokens.py``, that the accent is
+    blue, that "Spacing is 2/4/6/8/12/16/24/32px", and that "Desktop base text is
+    13px; mobile base text is 16px". All four are true today, and no test reads
+    the file at all - it is the only tracked document describing the current
+    design besides DESIGN.md, and it is entirely unverified.
+
+    That is the same shape as the shadow axis: an axis that happens to agree is
+    indistinguishable from one that is enforced, until someone edits one side.
+    ``DESIGN.md`` is the presentation authority and has a guard per axis; this
+    file has none, so it can drift from the authority without anything noticing.
+
+    Worth recording honestly: this guard was written after a check that assumed
+    the two documents disagreed - "blue accent" against a teal accent, and a
+    spacing scale with an extra 32px. Both were wrong. The desktop accent really
+    is ``#246b9c``, which is blue, and ``desktop_spacing`` really does carry
+    eight values including 32px. The teal is the *web* accent, a different
+    surface. Measuring before concluding is what kept a false defect report out
+    of the repository.
+    """
+
+    system = (SOURCE_ROOT / "docs" / "design" / "DESIGN_SYSTEM.md").read_text(encoding="utf-8")
+    text = DESIGN.read_text(encoding="utf-8")
+
+    # --- the spacing scale, against DESIGN.md's desktop_spacing
+    claimed = re.search(r"Spacing is ([0-9/]+)px", system)
+    assert claimed, "DESIGN_SYSTEM.md no longer states a spacing scale"
+    claimed_scale = {f"{value}px" for value in claimed.group(1).split("/")}
+
+    block = _top_block("desktop_spacing")
+    declared_scale = set(re.findall(r'"(\d+)":\s*"([^"]+)"', block) and
+                         [value for _, value in re.findall(r'"(\d+)":\s*"([^"]+)"', block)])
+    assert claimed_scale == declared_scale, (
+        f"DESIGN_SYSTEM.md claims spacing {sorted(claimed_scale)} but DESIGN.md "
+        f"declares {sorted(declared_scale)}"
+    )
+
+    # --- the desktop base text, against DESIGN.md's desktop_typography
+    claimed_text = re.search(r"Desktop base text is (\d+)px; mobile base text is (\d+)px", system)
+    assert claimed_text, "DESIGN_SYSTEM.md no longer states the base text sizes"
+    typo = _top_block("desktop_typography")
+    desktop_size = re.search(r'fontSize:\s*"([^"]+)"', typo)
+    assert desktop_size, "DESIGN.md declares no desktop_typography.fontSize"
+    assert f"{claimed_text.group(1)}px" == desktop_size.group(1), (
+        f"DESIGN_SYSTEM.md claims desktop base text "
+        f"{claimed_text.group(1)}px but DESIGN.md declares {desktop_size.group(1)}"
+    )
+    mobile_sizes = set(re.findall(r'"(\d+px)"', _top_block("typography")))
+    assert claimed_text.group(2) + "px" in mobile_sizes, (
+        f"DESIGN_SYSTEM.md claims mobile base text {claimed_text.group(2)}px, "
+        f"which is not one of DESIGN.md's type sizes {sorted(mobile_sizes)}"
+    )
+
+    # --- the accent, described in words. Compute the hue rather than trusting
+    # the adjective, because "blue" and "teal" differ by about twenty degrees and
+    # a reader cannot tell which one a hex value is.
+    accent = _block("desktop_colors")["accent"]
+    red, green, blue = (int(accent[i:i + 2], 16) for i in (1, 3, 5))
+    high, low = max(red, green, blue), min(red, green, blue)
+    if high == low:
+        hue = 0.0
+    else:
+        span = high - low
+        if high == red:
+            sector = (green - blue) / span
+        elif high == green:
+            sector = 2.0 + (blue - red) / span
+        else:
+            sector = 4.0 + (red - green) / span
+        hue = (sector * 60.0) % 360.0
+
+    named = re.search(r"\b(blue|teal|green|violet|amber|red)\b accent", system)
+    assert named, "DESIGN_SYSTEM.md no longer names the accent colour"
+    families = {
+        "blue": (195, 250),
+        "teal": (160, 195),
+        "green": (80, 160),
+        "violet": (250, 300),
+        "amber": (30, 70),
+        "red": (0, 30),
+    }
+    low_deg, high_deg = families[named.group(1)]
+    assert low_deg <= hue < high_deg, (
+        f"DESIGN_SYSTEM.md calls the accent {named.group(1)}, but DESIGN.md "
+        f"declares desktop_colors.accent = {accent}, whose hue is {hue:.0f} "
+        f"degrees - outside {named.group(1)}'s range"
+    )
+
+
 def test_the_documented_shadows_are_the_shadows_the_web_declares():
     """The shadow axis was declared in the front-matter and never checked.
 
