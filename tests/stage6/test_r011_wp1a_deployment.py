@@ -173,6 +173,46 @@ def test_release_ships_every_path_the_application_reads_from_the_repo(tmp_path):
         + ", ".join(missing)
     )
 
+def test_no_tracked_file_is_dirty_only_because_its_index_stat_is_stale():
+    """`git status` calls a path modified when the size recorded in the index no
+    longer matches the file on disk, and it never looks at the bytes again: a
+    size mismatch is conclusive proof of a change, so there is nothing left to
+    re-check. That reasoning holds until the index records the size of a
+    line-ending conversion the repository never committed. Five files carried
+    CRLF-era sizes while the files on disk were the committed LF, every content
+    comparison agreed with HEAD, and the two certified-build guards below
+    skipped with "the worktree is dirty" - so a 1065-test green run proved
+    nothing about whether a certified build was possible."""
+
+    reported = subprocess.run(
+        ["git", "status", "--porcelain", "-uall"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    paths = []
+    for line in reported:
+        if len(line) < 4 or not line[:2].strip():
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        paths.append(path)
+    stale = []
+    for path in paths:
+        indexed = subprocess.run(
+            ["git", "ls-files", "-s", "--", path], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout.split()
+        if not indexed:
+            continue
+        on_disk = subprocess.run(
+            ["git", "hash-object", "--", path], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        if indexed[1] == on_disk:
+            stale.append(path)
+    assert not stale, (
+        "these paths are reported modified but their bytes already match the index, "
+        "so the dirty tree is a stale stat entry and it silences every guard that "
+        "refuses to run on a dirty tree: " + ", ".join(sorted(stale))
+    )
+
 def test_release_artifact_actually_contains_the_mobile_builds(tmp_path):
     """End to end: build a real artifact from this repository and look inside."""
 
