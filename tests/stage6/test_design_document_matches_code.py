@@ -582,6 +582,64 @@ def test_the_recorded_tokenisation_counts_match_the_two_surfaces():
     )
 
 
+def test_the_document_does_not_claim_viewport_widths_the_suite_never_uses():
+    """The component rules claimed the suite tests at seven viewport sizes.
+
+    DESIGN.md said "test widths 360/390/414/768 and desktop
+    1280x720/1366x768/1920x1080". Measured across every Python file in the
+    repository: ``414`` and ``768`` appear nowhere, and the three desktop
+    resolutions appear nowhere either. ``360`` and ``390`` occur only inside one
+    docstring recording a manual Chrome measurement, plus a ``setMinimumSize``
+    that is a height rather than a test width. No test renders a page at any
+    viewport width at all.
+
+    The claim is removed, and what the suite really does - read the CSS source
+    and assert the properties that hold at a breakpoint - is recorded instead.
+    This guard keeps the false claim from returning: any viewport size named in
+    that section must actually appear somewhere in the suite, so a reader cannot
+    be told the app is verified at a width nobody renders.
+
+    It deliberately does not try to enforce the seven widths. Adopting them means
+    rendering at seven sizes, which is a decision about what "verified" means,
+    and this guard refuses to make it by assertion.
+    """
+
+    text = DESIGN.read_text(encoding="utf-8")
+    start = text.index("## Component and interaction rules")
+    # the normative rules only. The "recorded, not yet reconciled" subsection
+    # quotes the old false claim on purpose, so scanning it would fire on the
+    # very sentence that documents the correction.
+    stop = text.find("### Recorded, not yet reconciled", start)
+    section = text[start:stop if stop != -1 else len(text)]
+
+    sizes = sorted(
+        {
+            match
+            for match in re.findall(
+                r"(?<![\d.])(?:\d{3,4}x\d{3,4}|\d{3})(?![\d])", section
+            )
+        },
+        key=lambda s: (len(s), s),
+    )
+    # widths named as rendered sizes, rather than as CSS properties
+    viewport_claims = [
+        size for size in sizes
+        if not size.endswith("px")
+        and not re.search(rf"\b{re.escape(size)}px\b", section)
+    ]
+    assert not viewport_claims, (
+        "the component rules name viewport sizes that no test uses: "
+        f"{viewport_claims}. Either render at them, or record that the suite "
+        "verifies the CSS source rather than a rendered page."
+    )
+
+    # and the record must still say what is actually verified
+    assert "No test renders a page at any viewport width" in text, (
+        "DESIGN.md no longer records that the suite verifies the CSS source "
+        "rather than a rendered page; say so, so the narrower claim is visible"
+    )
+
+
 def test_the_documented_shadows_are_the_shadows_the_web_declares():
     """The shadow axis was declared in the front-matter and never checked.
 

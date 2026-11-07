@@ -195,11 +195,19 @@ Open for LO, recorded rather than decided: `DELIVERED` is green here and on the 
 
 ## Component and interaction rules
 
-- Mobile action targets are at least 44px; test widths 360/390/414/768 and desktop 1280x720/1366x768/1920x1080.
+- Mobile action targets are at least 44px.
 - Visible keyboard focus everywhere; inputs take a teal focus ring (web) or a 2px accent border (desktop).
 - Identifiers use a monospace face and selectable text.
 - Inline validation, disabled contrast, and text labels alongside every color.
 - Web tokens are declared once in `:root`; new colors join the token block rather than appearing as literals in rules.
+
+### Recorded, not yet reconciled — the viewport widths this section used to claim
+
+This section used to read "test widths 360/390/414/768 and desktop 1280x720/1366x768/1920x1080", as though the suite rendered the app at those seven sizes. It does not, and never did: **`414` and `768` appear nowhere in the repository, and the three desktop resolutions appear nowhere either.** `360` and `390` occur only inside one docstring recording a manual Chrome measurement, and one `setMinimumSize(480, 360)` in the desktop window that is a height, not a test width.
+
+What the suite actually verifies is narrower, and is worth saying plainly because the sentence made it sound wider: it reads the **CSS source** and asserts the properties that hold at a breakpoint — that `button, input, select, textarea` carry `min-width: 44px`, that the pill stacks inside the `<=480px` media query, that the font sizes are the declared scale. No test renders a page at any viewport width.
+
+So the seven widths were an intent written down as a fact. Nothing checks them and nothing enforces them, which is the same defect this document records for spacing and for the shadow axis: a claim in the machine-readable part of the file that no test reads. Adopting them would mean rendering at seven sizes, which is real work and a decision about what "verified" means here — so it is recorded rather than assumed.
 
 ## Authorities and boundaries
 
