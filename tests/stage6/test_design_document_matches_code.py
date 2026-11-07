@@ -1008,3 +1008,89 @@ def test_the_qr_label_document_names_only_what_the_code_can_produce():
     assert po <= set(LabelTemplateRenderer.LABELS), (
         "LabelTemplateRenderer.LABELS no longer holds a label for every PO field"
     )
+
+
+def test_the_mobile_ux_document_names_the_actions_the_screen_offers():
+    """``docs/design/MOBILE_UX.md`` said six actions "are grouped by mode".
+
+    Measured across ``web/index.html``, ``web/lan.html`` and ``web/vps.html``:
+    all six sit in the QC mode, and the machining mode carries none of them. It
+    has two actions of its own - add-attempt and mark-stage-complete - that the
+    sentence does not name, so a reader is told the six are distributed across
+    the modes when they occupy one of them and the other mode's actions are
+    missing from the list entirely.
+
+    No test read this document, or the action structure it describes, at all.
+
+    The forms claim is true and is asserted here too: the QC form carries
+    ``#workflow-qty`` and ``#workflow-notes``, the machining form ``#qty`` and
+    ``#notes``, and neither has any other input - so a third field cannot reach
+    the factory floor without this failing.
+    """
+
+    doc = (SOURCE_ROOT / "docs" / "design" / "MOBILE_UX.md").read_text(encoding="utf-8")
+
+    claim = re.search(
+        r"Of the (\d+) workflow actions named here, (\d+) sit in the QC mode and "
+        r"none in the machining mode: (.+?)\.", doc)
+    assert claim, (
+        "MOBILE_UX.md does not state its action counts in the form this guard "
+        "reads: 'Of the N workflow actions named here, M sit in the QC mode and "
+        "none in the machining mode: ...'"
+    )
+    claimed_total, claimed_qc = int(claim.group(1)), int(claim.group(2))
+    named = set(re.findall(r"`([A-Z_]+)`", claim.group(3)))
+
+    other = re.search(r"two actions of its own.*?`(\w+)`\) and .*?`(\w+)`\)", doc)
+    assert other, (
+        "MOBILE_UX.md does not name the machining mode's own actions in the form "
+        "this guard reads"
+    )
+    claimed_machining = set(other.groups())
+
+    assert claimed_total == len(named), (
+        f"MOBILE_UX.md says {claimed_total} workflow actions are named but names "
+        f"{len(named)}"
+    )
+    assert claimed_qc == len(named), (
+        f"MOBILE_UX.md says {claimed_qc} of them sit in the QC mode out of "
+        f"{claimed_total} named - the sentence has to add up"
+    )
+
+    for build in ("index.html", "lan.html", "vps.html"):
+        web = (SOURCE_ROOT / "web" / build).read_text(encoding="utf-8")
+
+        mach_start = web.index("<section id='machining'>")
+        qc_start = web.index("<section id='qc'")
+        form_start = web.index("<div id='workflow-form'")
+        form_end = web.index("</section>", form_start)
+        machining = web[mach_start:qc_start]
+        qc = web[qc_start:form_start]
+        workflow_form = web[form_start:form_end]
+
+        qc_kinds = set(re.findall(r"openWorkflow\('([A-Z_]+)'\)", qc))
+        mach_kinds = set(re.findall(r"openWorkflow\('([A-Z_]+)'\)", machining))
+        mach_handlers = set(re.findall(r"onclick='(\w+)\(", machining))
+        form_inputs = set(re.findall(r"<(?:input|textarea)[^>]*id='([^']+)'", workflow_form))
+        mach_inputs = set(re.findall(r"<(?:input|textarea)[^>]*id='([^']+)'", machining))
+
+        assert qc_kinds == named, (
+            f"{build}: MOBILE_UX.md names {sorted(named)} as the QC-mode actions, "
+            f"but the QC section opens {sorted(qc_kinds)}"
+        )
+        assert not mach_kinds, (
+            f"{build}: MOBILE_UX.md says no named action sits in the machining "
+            f"mode, but it opens {sorted(mach_kinds)}"
+        )
+        assert mach_handlers == claimed_machining, (
+            f"{build}: MOBILE_UX.md says the machining mode's own actions are "
+            f"{sorted(claimed_machining)}, but its buttons call {sorted(mach_handlers)}"
+        )
+        assert form_inputs == {"workflow-qty", "workflow-notes"}, (
+            f"{build}: the QC form is supposed to request only quantity and notes, "
+            f"but it carries {sorted(form_inputs)}"
+        )
+        assert mach_inputs == {"qty", "notes"}, (
+            f"{build}: the machining form is supposed to request only quantity and "
+            f"notes, but it carries {sorted(mach_inputs)}"
+        )
