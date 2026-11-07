@@ -731,6 +731,102 @@ def test_the_second_design_documents_claims_match_the_first():
     )
 
 
+def test_the_component_vocabulary_either_exists_or_says_so():
+    """``docs/design/COMPONENTS.md`` named thirty components; twenty-eight do not exist.
+
+    It says AppShell, TopBar, SideNavigation, TabBar, StatusBadge, DataTable,
+    SearchField, FilterBar, FormField, Select, DateField, QuantityField,
+    PrimaryButton, SecondaryButton, DangerButton, ActionMenu, Dialog,
+    ConfirmationDialog, Toast, EmptyState, LoadingState, ErrorState,
+    HistoryTimeline, ProductCard, TrackingCard, QRCard, UserChip,
+    MachiningTypeSelector, AttemptButtonGroup and WorkflowActionGrid "are the
+    shared vocabulary", and that the existing windows "use these semantics".
+
+    Measured against every class, function and CSS class definition in
+    ``apps/`` and ``packages/``: twenty-eight of the thirty are defined nowhere.
+    The two that have anything at all - ``StatusBadge`` and ``Toast`` - match
+    only the incidental CSS selectors ``status-badge`` and ``toast``, which are
+    not components in the sense the list means.
+
+    So a reader is told the product has a shared component vocabulary and that
+    the windows use it. Neither is true. This is the same defect as the spacing
+    scale: a list in a tracked document that reads as a description and is
+    actually a proposal, with nothing comparing the two.
+
+    Building the vocabulary is real work and a decision, so this guard does not
+    make it. It treats the NOT YET ADOPTED marker as the thing under test, the
+    same way the spacing guard does: while the names are undefined the marker
+    must be present, and the moment anyone removes it - because they built the
+    components - every name must be defined.
+    """
+
+    components_doc = (SOURCE_ROOT / "docs" / "design" / "COMPONENTS.md").read_text(encoding="utf-8")
+    design = DESIGN.read_text(encoding="utf-8")
+
+    sentence = re.search(r"([A-Z][\w, ]+?) are the shared vocabulary", components_doc)
+    assert sentence, "COMPONENTS.md no longer states a shared vocabulary"
+    named = []
+    for entry in sentence.group(1).split(","):
+        named.extend(part.strip() for part in entry.split(" and ") if part.strip())
+    assert len(named) >= 20, f"expected a long list, parsed {len(named)} names"
+
+    definitions: set[str] = set()
+    for tree in (SOURCE_ROOT / "apps", SOURCE_ROOT / "packages"):
+        for path in sorted(tree.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            source = path.read_text(encoding="utf-8", errors="ignore")
+            definitions |= set(re.findall(r"^class (\w+)", source, re.MULTILINE))
+            definitions |= set(re.findall(r"^def (\w+)", source, re.MULTILINE))
+            # CSS classes too: the portal's stylesheet lives inside a Python
+            # string, and a component that only exists there still exists
+            definitions |= set(re.findall(r"\.([a-z][\w-]*)\s*\{", source))
+    for path in sorted((SOURCE_ROOT / "web").rglob("*.html")):
+        source = path.read_text(encoding="utf-8", errors="ignore")
+        definitions |= set(re.findall(r"\.([a-z][\w-]*)\s*\{", source))
+
+    def defined(name: str) -> bool:
+        if name in definitions:
+            return True
+        kebab = re.sub(r"(?<!^)(?=[A-Z])", "-", name).lower()
+        return kebab in definitions
+
+    missing = sorted(name for name in named if not defined(name))
+
+    adopted = "NOT YET ADOPTED" not in components_doc
+    if adopted:
+        assert not missing, (
+            f"COMPONENTS.md claims a shared vocabulary, but {len(missing)} of "
+            f"{len(named)} names are defined nowhere:\n  " + "\n  ".join(missing)
+            + "\n  Define them, or restore the NOT YET ADOPTED marker."
+        )
+    else:
+        assert missing, (
+            "COMPONENTS.md still marks the vocabulary NOT YET ADOPTED, but every "
+            "name is now defined. Remove the marker, and this guard will hold "
+            "the list to the code from then on."
+        )
+        # the marker must not be decoration: whatever counts it states have to
+        # be the counts that are measured. Two earlier versions could not notice
+        # a wrong number - one matched a fixed phrase so editing the number made
+        # the check find nothing, the next looked up "twenty eight" in a map of
+        # single words and also silently skipped. Digits parse without ambiguity.
+        stated = re.search(r"Of the\s+(\d+)\s+names below,\s*(\d+)\s+are not defined", components_doc)
+        assert stated, (
+            "COMPONENTS.md's marker does not state its two counts in the form "
+            "this guard reads: 'Of the N names below, M are not defined'"
+        )
+        claimed_total, claimed_missing = int(stated.group(1)), int(stated.group(2))
+        assert claimed_total == len(named), (
+            f"COMPONENTS.md's marker says the list has {claimed_total} names, "
+            f"but it has {len(named)}"
+        )
+        assert claimed_missing == len(missing), (
+            f"COMPONENTS.md's marker says {claimed_missing} names are undefined, "
+            f"but {len(missing)} are: {missing}"
+        )
+
+
 def test_the_documented_shadows_are_the_shadows_the_web_declares():
     """The shadow axis was declared in the front-matter and never checked.
 
