@@ -352,6 +352,91 @@ def test_every_status_the_desktop_colours_is_declared_in_the_document():
     )
 
 
+def test_the_spacing_scale_either_is_adopted_or_says_so():
+    """The web's ``spacing`` block declared a scale the web does not implement.
+
+    DESIGN.md listed xs 4px through xl 24px as though it described the web. The
+    web declares **no** ``--space-*`` token at all and writes its spacing as
+    fourteen distinct literals, ten of which are outside that scale - 2, 3, 5, 6,
+    9, 10, 11, 14, 20 and 60px. Nothing compared the two, so a scale that was
+    never adopted sat in the machine-readable block looking like one that was.
+
+    Creating the tokens is a product decision that is still open, so this guard
+    does not make it. What it does is refuse to let the document be ambiguous
+    about which state we are in: while the web writes off-scale literals, the
+    front-matter must carry the NOT YET ADOPTED marker; the moment someone
+    removes that marker - because they adopted the scale - the guard demands the
+    web actually uses only the declared values.
+
+    So the marker is not a note to readers, it is the thing under test. Removing
+    it without doing the work fails here, and doing the work without removing it
+    fails here too.
+    """
+
+    matter = _front_matter()
+    spacing = _block("spacing")
+    assert spacing, "DESIGN.md declares no spacing block"
+
+    web = (SOURCE_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    style = web[web.index("<style>"):web.index("</style>")]
+    literals: set[str] = set()
+    for declaration in re.findall(
+        r"\b(?:gap|row-gap|column-gap|padding|margin|padding-\w+|margin-\w+)\s*:\s*([^;}]+)",
+        style,
+    ):
+        for pixels in re.findall(r"(\d+)px", declaration):
+            literals.add(f"{pixels}px")
+    off_scale = sorted(literals - set(spacing.values()), key=lambda s: int(s[:-2]))
+
+    adopted = "NOT YET ADOPTED" not in matter
+    if adopted:
+        assert not off_scale, (
+            "DESIGN.md's spacing scale is marked adopted, but the web writes "
+            f"spacing values outside it: {off_scale}. Either adopt the scale or "
+            "restore the NOT YET ADOPTED marker."
+        )
+    else:
+        assert off_scale, (
+            "DESIGN.md's spacing scale is still marked NOT YET ADOPTED, but the "
+            "web now uses only declared values. Remove the marker, and this "
+            "guard will hold the web to the scale from then on."
+        )
+
+
+def test_the_documented_shadows_are_the_shadows_the_web_declares():
+    """The shadow axis was declared in the front-matter and never checked.
+
+    ``DESIGN.md`` carries a ``shadows`` block with three exact strings, and
+    ``web/index.html`` declares ``--shadow-sm/md/lg`` with the same three. All
+    three match today, which is exactly why nothing noticed they were unguarded:
+    an axis that happens to agree is indistinguishable from one that is enforced,
+    right up until someone edits one side.
+
+    Each value is compared whole rather than by its numbers, because a shadow is
+    a compound value - ``0 4px 12px rgba(...)`` - and matching the offsets while
+    missing the opacity is the kind of half-agreement that reads as agreement.
+    """
+
+    web = (SOURCE_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    root = re.search(r":root\s*\{(.*?)\}", web, re.DOTALL)
+    assert root, "web/index.html has no :root token block"
+    declared = dict(re.findall(r"--shadow-(\w+)\s*:\s*([^;]+);", root.group(1)))
+    assert declared, "web/index.html declares no --shadow-* custom properties"
+
+    documented = _block("shadows")
+    assert documented, "DESIGN.md declares no shadows block"
+    assert set(documented) == set(declared), (
+        f"the document and the web name different shadows: "
+        f"document only {sorted(set(documented) - set(declared))}, "
+        f"web only {sorted(set(declared) - set(documented))}"
+    )
+    for name, value in sorted(documented.items()):
+        assert declared[name].strip() == value, (
+            f"shadows.{name} differs: DESIGN.md declares {value!r} but the web "
+            f"declares {declared[name].strip()!r}"
+        )
+
+
 def test_the_documented_card_radius_is_the_radius_the_web_declares():
     """The colour axis was not the only one that had drifted.
 

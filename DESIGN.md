@@ -51,6 +51,11 @@ rounded:
   line: "2px"
   pill: "999px"
 spacing:
+  # NOT YET ADOPTED - see the paragraph below. The web writes its spacing as
+  # literals and declares no --space-* token, so this block is a proposal, not a
+  # description. tests/stage6/test_design_document_matches_code.py asserts this
+  # marker is present while that remains true, and demands full compliance the
+  # moment it is removed.
   xs: "4px"
   sm: "8px"
   md: "12px"
