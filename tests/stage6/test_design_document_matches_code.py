@@ -403,6 +403,98 @@ def test_the_spacing_scale_either_is_adopted_or_says_so():
         )
 
 
+def _spacing_literals(css: str) -> set[str]:
+    """Every distinct pixel value written as gap, padding or margin."""
+
+    found: set[str] = set()
+    for declaration in re.findall(
+        r"\b(?:gap|row-gap|column-gap|padding|margin|padding-\w+|margin-\w+)\s*:\s*([^;}]+)",
+        css,
+    ):
+        for pixels in re.findall(r"(\d+)px", declaration):
+            found.add(f"{pixels}px")
+    return found
+
+
+def test_the_recorded_spacing_gap_matches_the_two_surfaces():
+    """The paragraph that records the spacing gap recorded numbers that did not.
+
+    DESIGN.md said the web used "fourteen distinct values, nine of them off-scale
+    (2, 6, 9, 10, 11, 14, 20, 30, 40)" and the portal "twenty, fifteen off-scale
+    (1, 2, 3, 5, 6, 7, 9, 10, 11, 14, 18, 20, 22, 30, 60)". Both were wrong. The
+    web's list named ``30px`` and ``40px``, which are ``width``, ``height`` and
+    shadow values rather than spacing, and omitted ``3px``, ``5px`` and ``60px``,
+    which are spacing. The portal's named seven values that are not spacing at
+    all. Measured: the web uses fourteen distinct, ten off-scale; the portal twelve
+    distinct, eight off-scale.
+
+    A paragraph whose stated purpose is to record a gap honestly is worse than one
+    that says nothing when its numbers do not reconcile, and nothing checked them.
+    This measures both surfaces and compares every count and every listed value,
+    so the record stays a record.
+
+    The two counts are checked separately from the two lists because a list can be
+    right while its count is wrong, and that is the harder half to notice.
+    """
+
+    text = DESIGN.read_text(encoding="utf-8")
+    scale = set(_block("spacing").values())
+
+    web_css = (SOURCE_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    web_css = web_css[web_css.index("<style>"):web_css.index("</style>")]
+    portal_src = (SOURCE_ROOT / "apps" / "server" / "portal.py").read_text(encoding="utf-8")
+    portal_css = portal_src[portal_src.index("<style>"):portal_src.index("</style>")]
+
+    measured = {
+        "web": _spacing_literals(web_css),
+        "portal": _spacing_literals(portal_css),
+    }
+
+    sentence = re.search(
+        r"The web uses (\w+) distinct values, (\w+) of them off-scale \(([^)]*)\); "
+        r"the portal uses (\w+), (\w+) off-scale \(([^)]*)\)",
+        text,
+    )
+    assert sentence, (
+        "DESIGN.md no longer records the spacing gap in the form this guard reads"
+    )
+    words = {
+        "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+        "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+        "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+        "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+    }
+
+    claimed = {}
+    for index, surface in ((1, "web"), (4, "portal")):
+        distinct = words.get(sentence.group(index).lower())
+        off_scale = words.get(sentence.group(index + 1).lower())
+        assert distinct is not None and off_scale is not None, (
+            f"unrecognised count for {surface}: {sentence.group(index)!r}"
+        )
+        listed = {f"{value.strip()}px" for value in sentence.group(index + 2).split(",")}
+        claimed[surface] = (distinct, off_scale, listed)
+
+    for surface, css in measured.items():
+        distinct, off_scale, listed = claimed[surface]
+        actual_distinct = len(css)
+        actual_off = css - scale
+        assert distinct == actual_distinct, (
+            f"DESIGN.md says the {surface} uses {distinct} distinct spacing values "
+            f"but it uses {actual_distinct}: {sorted(css, key=lambda s: int(s[:-2]))}"
+        )
+        assert off_scale == len(actual_off), (
+            f"DESIGN.md says {off_scale} of the {surface}'s spacing values are "
+            f"off-scale but {len(actual_off)} are: "
+            f"{sorted(actual_off, key=lambda s: int(s[:-2]))}"
+        )
+        assert listed == actual_off, (
+            f"the {surface}'s off-scale spacing values do not match the record:\n"
+            f"  recorded but not spacing: {sorted(listed - actual_off)}\n"
+            f"  spacing but not recorded: {sorted(actual_off - listed)}"
+        )
+
+
 def test_the_documented_shadows_are_the_shadows_the_web_declares():
     """The shadow axis was declared in the front-matter and never checked.
 
